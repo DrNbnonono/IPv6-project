@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -16,6 +17,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DrNbnonono/IPv6-project.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DrNbnonono/IPv6-project/issues"
+  },
+  "homepage": "https://github.com/DrNbnonono/IPv6-project#readme",
   "description": ""
 }

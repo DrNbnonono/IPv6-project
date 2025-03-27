@@ -3,7 +3,7 @@ const router = express.Router();
 const connection = require('../database/db'); //引入数据库连接
 
 // 查询IPv6地址
-router.get('/active', (req, res) => {
+router.post('/active', (req, res) => {
     const sql = 'SELECT * FROM active_address';
     connection.query(sql, (err, result) => {
         if (err) {
