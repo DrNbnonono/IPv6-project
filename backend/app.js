@@ -6,6 +6,7 @@ const db = require('./database/db');  // 引入数据库连接函数
 const addressRouter = require('./routes/address');  // 引入地址管理路由
 const xmapRouter = require('./routes/xmap');  // 引入xmap路由
 const authRouter = require('./routes/auth');  // 引入认证路由
+const { authenticate } = require('./middleware/auth');
 
 //加载环境变量，更加安全
 dotenv.config();
@@ -23,7 +24,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/api/addresses', addressRouter);
 app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
-
+app.use('/api/xmap', authenticate);  // 认证中间件
 app.use(cors({
   origin: 'http://localhost:8080', // 前端开发地址
   credentials: true

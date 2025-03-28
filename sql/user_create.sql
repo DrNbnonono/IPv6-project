@@ -34,3 +34,22 @@ VALUES (
   '$2b$10$mf7nawIOp1X4J64nDG3JOeAS18D4X./ed93U8OG21LjtVTWRfPbwW',  -- 替换为步骤 2 生成的 hash
   'admin'
 );
+
+-- 更新 tasks 表结构
+ALTER TABLE `tasks` 
+ADD COLUMN `error_message` TEXT NULL COMMENT '错误信息' AFTER `status`,
+ADD COLUMN `completed_at` TIMESTAMP NULL COMMENT '完成时间' AFTER `updated_at`;
+
+-- 修改 tasks 表的 id 列为 BIGINT
+ALTER TABLE `tasks` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT;
+
+ALTER TABLE `tasks` 
+ADD COLUMN `exit_code` INT NULL COMMENT '进程退出码',
+ADD COLUMN `signal` VARCHAR(20) NULL COMMENT '终止信号';
+
+-- 修改 tasks 表结构
+ALTER TABLE `tasks` 
+CHANGE COLUMN `signal` `process_signal` VARCHAR(20) NULL DEFAULT NULL COMMENT '进程终止信号';
+
+ALTER TABLE tasks 
+MODIFY COLUMN status ENUM('pending', 'running', 'completed', 'failed', 'canceled') NOT NULL DEFAULT 'pending';
