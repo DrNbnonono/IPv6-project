@@ -1,53 +1,42 @@
-import { createRouter, createWebHistory } from 'vue-router';
-import Login from './components/Login.vue';
-import DetectionPlatform from './components/DetectionPlatform.vue';
-import ToolsDashboard from './components/ToolsDashboard.vue';
+import { createRouter, createWebHistory } from 'vue-router'
+import Login from './components/Login.vue'
+import ToolsDashboard from './components/ToolsDashboard.vue'
+import DetectionPlatform from './components/DetectionPlatform.vue'
 
 const routes = [
-  { path: '/', redirect: '/login' },
+  { 
+    path: '/',
+    redirect: () => {
+      return localStorage.getItem('token') ? '/tools' : '/login'
+    }
+  },
   { path: '/login', component: Login },
   { 
-    path: '/detection-platform', 
-    component: DetectionPlatform,
-    meta: { isPublic: true }
-  },
-  { 
-    path: '/tools', 
+    path: '/tools',
     component: ToolsDashboard,
     meta: { requiresAuth: true }
   },
-];
+  {
+    path: '/detection-platform',
+    component: DetectionPlatform,
+    meta: { isPublic: true }
+  }
+]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
-});
+  routes
+})
 
-// 路由守卫：检查 Token 有效性
-router.beforeEach(async (to, from, next) => {
-  const isPublic = to.meta.isPublic;
-  const token = localStorage.getItem('token');
+router.beforeEach((to, from, next) => {
+  const requiresAuth = to.meta.requiresAuth
+  const token = localStorage.getItem('token')
 
-  if (isPublic) {
-    return next(); // 允许访问公开页面
+  if (requiresAuth && !token) {
+    next('/login')
+  } else {
+    next()
   }
+})
 
-  if (!token) {
-    return next('/login'); // 未登录跳转到登录页
-  }
-
-  // 验证 Token 是否有效（可选：调用后端校验接口）
-  try {
-    // 示例：简单解析 Token（实际项目应发送到后端验证）
-    const decoded = jwt_decode(token);
-    if (decoded.exp < Date.now() / 1000) {
-      throw new Error('Token 已过期');
-    }
-    next();
-  } catch (error) {
-    localStorage.removeItem('token');
-    next('/login');
-  }
-});
-
-export default router;
+export default router

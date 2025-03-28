@@ -24,6 +24,11 @@ app.use('/api/addresses', addressRouter);
 app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
 
+app.use(cors({
+  origin: 'http://localhost:8080', // 前端开发地址
+  credentials: true
+}))
+
 //测试接口
 app.get('/api/test', (req, res) => {
   res.send('Hello World!');
