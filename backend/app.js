@@ -6,7 +6,7 @@ const db = require('./database/db');
 const addressRouter = require('./routes/address');
 const xmapRouter = require('./routes/xmap');
 const authRouter = require('./routes/auth');
-
+const docRouter = require('./routes/doc')
 dotenv.config();
 
 const app = express();
@@ -23,10 +23,11 @@ app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
 
 app.use(cors({
-  origin: 'http://localhost:8080',
-  credentials: true
+  origin: 'http://localhost:5173', // 改为前端实际运行的地址
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
+app.use('/api/docs', docRouter)
 // 测试接口
 app.get('/api/test', (req, res) => {
   res.send('Hello World!');

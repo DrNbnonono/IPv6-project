@@ -53,3 +53,14 @@ CHANGE COLUMN `signal` `process_signal` VARCHAR(20) NULL DEFAULT NULL COMMENT '�
 
 ALTER TABLE tasks 
 MODIFY COLUMN status ENUM('pending', 'running', 'completed', 'failed', 'canceled') NOT NULL DEFAULT 'pending';
+
+-- 更新用户表添加昵称字段
+ALTER TABLE `users` 
+ADD COLUMN `username` VARCHAR(50) NULL COMMENT '用户昵称' AFTER `phone`;
+
+-- 1. 为tasks表添加description字段
+ALTER TABLE `tasks` 
+ADD COLUMN `description` VARCHAR(255) NULL COMMENT '任务描述' AFTER `command`;
+
+-- 3. 添加索引以提高分页查询性能
+ALTER TABLE `tasks` ADD INDEX `idx_user_status` (`user_id`, `status`);

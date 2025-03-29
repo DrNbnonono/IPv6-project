@@ -3,12 +3,12 @@ const db = require('../database/db')
 
 exports.login = async (req, res) => {
   const { phone, password } = req.body
-  console.log('收到登录请求:', { phone }) // 添加请求日志
+  console.log('收到登录请求:', { phone })
 
   try {
     // 1. 检查数据库连接
     const [rows, fields] = await db.query(
-      'SELECT id, phone, password_hash, role FROM users WHERE phone = ? LIMIT 1',
+      'SELECT id, phone, username, password_hash, role FROM users WHERE phone = ? LIMIT 1',
       [phone]
     ).catch(err => {
       console.error('数据库查询失败:', err)
@@ -53,12 +53,13 @@ exports.login = async (req, res) => {
     res.json({
       success: true,
       token,
+      username: user.username, // 新增返回用户名
       role: user.role,
       message: '登录成功'
     })
 
   } catch (error) {
-    console.error('登录过程错误:', error.stack) // 打印完整错误堆栈
+    console.error('登录过程错误:', error.stack)
     res.status(500).json({ 
       success: false, 
       message: error.message || '服务器内部错误' 

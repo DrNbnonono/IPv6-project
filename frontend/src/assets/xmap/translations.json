@@ -1,0 +1,42 @@
+{
+    "en": {
+      "xmapHelp": {
+        "title": "XMap Documentation",
+        "loading": "Loading documentation...",
+        "loadError": "Failed to load document",
+        "edit": "Edit",
+        "save": "Save",
+        "toc": {
+          "home": "Home",
+          "gettingStarted": "Getting Started Guide",
+          "virtualMachine": "Virtual Machine Configuration",
+          "bestPractices": "Scanning Best Practices",
+          "installation": "Installing XMap",
+          "globalOptions": "Global Options",
+          "basicArgs": "Basic Arguments",
+          "scanOptions": "Scan Options",
+          "networkOptions": "Network Options"
+        }
+      }
+    },
+    "zh": {
+      "xmapHelp": {
+        "title": "XMap 文档",
+        "loading": "正在加载文档...",
+        "loadError": "加载文档失败",
+        "edit": "编辑",
+        "save": "保存",
+        "toc": {
+          "home": "首页",
+          "gettingStarted": "入门指南",
+          "virtualMachine": "虚拟机配置",
+          "bestPractices": "扫描最佳实践",
+          "installation": "安装指南",
+          "globalOptions": "全局选项",
+          "basicArgs": "基础参数",
+          "scanOptions": "扫描选项",
+          "networkOptions": "网络选项"
+        }
+      }
+    }
+  }

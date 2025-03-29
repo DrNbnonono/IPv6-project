@@ -1,0 +1,6 @@
+Mar 29 23:48:19.446 [INFO] xmap: probe network: ipv6
+Mar 29 23:48:19.446 [INFO] xmap: probe module: icmp_echo
+Mar 29 23:48:19.446 [INFO] xmap: output module: csv
+Mar 29 23:48:19.446 [INFO] xmap: iid module: low
+Mar 29 23:48:19.526 [INFO] recv: Data link layer Ethernet
+xmap: /home/linux/xmap/src/send.c:402: send_run: Assertion `t > last_time' failed.

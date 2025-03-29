@@ -10,12 +10,30 @@ const XMAP_LOG_DIR = path.join(__dirname, '../../xmap_log');
 const XMAP_RESULT_DIR = path.join(__dirname, '../../xmap_result');
 const WHITELIST_DIR = path.join(__dirname, '../../whitelists');
 
+const ITEMS_PER_PAGE = 20; //每次查询的页面总数
+
+
+
 // 确保所有目录存在
 [logDir, XMAP_LOG_DIR, XMAP_RESULT_DIR, WHITELIST_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 });
+
+// 添加获取文件大小的辅助函数
+const getFileSize = (filePath) => {
+  try {
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      return stats.size;
+    }
+    return 0;
+  } catch (error) {
+    logger.error(`获取文件大小失败: ${filePath}`, error);
+    return 0;
+  }
+};
 
 // 日志配置
 const logger = createLogger({
@@ -53,7 +71,7 @@ const activeProcesses = new Map();
 
 // 验证XMap参数
 const validateXmapParams = (params) => {
-  const allowedParams = ['ipv6', 'ipv4', 'maxlen', 'rate', 'targetPort', 'targetaddress', 'help', 'whitelistFile', 'max_results'];
+  const allowedParams = ['ipv6', 'ipv4', 'maxlen', 'rate', 'targetPort', 'targetaddress', 'help', 'whitelistFile', 'max_results', 'description'];
   const forbiddenChars = /[;&|<>]/;
   
   for (const [key, value] of Object.entries(params)) {
@@ -66,6 +84,49 @@ const validateXmapParams = (params) => {
     }
   }
 };
+
+// 添加读取文件最后几行的辅助函数
+// 修改读取CSV文件的逻辑
+async function readLastLines(filePath, numLines) {
+  return new Promise((resolve, reject) => {
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) {
+      return resolve('');
+    }
+
+    // 读取文件头部和最后部分
+    const headerSize = 1024; // 假设头部不超过1KB
+    const readSize = Math.min(stats.size, headerSize + 1024 * 10); // 读取头部+最后10KB
+    
+    const stream = fs.createReadStream(filePath, {
+      encoding: 'utf8',
+      start: Math.max(0, stats.size - readSize)
+    });
+    
+    let content = '';
+    stream.on('data', chunk => {
+      content += chunk;
+    });
+    
+    stream.on('end', () => {
+      // 确保获取到完整的头部
+      const headerEnd = content.indexOf('\n');
+      if (headerEnd === -1) {
+        return resolve(content);
+      }
+      
+      const header = content.substring(0, headerEnd);
+      const lines = content.substring(headerEnd + 1).split('\n').filter(line => line.trim());
+      
+      // 合并头部和最后几行
+      const lastLines = lines.slice(-numLines);
+      resolve(header + '\n' + lastLines.join('\n'));
+    });
+    
+    stream.on('error', reject);
+  });
+}
+
 
 // 验证白名单文件格式
 const validateWhitelistFile = (filePath) => {
@@ -129,7 +190,7 @@ exports.scan = async (req, res) => {
   const { 
     ipv6, ipv4, maxlen, rate, 
     targetPort, targetaddress, help,
-    whitelistFile, max_results 
+    whitelistFile, max_results, description 
   } = req.body;
 
   try {
@@ -143,12 +204,12 @@ exports.scan = async (req, res) => {
     const args = [];
     if (ipv6) args.push('-6');
     if (ipv4) args.push('-4');
-    if (maxlen) args.push('-m', maxlen.toString());
-    if (rate) args.push('-B', rate.toString());
-    if (targetPort) args.push('-p', targetPort.toString());
-    if (targetaddress) args.push('-a', targetaddress.toString());
+    if (maxlen) args.push('-x', maxlen);
+    if (rate) args.push('-B', rate);
+    if (targetPort) args.push('-p', targetPort);
+    if (targetaddress) args.push(targetaddress);
     if (help) args.push('-h');
-    if (max_results) args.push('-N', max_results.toString());
+    if (max_results) args.push('-N', max_results);
     
     if (whitelistFile) {
       const whitelistPath = path.join(WHITELIST_DIR, whitelistFile);
@@ -162,17 +223,18 @@ exports.scan = async (req, res) => {
     args.push('-u', logFile, '-o', resultFile, '-q');
 
     await db.query(
-      'INSERT INTO tasks (id, user_id, command, status, log_path, output_path) VALUES (?, ?, ?, ?, ?, ?)',
-      [taskId, userId, `sudo xmap ${args.join(' ')}`, 'running', logFile, resultFile]
+      'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [taskId, userId, `sudo xmap ${args.join(' ')}`, description, 'running', logFile, resultFile]
     );
 
     logger.info(`用户 ${userId} 创建新任务 ${taskId}`, { 
       command: `sudo xmap ${args.join(' ')}`,
+      description,
       user: userId 
     });
 
     const xmapProcess = spawn('sudo', ['xmap', ...args], {
-      stdio: ['ignore', 'ignore', 'pipe']
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
 
     activeProcesses.set(taskId, xmapProcess);
@@ -344,21 +406,22 @@ exports.deleteTask = async (req, res) => {
     }
 
     // 删除相关文件
-    try {
-      if (task.log_path && fs.existsSync(task.log_path)) {
-        fs.unlinkSync(task.log_path);
+    const filesToDelete = [
+      task.log_path,
+      task.output_path,
+      path.join(XMAP_LOG_DIR, `${taskId}_error.log`)
+    ];
+
+    for (const filePath of filesToDelete) {
+      if (filePath && fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (fileError) {
+          logger.warn(`删除任务 ${taskId} 文件 ${filePath} 失败`, {
+            error: fileError.message
+          });
+        }
       }
-      if (task.output_path && fs.existsSync(task.output_path)) {
-        fs.unlinkSync(task.output_path);
-      }
-      const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
-      if (fs.existsSync(errorLogFile)) {
-        fs.unlinkSync(errorLogFile);
-      }
-    } catch (fileError) {
-      logger.warn(`删除任务 ${taskId} 文件失败`, {
-        error: fileError.message
-      });
     }
 
     await db.query(
@@ -385,6 +448,8 @@ exports.deleteTask = async (req, res) => {
 };
 
 // 获取任务详情
+// 修改getTaskDetails方法，增强CSV文件解析
+// 修改getTaskDetails方法，添加文件大小和实时读取功能
 exports.getTaskDetails = async (req, res) => {
   const taskId = parseInt(req.params.taskId);
   const userId = req.user.id;
@@ -399,7 +464,7 @@ exports.getTaskDetails = async (req, res) => {
 
     const [tasks] = await db.query(
       `SELECT 
-        id, command, status, 
+        id, command, description, status, 
         created_at, completed_at, 
         error_message, log_path, output_path,
         exit_code, process_signal
@@ -418,28 +483,70 @@ exports.getTaskDetails = async (req, res) => {
     const task = tasks[0];
     let errorLog = null;
     let progress = null;
+    let resultFileSize = 0;
+    let hasResultFile = false;
+    let hasProgressFile = false;
 
-    if (['failed', 'canceled'].includes(task.status)) {
-      const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
-      if (fs.existsSync(errorLogFile)) {
-        errorLog = fs.readFileSync(errorLogFile, 'utf-8');
+    // 检查结果文件
+    if (task.output_path) {
+      try {
+        hasResultFile = fs.existsSync(task.output_path);
+        resultFileSize = hasResultFile ? getFileSize(task.output_path) : 0;
+      } catch (error) {
+        logger.warn(`检查结果文件失败: ${task.output_path}`, error);
       }
     }
 
+    // 读取扫描进度
     if (task.log_path && fs.existsSync(task.log_path)) {
       try {
-        const data = fs.readFileSync(task.log_path, 'utf-8');
+        const data = await readLastLines(task.log_path, 10);
         const lines = data.trim().split('\n');
+        
         if (lines.length > 1) {
           const headers = lines[0].split(',');
-          const values = lines[lines.length-1].split(',');
-          progress = {};
-          headers.forEach((h, i) => {
-            progress[h.trim()] = values[i]?.trim();
-          });
+          const stats = [];
+          
+          // 从后向前处理，确保获取最新数据
+          for (let i = lines.length - 1; i >= 1; i--) {
+            if (lines[i].trim()) {
+              const values = lines[i].split(',');
+              const entry = headers.reduce((obj, header, index) => {
+                obj[header] = values[index]?.trim();
+                return obj;
+              }, {});
+              
+              stats.unshift(entry);
+              if (stats.length >= 10) break; // 最多取10条记录
+            }
+          }
+          
+          if (stats.length > 0) {
+            progress = {
+              latest: stats[stats.length - 1],
+              history: stats
+            };
+            hasProgressFile = true;
+          }
         }
-      } catch (e) {
-        logger.warn(`读取任务 ${taskId} 进度日志失败`, { error: e.message });
+      } catch (error) {
+        logger.warn(`读取任务 ${taskId} 进度日志失败`, { 
+          error: error.message,
+          stack: error.stack
+        });
+      }
+    }
+  
+
+    // 读取错误日志
+    if (['failed', 'canceled'].includes(task.status)) {
+      const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
+      try {
+        if (fs.existsSync(errorLogFile)) {
+          errorLog = fs.readFileSync(errorLogFile, 'utf-8');
+        }
+      } catch (error) {
+        logger.warn(`读取错误日志失败: ${errorLogFile}`, error);
       }
     }
 
@@ -448,7 +555,10 @@ exports.getTaskDetails = async (req, res) => {
       task: {
         ...task,
         errorLog,
-        progress
+        progress,
+        hasResultFile,
+        resultFileSize,
+        hasProgressFile
       }
     });
 
@@ -465,33 +575,48 @@ exports.getTaskDetails = async (req, res) => {
   }
 };
 
-// 获取任务列表
+
+//获取任务列表
 exports.getTasks = async (req, res) => {
   const userId = req.user.id;
-  const { status } = req.query;
+  const { status, page = 1 } = req.query;
 
   try {
     let query = `SELECT 
-      id, command, status, 
+      id, command, description, status, 
       created_at, completed_at,
       exit_code, process_signal
     FROM tasks 
     WHERE user_id = ?`;
     
     const params = [userId];
+    let countQuery = 'SELECT COUNT(*) as total FROM tasks WHERE user_id = ?';
 
     if (status && ['pending', 'running', 'completed', 'failed', 'canceled'].includes(status)) {
       query += ' AND status = ?';
+      countQuery += ' AND status = ?';
       params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT 100';
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    
+    // 计算分页
+    const offset = (page - 1) * ITEMS_PER_PAGE;
+    params.push(ITEMS_PER_PAGE, offset);
 
+    // 执行查询
     const [tasks] = await db.query(query, params);
+    const [[{ total }]] = await db.query(countQuery, params.slice(0, -2)); // 移除LIMIT和OFFSET参数
 
     res.json({
       success: true,
-      tasks
+      tasks,
+      pagination: {
+        total: parseInt(total),
+        page: parseInt(page),
+        perPage: ITEMS_PER_PAGE,
+        totalPages: Math.ceil(total / ITEMS_PER_PAGE)
+      }
     });
 
   } catch (error) {

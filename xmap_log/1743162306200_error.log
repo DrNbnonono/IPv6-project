@@ -1,2 +1,0 @@
-Mar 28 19:45:06.390 [ERROR] blocklist: no addresses are eligible to be scanned in the current configuration. This may be because the blocklist being used by XMap ((null)) prevents any addresses from receiving probe packets.
-Mar 28 19:45:06.390 [FATAL] xmap: unable to initialize blacklist/whitelist
