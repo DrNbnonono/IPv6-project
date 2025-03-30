@@ -1,0 +1,6 @@
+Mar 30 15:07:33.704 [INFO] xmap: probe network: ipv6
+Mar 30 15:07:33.704 [INFO] xmap: probe module: icmp_echo
+Mar 30 15:07:33.704 [INFO] xmap: output module: csv
+Mar 30 15:07:33.704 [INFO] xmap: iid module: low
+Mar 30 15:07:33.781 [INFO] recv: Data link layer Ethernet
+Mar 30 15:07:43.821 [INFO] xmap: completed

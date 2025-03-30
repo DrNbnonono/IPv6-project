@@ -102,7 +102,8 @@ export default {
     },
     getWhitelists() {
       return apiClient.get('/xmap/whitelists')
-    }
+    },
+    
   },
   
   // 探测平台相关 API

@@ -113,22 +113,30 @@ export const useXmapStore = defineStore('xmap', () => {
   const downloadResult = async (taskId) => {
     try {
       const response = await axios.get(`/api/xmap/result/${taskId}`, {
-        responseType: 'blob'
-      })
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `xmap_result_${taskId}.json`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    } catch (err) {
-      error.value = err.response?.data?.message || '下载结果失败'
-      throw err
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${authStore.token}` }
+      });
+  
+      // 检查Blob数据是否有效
+      if (!(response.data instanceof Blob)) {
+        throw new Error('响应不是Blob类型');
+      }
+  
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `xmap_result_${taskId}.json`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+    } catch (error) {
+      console.error('下载失败:', error);
     }
-  }
-
+  };
+  
   // 下载日志文件
   const downloadLog = async (taskId) => {
     try {
@@ -150,14 +158,11 @@ export const useXmapStore = defineStore('xmap', () => {
   }
 
   // 上传白名单文件
-  const uploadWhitelist = async (file) => {
+  const uploadWhitelist = async (formData) => {
     isLoading.value = true
     error.value = null
     
     try {
-      const formData = new FormData()
-      formData.append('whitelistFile', file)
-      
       const response = await axios.post('/api/xmap/whitelist', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
@@ -174,16 +179,27 @@ export const useXmapStore = defineStore('xmap', () => {
     }
   }
 
-  // 获取白名单列表
-  const fetchWhitelists = async () => {
-    try {
-      const response = await axios.get('/api/xmap/whitelists')
-      whitelists.value = response.data.whitelists
-    } catch (err) {
-      error.value = err.response?.data?.message || '获取白名单列表失败'
-      throw err
+// 获取白名单列表 - 修改为正确的端点
+// 修改后的获取白名单列表方法
+const fetchWhitelists = async () => {
+  try {
+    const response = await axios.get('/api/xmap/whitelists', {
+      params: {
+        tool: 'xmap', // 固定只获取xmap工具的白名单
+        page: 1,
+        pageSize: 100 // 获取足够多的条目，或根据需求实现分页
+      }
+    });
+    
+    if (response.data.success) {
+      // 根据后端返回的数据结构调整
+      whitelists.value = response.data.data || [];
     }
+  } catch (err) {
+    error.value = err.response?.data?.message || '获取白名单列表失败';
+    throw err;
   }
+};
 
   return {
     tasks,
@@ -191,7 +207,6 @@ export const useXmapStore = defineStore('xmap', () => {
     currentTask,
     isLoading,
     error,
-    pagination,
     fetchTasks,
     startScan,
     cancelTask,

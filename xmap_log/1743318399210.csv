@@ -1,0 +1,7 @@
+real-time,time-elapsed,time-remaining,percent-complete,hit-rate,active-send-threads,sent-total,sent-last-one-sec,sent-avg-per-sec,sent-bandwidth-last-one-sec,sent-bandwidth-avg-per-sec,recv-success-total,recv-success-last-one-sec,recv-success-avg-per-sec,recv-total,recv-total-last-one-sec,recv-total-avg-per-sec,pcap-drop-total,drop-last-one-sec,drop-avg-per-sec,sendto-fail-total,sendto-fail-last-one-sec,sendto-fail-avg-per-sec
+2025-03-30 15:06:39,0,4,1.350652,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0
+2025-03-30 15:06:40,1,3,21.095057,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0
+2025-03-30 15:06:41,2,2,40.846118,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0
+2025-03-30 15:06:42,3,1,60.601902,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0
+2025-03-30 15:06:43,4,0,80.623988,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0
+2025-03-30 15:06:44,5,0,100.000000,0.000000,0,1,0,15,0,11244,0,0,0,0,0,0,0,0,0,0,0,0

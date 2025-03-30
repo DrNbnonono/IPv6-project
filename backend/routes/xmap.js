@@ -25,7 +25,7 @@ const upload = multer({
 });
 
 // 上传白名单文件
-router.post('/whitelist', upload.single('whitelistFile'), xmapController.uploadWhitelist);
+router.post('/whitelist', upload.single('file'), xmapController.uploadWhitelist)
 
 // 其他路由保持不变...
 router.get('/log/:taskId', xmapController.getLog);
@@ -35,7 +35,7 @@ router.delete('/:taskId', xmapController.deleteTask);
 router.get('/task/:taskId', xmapController.getTaskDetails);
 router.get('/tasks', xmapController.getTasks);
 router.get('/result/:taskId', xmapController.getResult);
-
-
+router.get('/whitelists', xmapController.getWhitelists);
+router.delete('/whitelist/:id', xmapController.deleteWhitelist);
 
 module.exports = router;

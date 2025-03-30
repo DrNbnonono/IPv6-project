@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../database/db');
 const { createLogger, format, transports } = require('winston');
-
+const util = require('util');
 // 配置系统日志和目录
 const logDir = path.join(__dirname, '../../backend_logs');
 const XMAP_LOG_DIR = path.join(__dirname, '../../xmap_log');
@@ -12,7 +12,8 @@ const WHITELIST_DIR = path.join(__dirname, '../../whitelists');
 
 const ITEMS_PER_PAGE = 20; //每次查询的页面总数
 
-
+const readdir = util.promisify(fs.readdir);
+const stat = util.promisify(fs.stat);
 
 // 确保所有目录存在
 [logDir, XMAP_LOG_DIR, XMAP_RESULT_DIR, WHITELIST_DIR].forEach(dir => {
@@ -71,7 +72,7 @@ const activeProcesses = new Map();
 
 // 验证XMap参数
 const validateXmapParams = (params) => {
-  const allowedParams = ['ipv6', 'ipv4', 'maxlen', 'rate', 'targetPort', 'targetaddress', 'help', 'whitelistFile', 'max_results', 'description'];
+  const allowedParams = ['ipv6', 'ipv4', 'maxlen', 'rate', 'targetPort', 'targetaddress', 'help', 'whitelistFile', 'max_results', 'description', 'probeModule'];
   const forbiddenChars = /[;&|<>]/;
   
   for (const [key, value] of Object.entries(params)) {
@@ -129,15 +130,21 @@ async function readLastLines(filePath, numLines) {
 
 
 // 验证白名单文件格式
+
 const validateWhitelistFile = (filePath) => {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n').filter(line => line.trim());
+    const lines = content.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+
+    // 匹配纯IPv6地址或IPv6 CIDR
+    const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^(([0-9a-fA-F]{1,4}:){0,7}[0-9a-fA-F]{1,4})?::(([0-9a-fA-F]{1,4}:){0,7}[0-9a-fA-F]{1,4})?(\/\d{1,3})?$/;
     
-    const cidrRegex = /^([0-9a-fA-F:.]+)\/(\d+)$/;
+    // 匹配纯IPv4地址或IPv4 CIDR
+    const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\/\d{1,2})?$/;
+
     for (const line of lines) {
-      if (!cidrRegex.test(line.trim())) {
-        throw new Error(`无效的CIDR格式: ${line}`);
+      if (!ipv6Regex.test(line) && !ipv4Regex.test(line)) {
+        throw new Error(`无效的IP格式: ${line}。可接受的格式示例: "2001:db8::1", "2001:db8::/32", "192.168.1.1", "192.168.1.0/24"`);
       }
     }
     
@@ -147,7 +154,6 @@ const validateWhitelistFile = (filePath) => {
     throw error;
   }
 };
-
 // 上传白名单文件
 exports.uploadWhitelist = async (req, res) => {
   if (!req.file) {
@@ -158,6 +164,7 @@ exports.uploadWhitelist = async (req, res) => {
   }
 
   const userId = req.user.id;
+  const { description, tool } = req.body; // 新增获取描述和工具
   const originalName = req.file.originalname;
   const fileExt = path.extname(originalName);
   const fileName = `whitelist_${userId}_${Date.now()}${fileExt}`;
@@ -167,6 +174,23 @@ exports.uploadWhitelist = async (req, res) => {
     fs.renameSync(req.file.path, filePath);
     validateWhitelistFile(filePath);
     
+    const [tools] = await db.query(
+      "SELECT id FROM tools WHERE name = ? LIMIT 1",
+      [tool || 'xmap'] // 默认为xmap
+    );
+    
+    if (tools.length === 0) {
+      throw new Error('工具不存在');
+    }
+    
+    // 保存到数据库
+    await db.query(
+      `INSERT INTO whitelists 
+       (user_id, tool_id, file_name, file_path, description) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [userId, tools[0].id, fileName, filePath, description]
+    );
+
     res.json({
       success: true,
       message: '白名单文件上传成功',
@@ -184,13 +208,196 @@ exports.uploadWhitelist = async (req, res) => {
   }
 };
 
+
+// 获取用户上传的白名单文件列表
+exports.getWhitelists = async (req, res) => {
+  const userId = req.user.id;
+  const { tool, page = 1, pageSize = 10 } = req.query;
+  
+  try {
+    // 基础查询
+    let query = `
+      SELECT w.id, w.file_name, w.description, w.uploaded_at, t.name as tool_name
+      FROM whitelists w
+      JOIN tools t ON w.tool_id = t.id
+      WHERE w.user_id = ? AND w.is_deleted = 0
+    `;
+    
+    const params = [userId];
+    
+    // 按工具筛选
+    if (tool) {
+      query += ' AND t.name = ?';
+      params.push(tool);
+    }
+    
+    // 分页
+    const offset = (page - 1) * pageSize;
+    query += ' ORDER BY w.uploaded_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(pageSize), offset);
+    
+    // 获取数据
+    const [whitelists] = await db.query(query, params);
+    
+    // 获取总数
+    let countQuery = `
+      SELECT COUNT(*) as total 
+      FROM whitelists w
+      JOIN tools t ON w.tool_id = t.id
+      WHERE w.user_id = ? AND w.is_deleted = 0
+    `;
+    const countParams = [userId];
+    
+    if (tool) {
+      countQuery += ' AND t.name = ?';
+      countParams.push(tool);
+    }
+    
+    const [[{ total }]] = await db.query(countQuery, countParams);
+    
+    res.json({
+      success: true,
+      data: whitelists,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        totalPages: Math.ceil(total / pageSize)
+      }
+    });
+  } catch (error) {
+    logger.error('获取白名单列表失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取白名单列表失败'
+    });
+  }
+};
+
+// 添加删除白名单方法
+exports.deleteWhitelist = async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  
+  try {
+    // 验证文件属于当前用户
+    const [files] = await db.query(
+      'SELECT file_path FROM whitelists WHERE id = ? AND user_id = ? AND is_deleted = 0',
+      [id, userId]
+    );
+    
+    if (files.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '文件不存在或无权操作'
+      });
+    }
+    
+    // 软删除（标记为已删除）
+    await db.query(
+      'UPDATE whitelists SET is_deleted = 1 WHERE id = ?',
+      [id]
+    );
+    
+    // 物理删除文件（可选）
+    try {
+      if (fs.existsSync(files[0].file_path)) {
+        fs.unlinkSync(files[0].file_path);
+      }
+    } catch (fileError) {
+      logger.error('删除物理文件失败:', fileError);
+    }
+    
+    res.json({
+      success: true,
+      message: '文件删除成功'
+    });
+  } catch (error) {
+    logger.error('删除白名单失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '删除白名单失败'
+    });
+  }
+};
+
+// 修改上传白名单方法
+exports.uploadWhitelist = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: '未上传文件'
+    });
+  }
+
+  const userId = req.user.id;
+  const { description = '', tool = 'xmap' } = req.body; // 默认值和解构
+  const originalName = req.file.originalname;
+  const fileExt = path.extname(originalName);
+  const fileName = `whitelist_${userId}_${Date.now()}${fileExt}`;
+  const filePath = path.join(WHITELIST_DIR, fileName);
+
+  try {
+    // 验证前先移动文件
+    fs.renameSync(req.file.path, filePath);
+    validateWhitelistFile(filePath);
+    
+    // 获取工具ID
+    const [tools] = await db.query(
+      "SELECT id FROM tools WHERE name = ? LIMIT 1",
+      [tool]
+    );
+    
+    if (tools.length === 0) {
+      throw new Error('指定的工具不存在');
+    }
+
+    // 明确的列名和值对应
+    const query = `
+      INSERT INTO whitelists 
+      (user_id, tool_id, file_name, file_path, description, is_deleted, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, 0, NOW())
+    `;
+    
+    await db.query(query, [
+      userId,
+      tools[0].id,
+      fileName,
+      filePath,
+      description
+    ]);
+    
+    res.json({
+      success: true,
+      message: '白名单文件上传成功',
+      data: {
+        fileName,
+        description
+      }
+    });
+  } catch (error) {
+    // 错误时清理文件
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    
+    logger.error('白名单上传错误:', error);
+    res.status(500).json({
+      success: false,
+      message: `白名单上传失败: ${error.message}`,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+
 // 创建扫描任务
 exports.scan = async (req, res) => {
   const userId = req.user.id;
   const { 
     ipv6, ipv4, maxlen, rate, 
     targetPort, targetaddress, help,
-    whitelistFile, max_results, description 
+    whitelistFile, max_results, description, probeModule 
   } = req.body;
 
   try {
@@ -207,6 +414,7 @@ exports.scan = async (req, res) => {
     if (maxlen) args.push('-x', maxlen);
     if (rate) args.push('-B', rate);
     if (targetPort) args.push('-p', targetPort);
+    if (probeModule) args.push('-M', probeModule); // 添加扫描模式参数
     if (targetaddress) args.push(targetaddress);
     if (help) args.push('-h');
     if (max_results) args.push('-N', max_results);
@@ -634,59 +842,39 @@ exports.getTasks = async (req, res) => {
 
 // 获取任务结果文件
 exports.getResult = async (req, res) => {
-  const taskId = parseInt(req.params.taskId);
-  const userId = req.user.id;
+  const taskId = req.params.taskId;
+  console.log(`尝试获取任务 ${taskId} 的结果文件`); // 调试日志
 
   try {
-    if (isNaN(taskId)) {
-      return res.status(400).json({
-        success: false,
-        message: '无效的任务ID格式'
-      });
-    }
-
     const [tasks] = await db.query(
-      `SELECT output_path 
-       FROM tasks 
-       WHERE id = ? AND user_id = ? AND status = 'completed'`,
-      [taskId, userId]
+      `SELECT output_path FROM tasks WHERE id = ?`, 
+      [taskId]
     );
-
-    if (tasks.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '任务不存在、未完成或无权访问' 
-      });
+    
+    if (!tasks.length) {
+      console.log('任务不存在');
+      return res.status(404).json({ success: false, message: '任务不存在' });
     }
 
     const resultPath = tasks[0].output_path;
-    
+    console.log('文件路径:', resultPath); // 打印实际路径
+
     if (!fs.existsSync(resultPath)) {
-      return res.status(404).json({
-        success: false,
-        message: '结果文件不存在'
-      });
+      console.log('文件不存在:', resultPath);
+      return res.status(404).json({ success: false, message: '结果文件不存在' });
     }
 
-    res.download(resultPath, `xmap_result_${taskId}.json`, (err) => {
-      if (err) {
-        logger.error(`下载任务 ${taskId} 结果失败`, {
-          error: err.message,
-          stack: err.stack
-        });
-      }
-    });
+    // 关键设置：正确的Content-Type和Content-Disposition
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=xmap_result_${taskId}.json`);
+    
+    // 流式传输文件
+    const fileStream = fs.createReadStream(resultPath);
+    fileStream.pipe(res);
 
   } catch (error) {
-    logger.error(`获取任务 ${taskId} 结果失败`, {
-      error: error.message,
-      stack: error.stack
-    });
-    
-    res.status(500).json({
-      success: false,
-      message: '获取结果失败: ' + error.message
-    });
+    console.error('文件下载错误:', error);
+    res.status(500).json({ success: false, message: '文件下载失败' });
   }
 };
 

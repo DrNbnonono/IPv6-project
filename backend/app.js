@@ -23,9 +23,10 @@ app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
 
 app.use(cors({
-  origin: 'http://localhost:5173', // 改为前端实际运行的地址
+  origin: 'http://localhost:5173', // 前端实际运行的端口地址
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Disposition'] // 允许前端访问Content-Disposition
 }));
 app.use('/api/docs', docRouter)
 // 测试接口

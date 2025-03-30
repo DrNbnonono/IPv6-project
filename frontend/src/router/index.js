@@ -2,10 +2,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 // 路由懒加载
-const LoginView = () => import('@/views/LoginView.vue')
-const DetectionPlatformView = () => import('@/views/DetectionPlatformView.vue')
-const ToolsView = () => import('@/views/ToolsView.vue')
-const XmapDashboardView = () => import('@/views/xmap/XmapDashboardView.vue')
+const LoginView = () => import('@/views/auth/LoginView.vue')
+const DetectionPlatformView = () => import('@/views/detection/DetectionPlatformView.vue')
+const ToolsView = () => import('@/views/tools/ToolsView.vue')
+const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue')
+const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 
 const routes = [
   {
@@ -41,9 +42,9 @@ const routes = [
   {
     path: '/tools/xmap/help',
     name: 'xmap-help',
-    component: () => import('@/views/xmap/XmapHelpView.vue'),
+    component: XmapHelpView,
     meta: { requiresAuth: true }
-  }
+  },
 ]
 
 const router = createRouter({
