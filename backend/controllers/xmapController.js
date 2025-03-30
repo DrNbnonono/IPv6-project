@@ -428,7 +428,7 @@ exports.scan = async (req, res) => {
       }
     }
     
-    args.push('-u', logFile, '-o', resultFile, '-q');
+    args.push('-u', logFile, '-o', resultFile, '-q', '-O', 'json' , '-f', `*`);
 
     await db.query(
       'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path) VALUES (?, ?, ?, ?, ?, ?, ?)',

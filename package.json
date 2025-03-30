@@ -1,12 +1,14 @@
 {
   "dependencies": {
+    "@types/three": "^0.175.0",
     "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "mongoose": "^8.12.1",
-    "mysql2": "^3.13.0"
+    "mysql2": "^3.13.0",
+    "three": "^0.175.0"
   },
   "name": "ipv6_project",
   "version": "1.0.0",

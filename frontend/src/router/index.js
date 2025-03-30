@@ -8,6 +8,7 @@ const ToolsView = () => import('@/views/tools/ToolsView.vue')
 const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue')
 const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 
+
 const routes = [
   {
     path: '/',

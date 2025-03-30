@@ -1,16 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const connection = require('../database/db'); //引入数据库连接
+const addressController = require('../controllers/addressController');
+const { authenticate } = require('../middleware/auth');
 
-// 查询IPv6地址
-router.post('/active', (req, res) => {
-    const sql = 'SELECT * FROM active_address';
-    connection.query(sql, (err, result) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json(result);
-    });
-});
+// 公共路由（无需认证）
+router.get('/map-data', addressController.getMapData);
+router.get('/countries/ranking', addressController.getCountryRanking);
+router.get('/asns/ranking', addressController.getAsnRanking);
+router.get('/countries/:countryId', addressController.getCountryDetail);
+router.get('/asns/:asn', addressController.getAsnDetail);
+router.get('/prefixes/search', addressController.searchPrefix);
+router.get('/prefixes/:prefixId', addressController.getPrefixDetail);
 
-module.exports = router; //导出路由
+// 需要认证的路由
+router.get('/addresses/:addressId', authenticate, addressController.getAddressDetail);
+
+module.exports = router;
