@@ -267,8 +267,9 @@ const goToDetectionPlatform = () => {
 // 工具列表 - 未来可以扩展
 const availableTools = ref([
   { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
-  { path: '/tools/ipv6scan', name: 'IPv6扫描', icon: 'icon-scan', badge: '新' },
-  { path: '/tools/analyzer', name: '数据分析', icon: 'icon-analyze' }
+  { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
+  { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
+  { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
 ])
 
 // 统计数据

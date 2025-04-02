@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
+  assetsInclude: ['**/*.tif', '**/*.tiff'], // 添加 .tif 和 .tiff
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -28,5 +29,6 @@ export default defineConfig({
         })
       }
     }
-  }
+  },
+
 })

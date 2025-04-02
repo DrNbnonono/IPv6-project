@@ -105,14 +105,71 @@ export default {
     },
     
   },
+
+  //zgrab2相关的API，后面一定会修改,等我无聊了
+  zgrab2: {
+    createTask(params) {
+      return apiClient.post('/zgrab2', params);
+    },
+    getTasks(params) {
+      return apiClient.get('/zgrab2', { params });
+    },
+    getTaskDetails(taskId) {
+      return apiClient.get(`/zgrab2/${taskId}`);
+    },
+    deleteTask(taskId) {
+      return apiClient.delete(`/zgrab2/${taskId}`);
+    },
+    downloadResult(taskId) {
+      return apiClient.get(`/zgrab2/${taskId}/result`, {
+        responseType: 'blob'
+      });
+    },
+    downloadLog(taskId) {
+      return apiClient.get(`/zgrab2/${taskId}/log`, {
+        responseType: 'blob'
+      });
+    },
+    getSupportedModules() {
+      return apiClient.get('/zgrab2/supported-modules');
+    },
+    getTaskStatus(taskId) {
+      return apiClient.get(`/zgrab2/${taskId}/status`);
+    },
+    getTaskProgress(taskId) {
+      return apiClient.get(`/zgrab2/${taskId}/progress`);
+    },
+},
   
   // 探测平台相关 API
   detection: {
+    getMapData() {
+      return apiClient.get('/addresses/map-data')
+    },
+    getCountryRanking(params = { sort: 'total_active_ipv6', order: 'desc', limit: 10 }) {
+      return apiClient.get('/addresses/countries/ranking', { params })
+    },
+    getAsnRanking(params = { sort: 'total_active_ipv6', order: 'desc', limit: 10 }) {
+      return apiClient.get('/addresses/asns/ranking', { params })
+    },
+    getCountryDetail(countryId) {
+      return apiClient.get(`/addresses/countries/${countryId}`)
+    },
+    getAsnDetail(asn) {
+      return apiClient.get(`/addresses/asns/${asn}`)
+    },
+    searchPrefix(query) {
+      return apiClient.get('/addresses/prefixes/search', { params: { query } })
+    },
+    getPrefixDetail(prefixId) {
+      return apiClient.get(`/addresses/prefixes/${prefixId}`)
+    },
     searchActiveAddresses(query) {
       return apiClient.post('/addresses/active', { query })
     }
   },
 
+  // 文档相关 API
   docs: {
     getList(lang) {
       return apiClient.get(`/docs/${lang}`)

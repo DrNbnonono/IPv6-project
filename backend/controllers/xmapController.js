@@ -430,9 +430,17 @@ exports.scan = async (req, res) => {
     
     args.push('-u', logFile, '-o', resultFile, '-q', '-O', 'json' , '-f', `*`);
 
+
+    if (ipv6){
+      args.push('-S', 'fd00:a516:7c1b:17cd:6d81:2137:bd2a:2c5b');
+    }
+    else if (ipv4){
+      args.push('-S', '192.168.1.1', '-G', '00:00:5e:00:01:08');
+    }
+
     await db.query(
-      'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [taskId, userId, `sudo xmap ${args.join(' ')}`, description, 'running', logFile, resultFile]
+      'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path,  task_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [taskId, userId, `sudo xmap ${args.join(' ')}`, description, 'running', logFile, resultFile, 'xmap']
     );
 
     logger.info(`用户 ${userId} 创建新任务 ${taskId}`, { 

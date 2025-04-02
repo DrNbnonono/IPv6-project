@@ -7,7 +7,8 @@ const DetectionPlatformView = () => import('@/views/detection/DetectionPlatformV
 const ToolsView = () => import('@/views/tools/ToolsView.vue')
 const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue')
 const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
-
+const Zgrab2DashboardView = () => import('@/views/tools/zgrab2/Zgrab2DashboardView.vue')
+const Zgrab2HelpView = () => import('@/views/tools/zgrab2/Zgrab2HelpView.vue')
 
 const routes = [
   {
@@ -37,7 +38,13 @@ const routes = [
         name: 'xmap',
         component: XmapDashboardView,
         meta: { title: 'XMap探测工具' }
-      }
+      },
+      {
+        path: 'zgrab2',
+        name: 'zgrab2',
+        component: Zgrab2DashboardView,
+        meta: { title: 'Zgrab2' }
+      },
     ]
   },
   {
@@ -46,6 +53,14 @@ const routes = [
     component: XmapHelpView,
     meta: { requiresAuth: true }
   },
+  {
+    path: '/tools/zgrab2/help',
+    name: 'zgrab2-help',
+    component: Zgrab2HelpView,
+    meta: { requiresAuth: true }
+  },
+  
+  
 ]
 
 const router = createRouter({

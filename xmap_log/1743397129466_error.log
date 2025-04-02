@@ -1,0 +1,2 @@
+Mar 31 12:58:49.787 [ERROR] get_gateway-linux: interface specified (loopback0) does not match the interface of the default gateway (eth4). You will need to manually specify the MAC address of your gateway.
+Mar 31 12:58:49.787 [FATAL] xmap: could not detect default gateway address for loopback0. Try setting default gateway mac address (-G).

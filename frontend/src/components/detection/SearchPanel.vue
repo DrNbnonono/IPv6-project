@@ -45,11 +45,10 @@
   
   <script setup>
   import { ref } from 'vue'
-  import { searchIPv6Data } from '@/api/detection'
-  
-
+  import { useDetectionStore } from '@/stores/detection'
   
   const emit = defineEmits(['update:visible', 'search'])
+  const detectionStore = useDetectionStore()  // 新增这行
   
   const searchQuery = ref('')
   const searchResults = ref([])
@@ -68,7 +67,8 @@
     searchResults.value = []
     
     try {
-      const results = await searchIPv6Data(searchQuery.value)
+      // 修改这行：通过 detectionStore 调用 searchIPv6Data
+      const results = await detectionStore.searchIPv6Data(searchQuery.value)
       searchResults.value = results.map(item => {
         if (item.type === 'country') {
           return {

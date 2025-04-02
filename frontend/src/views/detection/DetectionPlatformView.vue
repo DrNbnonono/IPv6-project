@@ -1,10 +1,18 @@
 <template>
   <div class="detection-platform">
+    <div class="search-container">
+      <button class="search-button" @click="searchVisible = !searchVisible">
+        <i class="search-icon">🔍</i> 搜索
+      </button>
+      <SearchPanel 
+        v-model:visible="searchVisible"
+        @search="handleSearch"
+      />
+    </div>
+    
     <header class="platform-header">
       <h1>IPv6网络探测平台</h1>
-      <button @click="searchVisible = true" class="btn btn-search">
-        <i class="icon-search"></i> 搜索
-      </button>
+      
       <div class="header-right">
         <div class="time-display">{{ currentTime }}</div>
         <div v-if="!authStore.isAuthenticated" class="auth-actions">
@@ -28,30 +36,25 @@
       </div>
       
       <div class="detection-container">
-        <SearchPanel 
-          v-model:visible="searchVisible"
-          @search="handleSearch"
-        />
-        
         <GlobeMap 
           ref="globeMap"
-          :countries="countries"
-          :asns="asns"
+          :countries="detectionStore.countries"
+          :asns="detectionStore.asns"
           @country-selected="handleCountrySelect"
           @asn-selected="handleAsnSelect"
         />
         
         <div class="ranking-panels">
           <SidePanel 
-            title="国家IPv6地址排名"
-            :items="countryRanking"
-            class="country-panel"
+            title="国家排名" 
+            :items="detectionStore.countryRanking" 
+            initial-position="{ x: 10, y: 10 }"
             @item-selected="handleCountrySelect"
           />
           <SidePanel 
-            title="ASN IPv6地址排名"
-            :items="asnRanking"
-            class="asn-panel"
+            title="ASN排名"
+            :items="detectionStore.asnRanking" 
+            initial-position="{ x: 20, y: 45 }"
             @item-selected="handleAsnSelect"
           />
         </div>
@@ -97,40 +100,29 @@ const searchVisible = ref(false)
 const selectedItem = ref(null)
 const showGuestTooltip = ref(false)
 
-// 从store获取数据
-const countries = computed(() => detectionStore.countries)
-const asns = computed(() => detectionStore.asns)
-const countryRanking = computed(() => detectionStore.countryRanking)
-const asnRanking = computed(() => detectionStore.asnRanking)
-
 // 初始化数据
 onMounted(async () => {
-  await detectionStore.fetchData()
+  try {
+    // 确保地图数据最先加载
+    await detectionStore.fetchMapData()
+    
+    // 并行加载其他数据
+    await Promise.allSettled([
+      detectionStore.fetchCountryRanking(),
+      detectionStore.fetchAsnRanking()
+    ])
+  } catch (error) {
+    console.error('初始化失败:', error)
+  }
+  
+  await Promise.all([
+    detectionStore.fetchMapData(),
+    detectionStore.fetchCountryRanking(),
+    detectionStore.fetchAsnRanking()
+  ])
   updateTime()
   setInterval(updateTime, 1000)
-  
-  // 加载Three.js资源
-  loadThreeJS().then(() => {
-    if (globeMap.value) {
-      globeMap.value.initGlobe()
-    }
-  })
 })
-
-// 加载Three.js资源
-const loadThreeJS = () => {
-  return new Promise((resolve) => {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js'
-    script.onload = () => {
-      const orbitScript = document.createElement('script')
-      orbitScript.src = 'https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js'
-      orbitScript.onload = resolve
-      document.head.appendChild(orbitScript)
-    }
-    document.head.appendChild(script)
-  })
-}
 
 // 更新时间显示
 const updateTime = () => {
@@ -195,17 +187,11 @@ const handleLogout = async () => {
     console.error('退出登录失败:', error)
   }
 }
+
+
 </script>
 
 <style scoped>
-.detection-platform {
-  position: relative;
-  width: 100%;
-  height: 100vh;
-  background: #0f1621;
-  color: white;
-  overflow: hidden;
-}
 
 .platform-header {
   display: flex;
@@ -393,4 +379,73 @@ const handleLogout = async () => {
   content: "🔍";
   margin-right: 5px;
 }
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.search-container {
+  position: absolute;
+  top: 80px;
+  right: 120px;
+  z-index: 1000;
+  display: flex;          /* 添加 flex 布局 */
+  flex-direction: row-reverse; /* 反转子元素顺序 */
+  gap: 8px;              /* 添加元素间距 */
+}
+
+.search-button {
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: 1px solid #4fc3f7;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 移除 margin-left 如果有的话 */
+  order: 1; /* 确保按钮在 flex 布局中位于右侧 */
+}
+
+.search-button:hover {
+  background: rgba(79, 195, 247, 0.2);
+}
+
+.search-icon {
+  font-size: 16px;
+}
+.detection-platform {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  background-image: url('/images/background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  color: white;
+  overflow: hidden;
+}
+
+/* 添加半透明遮罩增强文字可读性 */
+.detection-platform::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 0;
+}
+
+/* 确保内容在遮罩上方 */
+.platform-header,
+.platform-main {
+  position: relative;
+  z-index: 1;
+}
+
 </style>

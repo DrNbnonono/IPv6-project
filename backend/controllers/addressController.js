@@ -550,13 +550,12 @@ exports.getMapData = async (req, res) => {
         country_id,
         country_name,
         country_name_zh,
+        iso3_code,
         latitude,
         longitude,
         total_active_ipv6
       FROM countries
-      WHERE total_active_ipv6 > 0
-      ORDER BY total_active_ipv6 DESC
-      LIMIT 100
+      ORDER BY country_name DESC
     `);
 
     // 获取ASN基础数据
@@ -571,8 +570,7 @@ exports.getMapData = async (req, res) => {
         a.total_active_ipv6
       FROM asns a
       JOIN countries c ON a.country_id = c.country_id
-      WHERE a.total_active_ipv6 > 0
-      ORDER BY a.total_active_ipv6 DESC
+      ORDER BY asn DESC
       LIMIT 100
     `);
 
@@ -597,3 +595,5 @@ exports.getMapData = async (req, res) => {
     });
   }
 };
+
+
