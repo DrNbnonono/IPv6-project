@@ -1,5 +1,0 @@
-Apr 01 10:32:37.860 [INFO] xmap: probe network: ipv4
-Apr 01 10:32:37.860 [INFO] xmap: probe module: icmp_echo
-Apr 01 10:32:37.860 [INFO] xmap: output module: json
-Apr 01 10:32:37.860 [INFO] xmap: iid module: low
-Apr 01 10:32:37.938 [INFO] recv: Data link layer Ethernet
