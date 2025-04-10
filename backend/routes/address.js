@@ -11,7 +11,7 @@ router.get('/countries/:countryId', addressController.getCountryDetail);
 router.get('/asns/:asn', addressController.getAsnDetail);
 router.get('/prefixes/search', addressController.searchPrefix);
 router.get('/prefixes/:prefixId', addressController.getPrefixDetail);
-
+router.get('/search', addressController.searchIPv6);
 // 需要认证的路由
 router.get('/addresses/:addressId', authenticate, addressController.getAddressDetail);
 

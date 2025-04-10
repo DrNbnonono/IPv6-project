@@ -59,7 +59,16 @@ const routes = [
     component: Zgrab2HelpView,
     meta: { requiresAuth: true }
   },
-  
+  {
+    path: '/tools/database',
+    name: 'database',
+    component: () => import('@/views/tools/database/DatabaseManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      adminOnly: true,
+      title: '数据库管理'
+    }
+  },
   
 ]
 

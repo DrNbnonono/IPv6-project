@@ -158,15 +158,10 @@ export default {
     getAsnDetail(asn) {
       return apiClient.get(`/addresses/asns/${asn}`)
     },
-    searchPrefix(query) {
-      return apiClient.get('/addresses/prefixes/search', { params: { query } })
+    searchIPv6(query) {
+      return apiClient.get('/addresses/search', { params: { query } });
     },
-    getPrefixDetail(prefixId) {
-      return apiClient.get(`/addresses/prefixes/${prefixId}`)
-    },
-    searchActiveAddresses(query) {
-      return apiClient.post('/addresses/active', { query })
-    }
+
   },
 
   // 文档相关 API
@@ -180,5 +175,43 @@ export default {
     updateContent(lang, docId, content) {
       return apiClient.put(`/docs/${lang}/${docId}`, { content })
     }
-  }
+  },
+
+  // 数据库管理API
+  database: {
+    // 获取数据库统计信息
+    getStats() {
+      return apiClient.get('/admin/database/stats');
+    },
+    
+    // 批量导入IPv6地址
+    importAddresses(data) {
+      return apiClient.post('/admin/database/import-addresses', data);
+    },
+    
+    // 更新漏洞信息
+    updateVulnerabilities(data) {
+      return apiClient.post('/admin/database/update-vulnerabilities', data);
+    },
+    
+    // 更新协议支持信息
+    updateProtocolSupport(data) {
+      return apiClient.post('/admin/database/update-protocol-support', data);
+    },
+    
+    // 高级查询
+    advancedQuery(params) {
+      return apiClient.get('/admin/database/query', { params });
+    },
+    
+    // 获取国家统计
+    getCountryStats() {
+      return apiClient.get('/admin/database/country-stats');
+    },
+    
+    // 获取漏洞统计
+    getVulnerabilityStats() {
+      return apiClient.get('/admin/database/vulnerability-stats');
+    }
+  },
 }

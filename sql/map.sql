@@ -174,24 +174,6 @@ CREATE TABLE IF NOT EXISTS asn_protocol_stats (
     CONSTRAINT fk_aps_protocol FOREIGN KEY (protocol_id) REFERENCES protocols(protocol_id)
 ) ENGINE=InnoDB COMMENT='ASN协议统计表';
 
--- 扫描任务表 - 存储扫描任务信息(与您现有的tasks表类似)
-CREATE TABLE IF NOT EXISTS scan_tasks (
-    task_id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '任务ID',
-    task_type ENUM('xmap', 'zgrab2', 'nmap', 'addr6', 'other') NOT NULL COMMENT '任务类型',
-    target VARCHAR(255) COMMENT '扫描目标',
-    command TEXT COMMENT '执行命令',
-    status ENUM('pending', 'running', 'completed', 'failed', 'canceled') NOT NULL DEFAULT 'pending' COMMENT '任务状态',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    started_at TIMESTAMP NULL COMMENT '开始时间',
-    completed_at TIMESTAMP NULL COMMENT '完成时间',
-    result_path VARCHAR(255) COMMENT '结果文件路径',
-    log_path VARCHAR(255) COMMENT '日志文件路径',
-    error_message TEXT COMMENT '错误信息',
-    user_id INT COMMENT '用户ID',
-    INDEX idx_status (status) COMMENT '状态索引',
-    INDEX idx_created_at (created_at) COMMENT '创建时间索引',
-    INDEX idx_task_type (task_type) COMMENT '任务类型索引'
-) ENGINE=InnoDB COMMENT='扫描任务表';
 
 -- 插入示例数据 - 国家信息
 INSERT INTO countries (country_id, country_name, country_name_zh, iso3_code, region, subregion, latitude, longitude) VALUES

@@ -157,10 +157,13 @@ const isDragging = ref(false)
 const mouseDownPosition = ref({ x: 0, y: 0 })
 const mouseDownTime = ref(0)
 const clickTimeThreshold = 200 // 点击时间阈值，毫秒
-const autoRotate = ref(false)
+const autoRotate = ref(true)
+const autoRotateSpeed = ref(0.75) // 增加旋转速度变量，默认值可以调整
 const lastClickTime = ref(0)
 const clickDelay = 300 // 毫秒
 const isZoomedIn = ref(false)//是否处于放大状态
+
+
 // 计算tooltip样式
 const tooltipStyle = computed(() => {
   return {
@@ -271,7 +274,7 @@ const initScene = () => {
   controls.maxDistance = 5
   controls.enablePan = false
   controls.autoRotate = autoRotate.value
-  controls.autoRotateSpeed = 0.5
+  controls.autoRotateSpeed = 0.75
   
   // 添加光源
   const ambientLight = new THREE.AmbientLight(0x404040, 1)
@@ -298,9 +301,9 @@ const initScene = () => {
     scene,
     camera
   )
-  outlinePass.edgeStrength = 3.5    // 降低边缘强度，使其更柔和
-  outlinePass.edgeGlow = 1.0        // 降低发光效果
-  outlinePass.edgeThickness = 1.5   // 减小边缘厚度
+  outlinePass.edgeStrength = 5.0    // 降低边缘强度，使其更柔和
+  outlinePass.edgeGlow = 2.0        // 降低发光效果
+  outlinePass.edgeThickness = 2.5   // 减小边缘厚度
   outlinePass.pulsePeriod = 0
   outlinePass.visibleEdgeColor.set(0xffff00) // 黄色高亮
   outlinePass.hiddenEdgeColor.set(0xffff00)
@@ -1191,9 +1194,9 @@ const addCountryBorders = async () => {
               
               // 稍微将边界抬高，以避免与地球表面重叠
               points.push(new THREE.Vector3(
-                -Math.sin(phi) * Math.cos(theta) * 1.015, // 增加边界高度
-                Math.cos(phi) * 1.015,
-                Math.sin(phi) * Math.sin(theta) * 1.015
+                -Math.sin(phi) * Math.cos(theta) * 1.005, // 增加边界高度
+                Math.cos(phi) * 1.005,
+                Math.sin(phi) * Math.sin(theta) * 1.005
               ))
             }
             
@@ -1203,8 +1206,16 @@ const addCountryBorders = async () => {
               const material = new THREE.LineBasicMaterial({
                 color: 0x00ffff,
                 transparent: true,
-                opacity: 0.9, // 增加不透明度
-                linewidth: 2.0 // 加粗线条
+                opacity: 1, // 增加不透明度
+                linewidth: 3.0 // 加粗线条
+              });
+
+              // 创建发光效果的线条
+              const glowMaterial = new THREE.LineBasicMaterial({
+                color: 0x33ffff,
+                transparent: true,
+                opacity: 0.5,
+                linewidth: 1.0
               });
               
               const line = new THREE.Line(geometry, material)
@@ -1216,6 +1227,14 @@ const addCountryBorders = async () => {
               
               bordersGroup.add(line)
               bordersCreated++
+
+              // 添加一个稍微大一点的线条作为发光效果
+              const glowGeometry = new THREE.BufferGeometry().setFromPoints(points.map(p => 
+                new THREE.Vector3(p.x * 1.001, p.y * 1.001, p.z * 1.001)
+              ));
+              const glowLine = new THREE.Line(glowGeometry, glowMaterial);
+              glowLine.userData = { isGlow: true };
+              bordersGroup.add(glowLine);
               
               // 如果没有中心坐标，使用第一个点的坐标作为备用
               if (!countryCenters.value[country.country_id]) {
@@ -1463,6 +1482,7 @@ const zoomOut = () => {
 }
 
 const addAsnMarkers = () => {
+  
   if (!props.asns || !globe) {
     debugInfo.value.lastError = 'ASN数据或地球对象未准备好'
     return
@@ -1783,6 +1803,10 @@ const flyToCountry = (countryId) => {
   
   // 开始动画
   requestAnimationFrame(animateCamera)
+
+  // 关闭自动旋转
+  autoRotate.value = false
+  controls.autoRotate = false
 }
 
 const flyToAsn = (asn) => {
@@ -1860,67 +1884,69 @@ const flyToAsn = (asn) => {
   
   // 开始动画
   requestAnimationFrame(animateCamera)
+
+  // 关闭自动旋转
+  autoRotate.value = false
+  controls.autoRotate = false
 }
 
+// 高亮显示国家边界
 const highlightCountry = (countryId) => {
-  resetHighlights()
+  if (!bordersGroup || !countryId) {
+    console.warn('无法高亮国家边界：边界组或国家ID为空');
+    return;
+  }
   
-  if (!bordersGroup) return
+  // 重置之前的高亮
+  resetHighlights();
   
   let foundBorder = false;
   
-  bordersGroup.traverse(child => {
-    if (child.userData?.countryId === countryId) {
+  // 遍历边界组中的所有子对象
+  bordersGroup.traverse((child) => {
+    if (child.userData && child.userData.countryId === countryId) {
       foundBorder = true;
-      if (child.material) {
-        // 保存原始材质属性
-        if (!child.userData.originalMaterial) {
-          child.userData.originalMaterial = {
-            color: child.material.color.clone(),
-            opacity: child.material.opacity,
-            linewidth: child.material.linewidth,
-            visible: child.visible,
-            renderOrder: child.renderOrder
-          };
-        }
-        
-        // 保存原始几何体位置数据
-        if (child.geometry && child.geometry.attributes.position && !child.userData.originalPositions) {
-          child.userData.originalPositions = new Float32Array(child.geometry.attributes.position.array);
-        }
-        
-        // 设置高亮效果
-        child.material.color.set(0xffff00); // 黄色高亮
-        child.material.opacity = 1.0;
-        child.material.linewidth = 3.0; // 注意：在大多数WebGL实现中，这个值实际上被限制为1.0
-        
-        // 确保边界可见
-        child.visible = true;
-        child.renderOrder = 999; // 确保在其他对象之上渲染
-        
-        // 修改材质以确保在缩放时可见
-        child.material.depthTest = false; // 禁用深度测试，确保边界总是可见
-        child.material.depthWrite = false; // 禁用深度写入
-        child.material.transparent = true;
-        child.material.needsUpdate = true; // 确保材质更新
-        
-        // 如果地球已经放大，调整边界线的几何体
-        if (isZoomedIn.value && globe && child.userData.originalPositions) {
-          const scaleRatio = globe.scale.x; // 获取当前地球缩放比例
-          const positions = child.geometry.attributes.position;
-          
-          // 根据缩放比例更新位置
-          for (let i = 0; i < positions.count; i++) {
-            const index = i * 3;
-            positions.array[index] = child.userData.originalPositions[index] * scaleRatio;
-            positions.array[index + 1] = child.userData.originalPositions[index + 1] * scaleRatio;
-            positions.array[index + 2] = child.userData.originalPositions[index + 2] * scaleRatio;
-          }
-          positions.needsUpdate = true;
-        }
+      
+      // 保存原始材质
+      if (!child.userData.originalMaterial) {
+        child.userData.originalMaterial = child.material.clone();
       }
       
-      // 添加到高亮对象列表
+      // 创建高亮材质
+      const highlightMaterial = new THREE.LineBasicMaterial({
+        color: 0x00ffff,
+        linewidth: 18,
+        transparent: true,
+        opacity: 1
+      });
+      
+      // 应用高亮材质
+      child.material = highlightMaterial;
+      
+      // 确保边界在放大状态下也可见
+      if (child.geometry && child.geometry.attributes && child.geometry.attributes.position) {
+        const positions = child.geometry.attributes.position;
+        
+        // 如果没有保存原始位置，先保存
+        if (!child.userData.originalPositions) {
+          child.userData.originalPositions = [];
+          for (let i = 0; i < positions.array.length; i++) {
+            child.userData.originalPositions[i] = positions.array[i];
+          }
+        }
+        
+        // 根据当前地球缩放调整边界位置
+        const scaleRatio = isZoomedIn.value ? 1.01 : 1.0; // 放大时略微突出边界
+        
+        for (let i = 0; i < positions.array.length; i += 3) {
+          positions.array[i] = child.userData.originalPositions[i] * scaleRatio;
+          positions.array[i + 1] = child.userData.originalPositions[i + 1] * scaleRatio;
+          positions.array[i + 2] = child.userData.originalPositions[i + 2] * scaleRatio;
+        }
+        positions.needsUpdate = true;
+      }
+      
+      // 添加到后期处理高亮效果
       if (outlinePass) {
         outlinePass.selectedObjects = [child];
         outlinePass.edgeStrength = 10.0;
@@ -1938,10 +1964,10 @@ const highlightCountry = (countryId) => {
   // 确保边界组可见
   if (bordersGroup) {
     bordersGroup.visible = true;
-    bordersGroup.renderOrder = 999;
+    bordersGroup.renderOrder = 999; // 确保边界在其他对象之上渲染
   }
   
-  // 更新调试信息
+  // 更新调试信息和选中状态
   debugInfo.value.lastSelected = countryId;
   selectedCountry = countryId;
 }
@@ -1989,8 +2015,8 @@ const resetHighlights = () => {
         } else {
           // 否则使用默认值
           child.material.color.set(0x00ffff);
-          child.material.opacity = 0.7;
-          child.material.linewidth = 1.0;
+          child.material.opacity = 1;
+          child.material.linewidth = 15.0;
           child.visible = true;
           child.renderOrder = 0;
           
@@ -2183,8 +2209,8 @@ const onDocumentMouseMove = (event) => {
        // 高亮当前悬停的边界
        if (countryObj.material) {
          countryObj.material.color.set(0xffff00); // 黄色高亮
-         countryObj.material.opacity = 0.7;  // 高亮不透明度
-         countryObj.material.linewidth = 2.0; // 线条宽度
+         countryObj.material.opacity = 0.95;  // 高亮不透明度
+         countryObj.material.linewidth = 5.0; // 线条宽度
          hoveredBorder = countryObj;
        }
        
@@ -2372,6 +2398,10 @@ const resetCamera = () => {
       
       // 更新标签显示状态 - 重置视图后显示标签
       updateLabelPositions()
+
+      autoRotate.value = true
+      controls.autoRotate = true
+      controls.autoRotateSpeed = autoRotateSpeed.value
     }
   }
   
@@ -2464,6 +2494,20 @@ const resetView = () => {
   // 开始动画
   requestAnimationFrame(animateReset)
 }
+
+const getLabelVisibility = () => {
+  return labelVisibility.value
+}
+// 添加设置标签可见性的方法
+const setLabelVisibility = (visible) => {
+  labelVisibility.value = visible
+  countryLabels.value.forEach(label => {
+    if (label.element) {
+      label.element.style.display = visible ? 'block' : 'none'
+    }
+  })
+}
+
 // 监听props变化
 watch(() => props.countries, () => {
   if (props.countries && props.countries.length > 0) {
@@ -2692,6 +2736,8 @@ const dispose = () => {
 
 // 暴露方法给父组件
 defineExpose({
+  getLabelVisibility,
+  setLabelVisibility,
   flyToCountry,
   flyToAsn,
   reloadData,

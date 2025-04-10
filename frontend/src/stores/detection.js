@@ -90,14 +90,27 @@ export const useDetectionStore = defineStore('detection', () => {
   }
 
   const searchIPv6Data = async (query) => {
-    isLoading.value = true
-    error.value = null
     try {
+      isLoading.value = true
+      error.value = null
       const response = await api.detection.searchIPv6(query)
-      searchResults.value = response.data
-      return response.data
+      
+      // 检查响应数据格式并进行标准化处理
+      let result = response.data
+      
+      // 如果响应是数组，转换为标准格式
+      if (Array.isArray(result)) {
+        result = {
+          success: true,
+          data: result,
+          message: `找到 ${result.length} 条结果`
+        }
+      }
+      
+      return result
     } catch (err) {
-      error.value = err.message
+      error.value = err.message || '搜索失败'
+      console.error('搜索失败:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -105,17 +118,17 @@ export const useDetectionStore = defineStore('detection', () => {
   }
 
   return {
-    countries,
-    asns,
-    countryRanking,
-    asnRanking,
-    isLoading,
-    error,
-    fetchMapData,
-    fetchCountryRanking,
-    fetchAsnRanking,
-    fetchCountryDetail,
-    fetchAsnDetail,
-    searchIPv6Data
-  }
+  countries,
+  asns,
+  countryRanking,
+  asnRanking,
+  isLoading,
+  error,
+  fetchMapData,
+  fetchCountryRanking,
+  fetchAsnRanking,
+  fetchCountryDetail,
+  fetchAsnDetail,
+  searchIPv6Data
+}
 })

@@ -15,8 +15,7 @@ const ITEMS_PER_PAGE = 20;
  */
 exports.getCountryRanking = async (req, res) => {
   try {
-    const { page = 1, sort = 'total_active_ipv6', order = 'desc' } = req.query;
-    const offset = (page - 1) * ITEMS_PER_PAGE;
+    const { sort = 'total_active_ipv6', order = 'desc' } = req.query;
 
     // 验证排序字段
     const validSortFields = ['total_active_ipv6', 'total_ipv6_prefixes'];
@@ -36,6 +35,10 @@ exports.getCountryRanking = async (req, res) => {
       });
     }
 
+    // 初始化变量
+    await db.query('SET @row_number = 0');
+    
+    // 修改SQL查询，移除LIMIT和OFFSET，添加排名
     const [countries] = await db.query(`
       SELECT 
         country_id, 
@@ -44,31 +47,25 @@ exports.getCountryRanking = async (req, res) => {
         total_active_ipv6,
         total_ipv6_prefixes,
         latitude,
-        longitude
+        longitude,
+        @row_number := @row_number + 1 AS \`rank\`
       FROM countries
-      WHERE total_active_ipv6 > 0
       ORDER BY ${sort} ${order}
-      LIMIT ? OFFSET ?
-    `, [ITEMS_PER_PAGE, offset]);
+    `);
 
     const [[{ total }]] = await db.query(`
       SELECT COUNT(*) as total 
       FROM countries 
-      WHERE total_active_ipv6 > 0
     `);
 
     res.json({
       success: true,
       data: countries,
-      pagination: {
-        total,
-        page: parseInt(page),
-        pageSize: ITEMS_PER_PAGE,
-        totalPages: Math.ceil(total / ITEMS_PER_PAGE)
-      }
+      total
     });
   } catch (error) {
     logger.error('获取国家排名失败:', error);
+    console.error('获取国家排名详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取国家排名失败'
@@ -81,8 +78,7 @@ exports.getCountryRanking = async (req, res) => {
  */
 exports.getAsnRanking = async (req, res) => {
   try {
-    const { page = 1, sort = 'total_active_ipv6', order = 'desc' } = req.query;
-    const offset = (page - 1) * ITEMS_PER_PAGE;
+    const { sort = 'total_active_ipv6', order = 'desc' } = req.query;
 
     // 验证排序字段
     const validSortFields = ['total_active_ipv6', 'total_ipv6_prefixes'];
@@ -93,42 +89,50 @@ exports.getAsnRanking = async (req, res) => {
       });
     }
 
+    // 验证排序顺序
+    const validOrders = ['asc', 'desc'];
+    if (!validOrders.includes(order.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的排序顺序'
+      });
+    }
+
+    // 初始化变量
+    await db.query('SET @row_number = 0');
+    
+    // 修复SQL查询，使用正确的MySQL语法
     const [asns] = await db.query(`
       SELECT 
         a.asn,
         a.as_name,
         a.as_name_zh,
+        a.country_id,
         a.total_active_ipv6,
         a.total_ipv6_prefixes,
         c.country_name,
         c.country_name_zh,
         c.latitude,
-        c.longitude
+        c.longitude,
+        @row_number := @row_number + 1 AS \`rank\`
       FROM asns a
       JOIN countries c ON a.country_id = c.country_id
-      WHERE a.total_active_ipv6 > 0
-      ORDER BY ${sort} ${order}
-      LIMIT ? OFFSET ?
-    `, [ITEMS_PER_PAGE, offset]);
+      ORDER BY a.${sort} ${order}
+    `);
 
     const [[{ total }]] = await db.query(`
       SELECT COUNT(*) as total 
       FROM asns 
-      WHERE total_active_ipv6 > 0
     `);
 
     res.json({
       success: true,
       data: asns,
-      pagination: {
-        total,
-        page: parseInt(page),
-        pageSize: ITEMS_PER_PAGE,
-        totalPages: Math.ceil(total / ITEMS_PER_PAGE)
-      }
+      total
     });
   } catch (error) {
     logger.error('获取ASN排名失败:', error);
+    console.error('获取ASN排名详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取ASN排名失败'
@@ -388,16 +392,25 @@ exports.getPrefixDetail = async (req, res) => {
         p.allocation_date,
         p.registry,
         p.is_private,
-        a.asn,
+        p.asn,
+        p.country_id,
         a.as_name,
         a.as_name_zh,
-        c.country_id,
         c.country_name,
-        c.country_name_zh
-      FROM ip_prefixes p
-      JOIN asns a ON p.asn = a.asn
-      JOIN countries c ON p.country_id = c.country_id
-      WHERE p.prefix_id = ?
+        c.country_name_zh,
+        (
+          SELECT COUNT(*) 
+          FROM active_addresses 
+          WHERE prefix_id = p.prefix_id
+        ) AS active_addresses_count
+      FROM 
+        ip_prefixes p
+      LEFT JOIN 
+        asns a ON p.asn = a.asn
+      LEFT JOIN 
+        countries c ON p.country_id = c.country_id
+      WHERE 
+        p.prefix_id = ?
     `, [prefixId]);
 
     if (!prefix) {
@@ -597,3 +610,274 @@ exports.getMapData = async (req, res) => {
 };
 
 
+/**
+ * 通用搜索功能 - 搜索国家、ASN和前缀
+ */
+exports.searchIPv6 = async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || query.trim() === '') {
+      return res.json({
+        success: true,
+        data: [],
+        message: '搜索词为空，请输入有效的搜索内容'
+      });
+    }
+    
+    const startTime = performance.now();
+    logger.info(`开始搜索: ${query}`);
+    
+    // 确定搜索类型
+    const searchType = determineSearchType(query);
+    let results = [];
+    
+    // 根据搜索类型执行不同的搜索策略
+    if (searchType === 'country_code') {
+      // 国家代码搜索 - 只搜索国家表，精确匹配
+      const [countryResults] = await db.query(`
+        SELECT 
+          'country' as type, 
+          country_id, 
+          country_name, 
+          country_name_zh, 
+          total_active_ipv6
+        FROM 
+          countries
+        WHERE 
+          country_id = ?
+        LIMIT 1
+      `, [query.toUpperCase()]);
+      
+      logger.info(`国家代码搜索结果: ${countryResults.length} 条`);
+      results = countryResults;
+    } 
+    else if (searchType === 'name') {
+      // 名称搜索 - 先尝试精确匹配国家名称
+      const [exactCountryResults] = await db.query(`
+        SELECT 
+          'country' as type, 
+          country_id, 
+          country_name, 
+          country_name_zh, 
+          total_active_ipv6
+        FROM 
+          countries
+        WHERE 
+          LOWER(country_name) = LOWER(?) OR 
+          country_name_zh = ?
+        LIMIT 1
+      `, [query, query]);
+      
+      if (exactCountryResults.length > 0) {
+        // 如果找到精确匹配的国家，直接返回
+        logger.info(`国家名称精确匹配结果: ${exactCountryResults.length} 条`);
+        results = exactCountryResults;
+      } else {
+        // 尝试精确匹配ASN名称
+        const [exactAsnResults] = await db.query(`
+          SELECT 
+            'asn' as type, 
+            asn, 
+            as_name, 
+            as_name_zh, 
+            country_id, 
+            total_active_ipv6
+          FROM 
+            asns
+          WHERE 
+            LOWER(as_name) = LOWER(?) OR 
+            as_name_zh = ?
+          LIMIT 1
+        `, [query, query]);
+        
+        if (exactAsnResults.length > 0) {
+          // 如果找到精确匹配的ASN，直接返回
+          logger.info(`ASN名称精确匹配结果: ${exactAsnResults.length} 条`);
+          results = exactAsnResults;
+        } else {
+          // 如果没有精确匹配，则进行模糊搜索，但优先国家
+          const [fuzzyCountryResults] = await db.query(`
+            SELECT 
+              'country' as type, 
+              country_id, 
+              country_name, 
+              country_name_zh, 
+              total_active_ipv6
+            FROM 
+              countries
+            WHERE 
+              country_name LIKE ? OR 
+              country_name_zh LIKE ?
+            LIMIT 5
+          `, [`%${query}%`, `%${query}%`]);
+          
+          if (fuzzyCountryResults.length > 0) {
+            // 如果找到模糊匹配的国家，直接返回
+            logger.info(`国家名称模糊匹配结果: ${fuzzyCountryResults.length} 条`);
+            results = fuzzyCountryResults;
+          } else {
+            // 最后尝试模糊匹配ASN
+            const [fuzzyAsnResults] = await db.query(`
+              SELECT 
+                'asn' as type, 
+                asn, 
+                as_name, 
+                as_name_zh, 
+                country_id, 
+                total_active_ipv6
+              FROM 
+                asns
+              WHERE 
+                as_name LIKE ? OR 
+                as_name_zh LIKE ?
+              LIMIT 10
+            `, [`%${query}%`, `%${query}%`]);
+            
+            logger.info(`ASN名称模糊匹配结果: ${fuzzyAsnResults.length} 条`);
+            results = fuzzyAsnResults;
+          }
+        }
+      }
+    }
+    else if (searchType === 'asn') {
+      // ASN编号搜索 - 只搜索ASN表，精确匹配
+      const [asnResults] = await db.query(`
+        SELECT 
+          'asn' as type, 
+          asn, 
+          as_name, 
+          as_name_zh, 
+          country_id, 
+          total_active_ipv6
+        FROM 
+          asns
+        WHERE 
+          asn = ?
+        LIMIT 1
+      `, [parseInt(query)]);
+      
+      logger.info(`ASN编号搜索结果: ${asnResults.length} 条`);
+      results = asnResults;
+    }
+    else if (searchType === 'prefix') {
+      // 前缀搜索 - 只搜索前缀表
+      const prefixValue = query.split('/')[0]; // 去掉可能的前缀长度部分
+      
+      // 先尝试精确匹配
+      const [exactPrefixResults] = await db.query(`
+        SELECT 
+          'prefix' as type, 
+          p.prefix_id, 
+          p.prefix, 
+          p.prefix_length, 
+          p.asn, 
+          p.country_id,
+          (SELECT COUNT(*) FROM active_addresses WHERE prefix_id = p.prefix_id) as active_addresses_count
+        FROM 
+          ip_prefixes p
+        WHERE 
+          p.prefix = ?
+        LIMIT 1
+      `, [prefixValue]);
+      
+      if (exactPrefixResults.length > 0) {
+        logger.info(`前缀精确匹配结果: ${exactPrefixResults.length} 条`);
+        results = exactPrefixResults;
+      } else {
+        // 模糊匹配前缀
+        const [fuzzyPrefixResults] = await db.query(`
+          SELECT 
+            'prefix' as type, 
+            p.prefix_id, 
+            p.prefix, 
+            p.prefix_length, 
+            p.asn, 
+            p.country_id,
+            (SELECT COUNT(*) FROM active_addresses WHERE prefix_id = p.prefix_id) as active_addresses_count
+          FROM 
+            ip_prefixes p
+          WHERE 
+            p.prefix LIKE ?
+          LIMIT 10
+        `, [`%${prefixValue}%`]);
+        
+        logger.info(`前缀模糊匹配结果: ${fuzzyPrefixResults.length} 条`);
+        results = fuzzyPrefixResults;
+      }
+    }
+    
+    const endTime = performance.now();
+    logger.info(`搜索完成，耗时: ${(endTime - startTime).toFixed(2)}ms, 找到 ${results.length} 条结果`);
+    
+    // 确保返回的数据格式正确，并添加更多信息
+    return res.json({
+      success: true,
+      data: results || [],
+      message: results.length > 0 ? `找到 ${results.length} 条结果` : `未找到与"${query}"相关的结果`,
+      searchType: searchType,
+      meta: {
+        queryTime: (endTime - startTime).toFixed(2) + 'ms',
+        searchedTables: getSearchedTables(searchType)
+      }
+    });
+  } catch (error) {
+    logger.error('搜索失败:', error);
+    console.error('搜索详细错误:', error.message, error.stack);
+    res.status(500).json({
+      success: false,
+      message: '搜索失败: ' + (error.message || '未知错误'),
+      error: {
+        code: error.code || 'UNKNOWN_ERROR',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
+  }
+};
+
+/**
+ * 获取搜索的表名
+ */
+function getSearchedTables(searchType) {
+  const tables = [];
+  
+  if (searchType === 'country_code' || searchType === 'name') {
+    tables.push('countries');
+  }
+  
+  if (searchType === 'asn' || searchType === 'name') {
+    tables.push('asns');
+  }
+  
+  if (searchType === 'prefix') {
+    tables.push('ip_prefixes');
+  }
+  
+  return tables;
+}
+
+/**
+ * 判断搜索类型
+ */
+function determineSearchType(query) {
+  // 去除空格
+  const trimmedQuery = query.trim();
+  
+  // 判断是否为ASN (纯数字)
+  if (/^\d+$/.test(trimmedQuery)) {
+    return 'asn';
+  }
+  
+  // 判断是否为IPv6前缀
+  if (trimmedQuery.includes(':')) {
+    return 'prefix';
+  }
+  
+  // 判断是否为国家代码 (2-3个字母)
+  if (/^[a-zA-Z]{2,3}$/.test(trimmedQuery)) {
+    return 'country_code';
+  }
+  
+  // 其他情况视为名称搜索
+  return 'name';
+}

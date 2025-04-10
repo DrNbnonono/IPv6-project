@@ -1,1 +1,0 @@
-Mar 31 12:53:21.320 [FATAL] xmap: could not detect default IPv4 address for loopback0. Try specifying a source address `-S|--source-ip'

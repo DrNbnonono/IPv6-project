@@ -266,6 +266,7 @@ const goToDetectionPlatform = () => {
 
 // 工具列表 - 未来可以扩展
 const availableTools = ref([
+  { path: '/tools/database', name: '数据库管理', icon: 'icon-database'},
   { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
   { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
   { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
@@ -1075,4 +1076,5 @@ onMounted(() => {
 .icon-whitelist:before { content: "📋"; }
 .icon-delete:before { content: "🗑️"; }
 .icon-empty:before { content: "📭"; }
+.icon-database:before { content: "🗄️"; }
 </style>
