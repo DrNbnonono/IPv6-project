@@ -9,6 +9,7 @@
       <h1>IPv6网络探测平台</h1>
       <div class="time-display">{{ currentTime }}</div>
       <div class="user-info">
+        <button @click="goToAdvancedQuery" class="query-btn">高级查询</button>
         <button @click="goToTools" class="tools-btn">工具平台</button>
         <span v-if="authStore.isAuthenticated">欢迎，{{ authStore.username }}</span>
         <button v-if="authStore.isAuthenticated" @click="handleLogout" class="logout-btn">退出</button>
@@ -140,11 +141,6 @@
               <span class="value">{{ formatNumber(selectedCountry.total_active_ipv6) }}</span>
             </div>
             <div class="detail-item">
-              <span class="label">IPv6渗透率:</span>
-              <span class="value">{{ selectedCountry.ipv6_penetration ? 
-                ((selectedCountry.ipv6_penetration * 100).toFixed(2) + '%') : '暂无数据' }}</span>
-            </div>
-            <div class="detail-item">
               <span class="label">ASN数量:</span>
               <span class="value">{{ selectedCountry.asn_count || '暂无数据' }}</span>
             </div>
@@ -152,10 +148,7 @@
               <span class="label">前缀数量:</span>
               <span class="value">{{ selectedCountry.prefix_count || '暂无数据' }}</span>
             </div>
-            <div class="detail-item">
-              <span class="label">最近更新:</span>
-              <span class="value">{{ formatDate(selectedCountry.last_updated) }}</span>
-            </div>
+
             
             <!-- 国家ASN列表 -->
             <div class="country-asns">
@@ -170,61 +163,65 @@
             </div>
             
             <div class="detail-actions">
-              <button @click="viewCountryDetails(selectedCountry)" class="detail-btn">查看完整详情</button>
+              <button @click="viewFullCountryDetails(selectedCountry)" class="detail-btn">
+              查看完整详情
+              </button>
             </div>
           </div>
         </div>
           </div>
 
+          <!-- ASN详情面板 (在放大状态下显示) -->
           <div class="asn-detail-panel" :class="{ 'visible': showAsnDetails && selectedAsn }">
-      <div class="detail-header">
-        <h3>{{ selectedAsn ? (selectedAsn.as_name_zh || selectedAsn.as_name || 'AS' + selectedAsn.asn) : 'ASN详情' }}</h3>
-        <button @click="closeAsnDetails" class="close-btn">返回</button>
-      </div>
-      <div class="detail-content">
-        <div v-if="selectedAsn" class="asn-details">
-          <div class="detail-item">
-            <span class="label">ASN编号:</span>
-            <span class="value">{{ selectedAsn.asn }}</span>
+            <div class="detail-header">
+              <h3>{{ selectedAsn ? (selectedAsn.as_name_zh || selectedAsn.as_name || 'AS' + selectedAsn.asn) : 'ASN详情' }}</h3>
+              <button @click="closeAsnDetails" class="close-btn">返回</button>
+            </div>
+            <div class="detail-content">
+              <div v-if="selectedAsn" class="asn-details">
+                <div class="detail-item">
+                  <span class="label">ASN编号:</span>
+                  <span class="value">{{ selectedAsn.asn }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">名称:</span>
+                  <span class="value">{{ selectedAsn.as_name_zh || selectedAsn.as_name }}</span>
+                </div>
+                <!-- {{ edit_2 }} 移除组织信息 -->
+                <div class="detail-item">
+                  <span class="label">国家/地区:</span>
+                  <span class="value">{{ selectedAsn.country_name_zh || selectedAsn.country_name }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">IPv6地址数:</span>
+                  <span class="value">{{ formatNumber(selectedAsn.total_active_ipv6) }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">IPv6前缀数量:</span>
+                  <span class="value">{{ formatNumber(selectedAsn.total_ipv6_prefixes) }}</span>
+                </div>
+                
+                <!-- {{ edit_3 }} 添加前缀列表 -->
+                <div class="asn-prefixes" v-if="selectedAsn.prefixes && selectedAsn.prefixes.length">
+                  <h4>IPv6前缀列表</h4>
+                  <ul>
+                    <li v-for="prefix in selectedAsn.prefixes.slice(0, 10)" :key="prefix.prefix_id">
+                      <span class="prefix-value">{{ prefix.prefix }}/{{ prefix.prefix_length }}</span>
+                      <span class="prefix-info">{{ prefix.active_addresses || 0 }} 个活跃地址</span>
+                    </li>
+                  </ul>
+                  <p v-if="selectedAsn.prefixes.length > 10" class="more-info">
+                    还有 {{ selectedAsn.prefixes.length - 10 }} 个前缀...
+                  </p>
+                </div>
+                <p v-else class="no-data">暂无前缀数据</p>
+                
+                <div class="detail-actions">
+                  <button @click="viewFullAsnDetails(selectedAsn)" class="detail-btn">查看完整详情</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="detail-item">
-            <span class="label">名称:</span>
-            <span class="value">{{ selectedAsn.as_name_zh || selectedAsn.as_name }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">组织:</span>
-            <span class="value">{{ selectedAsn.organization || '暂无数据' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">国家/地区:</span>
-            <span class="value">{{ selectedAsn.country_name_zh || selectedAsn.country_name }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">活跃IPv6地址:</span>
-            <span class="value">{{ formatNumber(selectedAsn.total_active_ipv6) }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">IPv6前缀数量:</span>
-            <span class="value">{{ formatNumber(selectedAsn.total_ipv6_prefixes) }}</span>
-          </div>
-          
-          <!-- ASN前缀列表 -->
-          <div class="asn-prefixes" v-if="selectedAsn.prefixes && selectedAsn.prefixes.length">
-            <h4>IPv6前缀</h4>
-            <ul>
-              <li v-for="prefix in selectedAsn.prefixes" :key="prefix.prefix_id">
-                <span class="prefix-value">{{ prefix.prefix }}/{{ prefix.prefix_length }}</span>
-                <span class="prefix-info">{{ prefix.allocation_date ? formatDate(prefix.allocation_date) : '未知日期' }}</span>
-              </li>
-            </ul>
-          </div>
-          
-          <div class="detail-actions">
-            <button @click="viewAsnDetails(selectedAsn)" class="detail-btn">查看完整详情</button>
-          </div>
-        </div>
-      </div>
-    </div>
       
       <!-- 搜索结果 -->
       <div v-if="searchResults.length > 0" class="search-results">
@@ -505,7 +502,6 @@ const handleDataLoadError = (error) => {
 }
 
 // 执行搜索
-// 执行搜索
 const performSearch = async () => {
   if (!searchQuery.value.trim()) return;
   
@@ -518,6 +514,9 @@ const performSearch = async () => {
       previousLabelState.value = globeMap.value.getLabelVisibility();
       globeMap.value.setLabelVisibility(false);
     }
+    
+    // {{ edit_1 }} 显示搜索中状态
+    searchMessage.value = '搜索中...';
     
     const response = await detectionStore.searchIPv6Data(searchQuery.value);
     
@@ -580,33 +579,61 @@ const performSearch = async () => {
     }
   } catch (error) {
     console.error('搜索失败:', error);
+    // {{ edit_2 }} 改进错误提示
     searchMessage.value = '搜索失败: ' + (error.message || '未知错误');
+    searchResults.value = []; // 确保清空结果
   }
 }
 // 添加转换搜索结果的函数
 const convertSearchResult = (item) => {
+  // 添加日志，查看原始搜索结果
+  console.log("转换搜索结果:", item);
+  
+  if (!item || typeof item !== 'object') {
+    console.error("无效的搜索结果项:", item);
+    return null;
+  }
+  
   if (item.type === 'country') {
+    // 确保country_id存在
+    if (!item.country_id) {
+      console.error("搜索结果中缺少country_id:", item);
+      return null;
+    }
+    
     return {
       id: item.country_id,
       type: '国家',
       name: item.country_name_zh || item.country_name,
-      count: item.total_active_ipv6,
+      count: item.total_active_ipv6 || 0,
       data: item
     }
   } else if (item.type === 'asn') {
+    // 确保asn存在
+    if (!item.asn) {
+      console.error("搜索结果中缺少asn:", item);
+      return null;
+    }
+    
     return {
       id: item.asn,
       type: 'ASN',
-      name: item.as_name_zh || item.as_name,
-      count: item.total_active_ipv6,
+      name: item.as_name_zh || item.as_name || `AS${item.asn}`,
+      count: item.total_active_ipv6 || 0,
       data: item
     }
   } else if (item.type === 'prefix') {
+    // 确保prefix存在
+    if (!item.prefix) {
+      console.error("搜索结果中缺少prefix:", item);
+      return null;
+    }
+    
     return {
-      id: item.prefix_id,
+      id: item.prefix_id || item.prefix,
       type: '前缀',
       name: item.prefix + '/' + (item.prefix_length || ''),
-      count: item.active_addresses_count,
+      count: item.active_addresses_count || 0,
       data: item
     }
   }
@@ -614,29 +641,56 @@ const convertSearchResult = (item) => {
 }
 
 
-
 // 选择搜索结果
 const selectSearchResult = async (result) => {
   try {
     // 保存当前标签状态
     if (globeMap.value) {
-          previousLabelState.value = globeMap.value.getLabelVisibility()
-          // 隐藏标签
-          globeMap.value.setLabelVisibility(false)
-        }
+      previousLabelState.value = globeMap.value.getLabelVisibility();
+      // 隐藏标签
+      globeMap.value.setLabelVisibility(false);
+    }
+
+    // 确保在处理前重置视图状态
+    isZoomedIn.value = true; // 设置为放大状态，这样详情面板才会显示
 
     if (result.type === '国家') {
       // 处理国家搜索结果
-      const countryDetail = await detectionStore.fetchCountryDetail(result.data.country_id);
-      if (countryDetail) {
-        handleCountrySelect(countryDetail);
-      } else {
-        handleCountrySelect(result.data);
+      console.log("处理国家搜索结果:", result.data); // 添加日志，查看搜索结果数据
+      
+      // 确保country_id存在
+      if (!result.data.country_id) {
+        console.error("搜索结果中缺少country_id:", result.data);
+        return;
       }
-    } else if (result.type === 'ASN') {
+      
+      // 修改：使用handleCountrySelect函数处理国家选择，保持一致的逻辑
+      handleCountrySelect(result.data);
+      
+      // 确保地图放大到选中的国家
+      if (globeMap.value) {
+        globeMap.value.flyToCountry(result.data.country_id);
+      }
+    }else if (result.type === 'ASN') {
       // 处理ASN搜索结果
       const asnDetail = await detectionStore.fetchAsnDetail(result.data.asn);
-      if (asnDetail) {
+      if (asnDetail && asnDetail.asn) {
+        // 确保ASN数据格式正确
+        const formattedAsn = {
+          asn: asnDetail.asn.asn,
+          as_name: asnDetail.asn.as_name,
+          as_name_zh: asnDetail.asn.as_name_zh,
+          organization: asnDetail.asn.organization,
+          country_id: asnDetail.asn.country_id,
+          country_name: asnDetail.asn.country_name,
+          country_name_zh: asnDetail.asn.country_name_zh,
+          total_ipv6_prefixes: asnDetail.asn.total_ipv6_prefixes,
+          total_active_ipv6: asnDetail.asn.total_active_ipv6,
+          prefixes: asnDetail.prefixes || []
+        };
+        handleAsnSelect(formattedAsn);
+      } else if (asnDetail) {
+        // 处理可能的不同响应格式
         handleAsnSelect(asnDetail);
       } else {
         handleAsnSelect(result.data);
@@ -648,14 +702,38 @@ const selectSearchResult = async (result) => {
         const countryDetail = await detectionStore.fetchCountryDetail(result.data.country_id);
         if (countryDetail) {
           handleCountrySelect(countryDetail);
+          
+          // 确保地图放大到选中的国家
+          if (globeMap.value) {
+            globeMap.value.flyToCountry(result.data.country_id);
+            // 移除不存在的方法调用
+            // globeMap.value.highlightCountry(result.data.country_id);
+          }
         }
       }
       
       // 如果前缀有关联的ASN，也显示ASN
       if (result.data.asn) {
         const asnDetail = await detectionStore.fetchAsnDetail(result.data.asn);
-        if (asnDetail) {
+        if (asnDetail && asnDetail.asn) {
+          // 确保ASN数据格式正确
+          const formattedAsn = {
+            asn: asnDetail.asn.asn,
+            as_name: asnDetail.asn.as_name,
+            as_name_zh: asnDetail.asn.as_name_zh,
+            organization: asnDetail.asn.organization,
+            country_id: asnDetail.asn.country_id,
+            country_name: asnDetail.asn.country_name,
+            country_name_zh: asnDetail.asn.country_name_zh,
+            total_ipv6_prefixes: asnDetail.asn.total_ipv6_prefixes,
+            total_active_ipv6: asnDetail.asn.total_active_ipv6,
+            prefixes: asnDetail.prefixes || []
+          };
+          handleAsnSelect(formattedAsn);
+        } else if (asnDetail) {
           handleAsnSelect(asnDetail);
+        } else {
+          handleAsnSelect(result.data);
         }
       }
     }
@@ -664,6 +742,7 @@ const selectSearchResult = async (result) => {
     clearSearchResults();
   } catch (error) {
     console.error('处理搜索结果失败:', error);
+    searchMessage.value = '处理搜索结果失败: ' + (error.message || '未知错误');
   }
 }
 
@@ -696,12 +775,59 @@ const handlePageClick = (event) => {
 }
 
 // 处理国家选择
-const handleCountrySelect = (country) => {
-  selectedCountry.value = country
+const handleCountrySelect = async (country) => {
+  if (!country) return;
+  
+  // 先设置基本信息，让UI立即响应
+  selectedCountry.value = country;
+  
+  // 确保ASN详情面板不显示
+  showAsnDetails.value = false;
   selectedAsn.value = null
   
   // 选择国家时暂停滚动
   pauseCountryScroll()
+  
+  // 获取更详细的国家信息，包括ASN数量和前缀数量
+  try {
+    const countryDetail = await detectionStore.fetchCountryDetail(country.country_id);
+    console.log("获取到的国家详情:", countryDetail); // 添加日志，查看API返回的数据结构
+    
+    if (countryDetail) {
+      // 更新国家详情，保留原有信息，添加新获取的信息
+      let asnCount = 0;
+      let prefixCount = 0;
+      
+      // 尝试从不同的数据结构中获取ASN数量
+      if (countryDetail.country && countryDetail.country.asn_count !== undefined) {
+        asnCount = countryDetail.country.asn_count;
+      } else if (countryDetail.asns) {
+        asnCount = countryDetail.asns.length;
+      }
+      
+      // 尝试从不同的数据结构中获取前缀数量
+      if (countryDetail.country && countryDetail.country.prefix_count !== undefined) {
+        prefixCount = countryDetail.country.prefix_count;
+      } else if (countryDetail.prefixes) {
+        prefixCount = countryDetail.prefixes.length;
+      } else if (countryDetail.asns) {
+        // 如果有ASN数据，尝试计算所有ASN的前缀总数
+        prefixCount = countryDetail.asns.reduce((total, asn) => {
+          return total + (asn.total_ipv6_prefixes || 0);
+        }, 0);
+      }
+      
+      selectedCountry.value = {
+        ...selectedCountry.value,
+        asn_count: asnCount,
+        prefix_count: prefixCount
+      };
+      
+      console.log("更新后的国家详情:", selectedCountry.value);
+    }
+  } catch (error) {
+    console.error("获取国家详情失败:", error);
+  }
   
   if (globeMap.value) {
     globeMap.value.flyToCountry(country.country_id)
@@ -720,6 +846,22 @@ const handleAsnSelect = async (asn) => {
   showAsnDetails.value = true;
   isZoomedIn.value = true;
   
+  // {{ edit_2 }}
+  // 获取ASN的详细信息，包括前缀列表
+  try {
+    const asnDetail = await detectionStore.fetchAsnDetail(asn.asn);
+    if (asnDetail && asnDetail.asn) {
+      // 更新ASN详情，添加前缀列表
+      selectedAsn.value = {
+        ...selectedAsn.value,
+        prefixes: asnDetail.prefixes || []
+      };
+      console.log("更新后的ASN详情:", selectedAsn.value);
+    }
+  } catch (error) {
+    console.error("获取ASN详情失败:", error);
+  }
+  
   // 如果有国家信息，同时选中该国家并放大显示
   if (asn.country_id) {
     // 查找对应的国家
@@ -733,21 +875,9 @@ const handleAsnSelect = async (asn) => {
       }
     }
   }
-  
-  // 加载ASN详细信息
-  try {
-    const response = await axios.get(`/api/addresses/asns/${asn.asn}`);
-    if (response.data.success) {
-      // 更新ASN详细信息
-      Object.assign(selectedAsn.value, response.data.data);
-    }
-  } catch (error) {
-    console.error('获取ASN详情失败:', error);
-  }
-  
-  // 关闭搜索结果
-  searchResults.value = [];
-};
+}
+
+
 // 关闭ASN详情面板
 const closeAsnDetails = () => {
   showAsnDetails.value = false;
@@ -772,15 +902,28 @@ const handleZoomChanged = (data) => {
   }
 }
 
-// 查看国家详情
-const viewCountryDetails = (country) => {
-  router.push(`/detection/country/${country.country_id}`)
+// 添加跳转到高级查询页面的方法
+const goToAdvancedQuery = () => {
+  router.push({ name: 'advancedQuery' });
 }
 
-// 查看ASN详情
-const viewAsnDetails = (asn) => {
-  router.push(`/detection/asn/${asn.asn}`)
+//国家详细页面
+const viewFullCountryDetails = (country) => {
+  router.push({ 
+    name: 'advancedQuery', 
+    query: { type: 'country', countryId: country.country_id } // 修改为使用query参数
+  });
 }
+
+//ASN详细页面
+const viewFullAsnDetails = (asn) => {
+  router.push({ 
+    name: 'advancedQuery', 
+    query: { type: 'asn', asn: asn.asn } // 修改为使用query参数
+  });
+}
+
+
 
 // 重置视图
 const resetView = () => {
@@ -1236,6 +1379,12 @@ onMounted(() => {
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.2s;
+}
+
+.ranking-item:hover {
+  background: rgba(79, 195, 247, 0.15);
+  transform: translateX(3px); /* 轻微的位移效果 */
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.3);
 }
 
 .ranking-item .rank {
@@ -1808,24 +1957,39 @@ onMounted(() => {
 }
 
 .name-container {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  flex: 1;
-  margin: 0 5px;
-  margin-left: 0; /* 减少左侧间距，使内容更紧凑 */
+  min-width: 0; /* 允许子元素收缩 */
+  margin-right: 10px; /* 增加与数值的间距 */
 }
 
+/* 确保ASN名称可以被截断 */
 .name-container .name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
+  width: 100%;
 }
 
 .name-container .asn-id {
   font-size: 0.7rem;
   color: #90caf9;
   margin-left: 37px; /* 与图标对齐 */
+}
+
+.query-btn {
+  padding: 6px 12px;
+  background: rgba(79, 195, 247, 0.3);
+  border: 1px solid rgba(79, 195, 247, 0.5);
+  border-radius: 4px;
+  color: #e0e0e0;
+  cursor: pointer;
+  margin-right: 10px;
+  transition: all 0.2s;
+}
+
+.query-btn:hover {
+  background: rgba(79, 195, 247, 0.5);
 }
 </style>

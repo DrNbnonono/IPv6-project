@@ -7,6 +7,7 @@ const addressRouter = require('./routes/address');
 const xmapRouter = require('./routes/xmap');
 const authRouter = require('./routes/auth');
 const docRouter = require('./routes/doc')
+const databaseRoutes = require('./routes/database'); 
 dotenv.config();
 
 const app = express();
@@ -21,6 +22,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/api/addresses', addressRouter);
 app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/database', databaseRoutes);
 
 app.use(cors({
   origin: 'http://localhost:5173', // 前端实际运行的端口地址

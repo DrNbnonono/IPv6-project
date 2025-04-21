@@ -15,4 +15,12 @@ router.get('/search', addressController.searchIPv6);
 // 需要认证的路由
 router.get('/addresses/:addressId', authenticate, addressController.getAddressDetail);
 
+// 通用搜索
+router.get('/search', addressController.searchIPv6);
+
+// 获取全球统计
+router.get('/global-stats', addressController.getGlobalStats);
+router.get('/addresses/global-stats', addressController.getGlobalStats);
+
+
 module.exports = router;

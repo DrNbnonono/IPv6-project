@@ -10,6 +10,11 @@ export const useDetectionStore = defineStore('detection', () => {
   const isLoading = ref(false)
   const error = ref(null)
 
+  const globalStats = ref(null)
+  const selectedCountry = ref(null)
+  const selectedAsn = ref(null)
+  const selectedPrefix = ref(null)
+
   const fetchMapData = async () => {
     try {
       isLoading.value = true
@@ -117,7 +122,45 @@ export const useDetectionStore = defineStore('detection', () => {
     }
   }
 
+  // 获取前缀详情
+  const fetchPrefixDetail = async (prefixId) => {
+    try {
+      isLoading.value = true
+      error.value = null
+      const response = await api.detection.getPrefixDetail(prefixId)
+      selectedPrefix.value = response.data
+      return response.data
+    } catch (err) {
+      error.value = err.message || `获取前缀 ${prefixId} 详情失败`
+      console.error(`获取前缀 ${prefixId} 详情失败:`, err)
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 获取全球统计数据
+  const fetchGlobalStats = async () => {
+    try {
+      isLoading.value = true
+      error.value = null
+      const response = await api.detection.getGlobalStats()
+      globalStats.value = response.data
+      return response.data
+    } catch (err) {
+      error.value = err.message || '获取全球统计数据失败'
+      console.error('获取全球统计数据失败:', err)
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
+  globalStats,
+  selectedCountry,
+  selectedAsn,
+  selectedPrefix,
   countries,
   asns,
   countryRanking,
@@ -129,6 +172,8 @@ export const useDetectionStore = defineStore('detection', () => {
   fetchAsnRanking,
   fetchCountryDetail,
   fetchAsnDetail,
-  searchIPv6Data
+  searchIPv6Data,
+  fetchPrefixDetail,
+  fetchGlobalStats
 }
 })

@@ -266,7 +266,7 @@ const goToDetectionPlatform = () => {
 
 // 工具列表 - 未来可以扩展
 const availableTools = ref([
-  { path: '/tools/database', name: '数据库管理', icon: 'icon-database'},
+  { path: '/tools/database', name: 'database', icon: 'icon-database'},
   { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
   { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
   { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
@@ -588,7 +588,7 @@ onMounted(() => {
 .tools-container {
   display: flex;
   flex: 1;
-  max-width: 1800px;
+  max-width: 1400px;
   margin: 0 auto;
   width: 100%;
   padding: 0 1rem;

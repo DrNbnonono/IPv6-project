@@ -1,5 +1,5 @@
 -- 插入接口标识符类型数据
-INSERT INTO address_types (type_name, description, is_risky, example) VALUES
+INSERT IGNORE INTO address_types (type_name, description, is_risky, example) VALUES
 ('ieee', '基于IEEE EUI-64标准生成的IID', FALSE, '::200:5eff:fe12:3456'),
 ('isatap', 'ISATAP隧道接口标识符', FALSE, '::0:5efe:192.168.1.1'),
 ('ipv4-32', '嵌入32位IPv4地址的IID', TRUE, '::192.168.1.1'),

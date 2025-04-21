@@ -9,6 +9,7 @@ const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue
 const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 const Zgrab2DashboardView = () => import('@/views/tools/zgrab2/Zgrab2DashboardView.vue')
 const Zgrab2HelpView = () => import('@/views/tools/zgrab2/Zgrab2HelpView.vue')
+const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 
 const routes = [
   {
@@ -45,6 +46,16 @@ const routes = [
         component: Zgrab2DashboardView,
         meta: { title: 'Zgrab2' }
       },
+      {
+        path: '/tools/database',
+        name: 'database',
+        component: () => import('@/views/tools/database/DatabaseManagementView.vue'),
+        meta: {
+          requiresAuth: true,
+          adminOnly: true,
+          title: '数据库管理'
+        }
+      },
     ]
   },
   {
@@ -59,14 +70,14 @@ const routes = [
     component: Zgrab2HelpView,
     meta: { requiresAuth: true }
   },
+ 
   {
-    path: '/tools/database',
-    name: 'database',
-    component: () => import('@/views/tools/database/DatabaseManagementView.vue'),
+    path: '/detection/query',
+    name: 'advancedQuery',
+    component: AdvancedQueryView,
     meta: {
-      requiresAuth: true,
-      adminOnly: true,
-      title: '数据库管理'
+      requiresAuth: false,
+      title: 'IPv6高级查询'
     }
   },
   

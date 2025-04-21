@@ -1,3 +1,6 @@
+-- 使用现有的ipv6_project数据库
+USE ipv6_project;
+
 -- 创建存储过程：批量导入IPv6地址
 DELIMITER //
 CREATE PROCEDURE batch_import_ipv6_addresses(
@@ -18,7 +21,8 @@ BEGIN
         GET DIAGNOSTICS CONDITION 1
         v_error_msg = MESSAGE_TEXT;
         ROLLBACK;
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = CONCAT('导入失败: ', v_error_msg);
+        SET @error_message = CONCAT('导入失败:', v_error_msg);
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = @error_message;
     END;
     
     -- 初始化计数器
@@ -45,8 +49,8 @@ BEGIN
     
     IF v_prefix_id IS NULL THEN
         -- 创建新前缀
-        INSERT INTO ip_prefixes (prefix, country_id, asn, version)
-        VALUES (p_prefix, p_country_id, p_asn, '6');
+        INSERT INTO ip_prefixes (prefix, country_id, asn, version, prefix_length)
+        VALUES (p_prefix, p_country_id, p_asn, '6', SUBSTRING_INDEX(p_prefix, '/', -1));
         
         SET v_prefix_id = LAST_INSERT_ID();
     END IF;
@@ -61,14 +65,15 @@ BEGIN
     -- 注意：实际导入数据时，需要通过应用程序将文件内容插入到临时表中
     -- 这里仅展示存储过程的逻辑
     
-    -- 处理临时表中的地址
-    INSERT INTO active_addresses (address, version, prefix_id, first_seen, last_seen)
+    -- 处理临时表中的地址，设置默认IID类型为random
+    INSERT INTO active_addresses (address, version, prefix_id, first_seen, last_seen, iid_type)
     SELECT 
         a.address, 
         '6', 
         v_prefix_id, 
         NOW(), 
-        NOW()
+        NOW(),
+        (SELECT type_id FROM address_types WHERE type_name = 'random' LIMIT 1)
     FROM 
         temp_addresses a
     LEFT JOIN 
@@ -122,20 +127,16 @@ BEGIN
 END //
 DELIMITER ;
 
--- 删除存储过程（如需删除）
---DROP PROCEDURE IF EXISTS batch_import_ipv6_addresses;
-
--- 创建触发器：地址漏洞关联后更新统计
+-- 修改触发器：地址漏洞关联后更新统计（移除日志记录）
 DELIMITER //
 CREATE TRIGGER after_vulnerability_insert
 AFTER INSERT ON address_vulnerabilities
 FOR EACH ROW
 BEGIN
     DECLARE v_country_id CHAR(2);
-    DECLARE v_address VARCHAR(128);
     
     -- 获取地址所属国家
-    SELECT ip.country_id, aa.address INTO v_country_id, v_address
+    SELECT ip.country_id INTO v_country_id
     FROM active_addresses aa
     JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
     WHERE aa.address_id = NEW.address_id;
@@ -170,29 +171,21 @@ BEGIN
         affected_addresses = VALUES(affected_addresses),
         percentage = VALUES(percentage),
         last_updated = NOW();
-        
-    -- 记录漏洞发现日志
-    INSERT INTO vulnerability_logs 
-        (address, vulnerability_id, action, action_time, details)
-    VALUES 
-        (v_address, NEW.vulnerability_id, 'discovered', NOW(), 
-         CONCAT('发现地址 ', v_address, ' 存在漏洞ID: ', NEW.vulnerability_id));
 END //
 DELIMITER ;
 
--- 创建触发器：地址漏洞修复后更新统计
+-- 修改触发器：地址漏洞修复后更新统计（移除日志记录）
 DELIMITER //
 CREATE TRIGGER after_vulnerability_update
 AFTER UPDATE ON address_vulnerabilities
 FOR EACH ROW
 BEGIN
     DECLARE v_country_id CHAR(2);
-    DECLARE v_address VARCHAR(128);
     
     -- 仅在修复状态变更时处理
     IF NEW.is_fixed != OLD.is_fixed THEN
         -- 获取地址所属国家
-        SELECT ip.country_id, aa.address INTO v_country_id, v_address
+        SELECT ip.country_id INTO v_country_id
         FROM active_addresses aa
         JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
         WHERE aa.address_id = NEW.address_id;
@@ -227,22 +220,61 @@ BEGIN
         WHERE 
             country_id = v_country_id AND
             vulnerability_id = NEW.vulnerability_id;
-            
-        -- 记录漏洞修复日志
-        IF NEW.is_fixed = 1 THEN
-            INSERT INTO vulnerability_logs 
-                (address, vulnerability_id, action, action_time, details)
-            VALUES 
-                (v_address, NEW.vulnerability_id, 'fixed', NOW(), 
-                 CONCAT('修复地址 ', v_address, ' 的漏洞ID: ', NEW.vulnerability_id));
-        END IF;
     END IF;
 END //
 DELIMITER ;
 
--- 删除触发器（如需删除）
---DROP TRIGGER IF EXISTS after_vulnerability_insert;
---DROP TRIGGER IF EXISTS after_vulnerability_update;
+-- 创建存储过程：批量更新IPv6地址漏洞信息
+DELIMITER //
+CREATE PROCEDURE update_vulnerability_status(
+    IN p_vulnerability_id INT,
+    IN p_country_id CHAR(2),
+    IN p_asn INT,
+    IN p_is_fixed TINYINT,
+    OUT p_affected_rows INT
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '更新漏洞状态失败';
+    END;
+    
+    START TRANSACTION;
+    
+    -- 创建临时表存储需要更新的地址ID
+    -- 只选择临时表中存在的地址
+    CREATE TEMPORARY TABLE IF NOT EXISTS temp_update_addresses AS
+    SELECT aa.address_id
+    FROM active_addresses aa
+    JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+    JOIN temp_address_list tal ON aa.address = tal.address
+    WHERE (p_country_id IS NULL OR ip.country_id = p_country_id)
+      AND (p_asn IS NULL OR ip.asn = p_asn);
+    
+    -- 更新或插入漏洞记录
+    INSERT INTO address_vulnerabilities (address_id, vulnerability_id, is_fixed, detection_date, last_detected)
+    SELECT 
+        ta.address_id,
+        p_vulnerability_id,
+        p_is_fixed,
+        NOW(),
+        NOW()
+    FROM 
+        temp_update_addresses ta
+    ON DUPLICATE KEY UPDATE
+        is_fixed = p_is_fixed,
+        last_detected = NOW();
+    
+    -- 获取受影响的行数
+    SET p_affected_rows = ROW_COUNT();
+    
+    -- 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS temp_update_addresses;
+    
+    COMMIT;
+END //
+DELIMITER ;
 
 -- 创建存储过程：批量更新IPv6地址协议支持
 DELIMITER //
@@ -250,38 +282,75 @@ CREATE PROCEDURE update_protocol_support(
     IN p_protocol_id INT,
     IN p_country_id CHAR(2),
     IN p_asn INT,
+    IN p_port INT,
     IN p_is_supported TINYINT,
     OUT p_affected_rows INT
 )
 BEGIN
+    DECLARE v_count INT;
+    DECLARE v_protocol_exists INT;
+    
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '更新协议支持状态失败';
     END;
     
+    -- 验证必要参数
+    IF p_protocol_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '缺少协议ID';
+    END IF;
+    
+    -- 检查协议是否存在
+    SELECT COUNT(*) INTO v_protocol_exists FROM protocols WHERE protocol_id = p_protocol_id;
+    IF v_protocol_exists = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '指定的协议ID不存在';
+    END IF;
+    
+    -- 验证至少有一个筛选条件
+    IF p_country_id IS NULL AND p_asn IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '至少需要提供一个筛选条件(国家ID或ASN)';
+    END IF;
+    
     START TRANSACTION;
     
     -- 创建临时表存储需要更新的地址ID
-    CREATE TEMPORARY TABLE temp_addresses AS
+    -- 只选择临时表中存在的地址
+    CREATE TEMPORARY TABLE IF NOT EXISTS temp_update_addresses AS
     SELECT aa.address_id
     FROM active_addresses aa
     JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+    JOIN temp_address_list tal ON aa.address = tal.address
     WHERE (p_country_id IS NULL OR ip.country_id = p_country_id)
       AND (p_asn IS NULL OR ip.asn = p_asn);
     
+    -- 检查是否有符合条件的地址
+    SELECT COUNT(*) INTO v_count FROM temp_update_addresses;
+    
+    IF v_count = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '没有找到符合条件的地址';
+    END IF;
+    
     -- 更新或插入协议支持记录
-    INSERT INTO address_protocols (address_id, protocol_id, is_supported, last_checked)
-    SELECT 
-        ta.address_id,
-        p_protocol_id,
-        p_is_supported,
-        NOW()
-    FROM 
-        temp_addresses ta
-    ON DUPLICATE KEY UPDATE
-        is_supported = p_is_supported,
-        last_checked = NOW();
+    IF p_is_supported = 1 THEN
+        INSERT INTO address_protocols (address_id, protocol_id, port, first_seen, last_seen)
+        SELECT 
+            ta.address_id,
+            p_protocol_id,
+            IFNULL(p_port, (SELECT protocol_number FROM protocols WHERE protocol_id = p_protocol_id)),
+            NOW(),
+            NOW()
+        FROM 
+            temp_update_addresses ta
+        ON DUPLICATE KEY UPDATE
+            last_seen = NOW();
+    ELSE
+        -- 移除协议支持
+        DELETE FROM address_protocols
+        WHERE address_id IN (SELECT address_id FROM temp_update_addresses)
+          AND protocol_id = p_protocol_id
+          AND (p_port IS NULL OR port = p_port);
+    END IF;
     
     -- 获取受影响的行数
     SET p_affected_rows = ROW_COUNT();
@@ -290,7 +359,7 @@ BEGIN
     IF p_country_id IS NOT NULL THEN
         -- 更新或插入国家协议统计
         INSERT INTO country_protocol_stats 
-            (country_id, protocol_id, supported_addresses, percentage, last_updated)
+            (country_id, protocol_id, address_count, percentage, last_updated)
         SELECT 
             p_country_id,
             p_protocol_id,
@@ -310,25 +379,21 @@ BEGIN
             ip_prefixes ip ON aa.prefix_id = ip.prefix_id
         WHERE 
             ip.country_id = p_country_id AND
-            ap.protocol_id = p_protocol_id AND
-            ap.is_supported = 1
+            ap.protocol_id = p_protocol_id
         GROUP BY 
             ip.country_id, ap.protocol_id
         ON DUPLICATE KEY UPDATE
-            supported_addresses = VALUES(supported_addresses),
+            address_count = VALUES(address_count),
             percentage = VALUES(percentage),
             last_updated = NOW();
     END IF;
     
     -- 清理临时表
-    DROP TEMPORARY TABLE temp_addresses;
+    DROP TEMPORARY TABLE IF EXISTS temp_update_addresses;
     
     COMMIT;
 END //
 DELIMITER ;
-
--- 删除存储过程（如需删除）
---DROP PROCEDURE IF EXISTS update_protocol_support;
 
 -- 创建IPv6地址详情视图
 CREATE OR REPLACE VIEW ipv6_address_details_view AS
@@ -340,6 +405,7 @@ SELECT
     aa.last_seen,
     aa.uptime_percentage,
     aa.iid_type,
+    at.type_name AS iid_type_name,
     ip.prefix_id,
     ip.prefix,
     ip.asn,
@@ -350,27 +416,27 @@ SELECT
     c.country_name_zh,
     c.region,
     c.subregion,
-    GROUP_CONCAT(DISTINCT vt.vulnerability_name ORDER BY vt.vulnerability_id SEPARATOR ', ') AS vulnerabilities,
-    SUM(CASE WHEN av.is_fixed = 0 THEN 1 ELSE 0 END) AS unfixed_vulnerabilities_count,
-    GROUP_CONCAT(DISTINCT pt.protocol_name ORDER BY pt.protocol_id SEPARATOR ', ') AS supported_protocols
+    (
+        SELECT GROUP_CONCAT(p.protocol_name)
+        FROM address_protocols ap
+        JOIN protocols p ON ap.protocol_id = p.protocol_id
+        WHERE ap.address_id = aa.address_id
+    ) AS supported_protocols,
+    (
+        SELECT COUNT(*)
+        FROM address_vulnerabilities av
+        WHERE av.address_id = aa.address_id AND av.is_fixed = 0
+    ) AS open_vulnerabilities
 FROM 
     active_addresses aa
-JOIN 
+LEFT JOIN 
     ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-JOIN 
-    countries c ON ip.country_id = c.country_id
-JOIN 
+LEFT JOIN 
     asns a ON ip.asn = a.asn
 LEFT JOIN 
-    address_vulnerabilities av ON aa.address_id = av.address_id
+    countries c ON ip.country_id = c.country_id
 LEFT JOIN 
-    vulnerability_types vt ON av.vulnerability_id = vt.vulnerability_id
-LEFT JOIN 
-    address_protocols ap ON aa.address_id = ap.address_id AND ap.is_supported = 1
-LEFT JOIN 
-    protocol_types pt ON ap.protocol_id = pt.protocol_id
-GROUP BY 
-    aa.address_id;
+    address_types at ON aa.iid_type = at.type_id;
 
 -- 创建国家IPv6统计视图
 CREATE OR REPLACE VIEW country_ipv6_stats_view AS
@@ -382,69 +448,98 @@ SELECT
     c.subregion,
     c.total_ipv6_prefixes,
     c.total_active_ipv6,
-    COUNT(DISTINCT ip.asn) AS asn_count,
-    GROUP_CONCAT(DISTINCT a.as_name ORDER BY a.total_active_ipv6 DESC LIMIT 5 SEPARATOR ', ') AS top_asns,
-    (SELECT COUNT(*) FROM address_vulnerabilities av 
-     JOIN active_addresses aa ON av.address_id = aa.address_id
-     JOIN ip_prefixes ip2 ON aa.prefix_id = ip2.prefix_id
-     WHERE ip2.country_id = c.country_id AND av.is_fixed = 0) AS total_vulnerabilities,
+    (
+        SELECT GROUP_CONCAT(DISTINCT a.asn)
+        FROM (
+            SELECT a.asn
+            FROM asns a
+            WHERE a.country_id = c.country_id
+            ORDER BY a.total_active_ipv6 DESC
+            LIMIT 5
+        ) AS a
+    ) AS top_asns,
+    (
+        SELECT COUNT(*) 
+        FROM address_vulnerabilities av
+        JOIN active_addresses aa ON av.address_id = aa.address_id
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ip.country_id = c.country_id AND av.is_fixed = 0
+    ) AS total_vulnerabilities,
+    (
+        SELECT COUNT(DISTINCT protocol_id) 
+        FROM country_protocol_stats
+        WHERE country_id = c.country_id
+    ) AS supported_protocols,
     c.last_updated
 FROM 
-    countries c
-LEFT JOIN 
-    ip_prefixes ip ON c.country_id = ip.country_id
-LEFT JOIN 
-    asns a ON ip.asn = a.asn
-GROUP BY 
-    c.country_id;
+    countries c;
 
 -- 创建协议支持统计视图
 CREATE OR REPLACE VIEW protocol_support_stats_view AS
 SELECT 
-    pt.protocol_id,
-    pt.protocol_name,
-    pt.protocol_description,
-    COUNT(DISTINCT ap.address_id) AS supported_addresses,
-    COUNT(DISTINCT ip.country_id) AS supported_countries,
-    COUNT(DISTINCT ip.asn) AS supported_asns,
-    ROUND(COUNT(DISTINCT ap.address_id) * 100.0 / (SELECT COUNT(*) FROM active_addresses), 2) AS global_percentage
+    p.protocol_id,
+    p.protocol_name,
+    p.protocol_number,
+    p.description,
+    p.risk_level,
+    (
+        SELECT COUNT(*) 
+        FROM address_protocols ap
+        WHERE ap.protocol_id = p.protocol_id
+    ) AS total_addresses,
+    (
+        SELECT COUNT(DISTINCT ip.country_id)
+        FROM address_protocols ap
+        JOIN active_addresses aa ON ap.address_id = aa.address_id
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ap.protocol_id = p.protocol_id
+    ) AS countries_count,
+    (
+        SELECT GROUP_CONCAT(DISTINCT c.country_name)
+        FROM (
+            SELECT c.country_name, cps.address_count
+            FROM country_protocol_stats cps
+            JOIN countries c ON cps.country_id = c.country_id
+            WHERE cps.protocol_id = p.protocol_id
+            ORDER BY cps.address_count DESC
+            LIMIT 5
+        ) AS c
+    ) AS top_countries
 FROM 
-    protocol_types pt
-LEFT JOIN 
-    address_protocols ap ON pt.protocol_id = ap.protocol_id AND ap.is_supported = 1
-LEFT JOIN 
-    active_addresses aa ON ap.address_id = aa.address_id
-LEFT JOIN 
-    ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-GROUP BY 
-    pt.protocol_id;
+    protocols p;
 
 -- 创建漏洞统计视图
 CREATE OR REPLACE VIEW vulnerability_stats_view AS
 SELECT 
-    vt.vulnerability_id,
-    vt.vulnerability_name,
-    vt.vulnerability_description,
-    vt.severity,
-    COUNT(DISTINCT av.address_id) AS affected_addresses,
-    SUM(CASE WHEN av.is_fixed = 1 THEN 1 ELSE 0 END) AS fixed_addresses,
-    ROUND(SUM(CASE WHEN av.is_fixed = 1 THEN 1 ELSE 0 END) * 100.0 / 
-          NULLIF(COUNT(DISTINCT av.address_id), 0), 2) AS fixed_percentage,
-    COUNT(DISTINCT ip.country_id) AS affected_countries,
-    COUNT(DISTINCT ip.asn) AS affected_asns
+    v.vulnerability_id,
+    v.cve_id,
+    v.name,
+    v.severity,
+    v.affected_protocols,
+    (
+        SELECT COUNT(*) 
+        FROM address_vulnerabilities av
+        WHERE av.vulnerability_id = v.vulnerability_id AND av.is_fixed = 0
+    ) AS affected_addresses,
+    (
+        SELECT COUNT(DISTINCT ip.country_id)
+        FROM address_vulnerabilities av
+        JOIN active_addresses aa ON av.address_id = aa.address_id
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE av.vulnerability_id = v.vulnerability_id AND av.is_fixed = 0
+    ) AS affected_countries,
+    (
+        SELECT GROUP_CONCAT(DISTINCT c.country_name)
+        FROM (
+            SELECT c.country_name, cvs.affected_addresses
+            FROM country_vulnerability_stats cvs
+            JOIN countries c ON cvs.country_id = c.country_id
+            WHERE cvs.vulnerability_id = v.vulnerability_id
+            ORDER BY cvs.affected_addresses DESC
+            LIMIT 5
+        ) AS c
+    ) AS top_affected_countries,
+    v.published_date,
+    v.last_updated
 FROM 
-    vulnerability_types vt
-LEFT JOIN 
-    address_vulnerabilities av ON vt.vulnerability_id = av.vulnerability_id
-LEFT JOIN 
-    active_addresses aa ON av.address_id = aa.address_id
-LEFT JOIN 
-    ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-GROUP BY 
-    vt.vulnerability_id;
-
--- 删除视图（如需删除）
---DROP VIEW IF EXISTS ipv6_address_details_view;
---DROP VIEW IF EXISTS country_ipv6_stats_view;
---DROP VIEW IF EXISTS protocol_support_stats_view;
---DROP VIEW IF EXISTS vulnerability_stats_view;
+    vulnerabilities v;

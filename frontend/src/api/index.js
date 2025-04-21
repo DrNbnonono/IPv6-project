@@ -139,7 +139,7 @@ export default {
     getTaskProgress(taskId) {
       return apiClient.get(`/zgrab2/${taskId}/progress`);
     },
-},
+  },
   
   // 探测平台相关 API
   detection: {
@@ -161,7 +161,20 @@ export default {
     searchIPv6(query) {
       return apiClient.get('/addresses/search', { params: { query } });
     },
+    // 通用搜索
+    search(query) {
+      return apiClient.get('/addresses/search', { params: { query } });
+    },
 
+    // 获取全球统计
+    getGlobalStats(params = {}) {
+      return apiClient.get('/addresses/global-stats', { params });
+    },
+
+    // 前缀相关API
+    getPrefixDetail(prefixId) {
+      return apiClient.get(`/addresses/prefixes/${prefixId}`);
+    },
   },
 
   // 文档相关 API
@@ -179,39 +192,49 @@ export default {
 
   // 数据库管理API
   database: {
-    // 获取数据库统计信息
     getStats() {
-      return apiClient.get('/admin/database/stats');
+      return apiClient.get('/database/stats');
     },
-    
-    // 批量导入IPv6地址
     importAddresses(data) {
-      return apiClient.post('/admin/database/import-addresses', data);
+      return apiClient.post('/database/import-addresses', data);
     },
-    
-    // 更新漏洞信息
     updateVulnerabilities(data) {
-      return apiClient.post('/admin/database/update-vulnerabilities', data);
+      return apiClient.post('/database/update-vulnerabilities', data);
     },
-    
-    // 更新协议支持信息
     updateProtocolSupport(data) {
-      return apiClient.post('/admin/database/update-protocol-support', data);
+      return apiClient.post('/database/update-protocol-support', data);
     },
-    
-    // 高级查询
-    advancedQuery(params) {
-      return apiClient.get('/admin/database/query', { params });
+    advancedQuery(data) {
+      return apiClient.post('/database/advanced-query', data);
     },
-    
-    // 获取国家统计
     getCountryStats() {
-      return apiClient.get('/admin/database/country-stats');
+      return apiClient.get('/database/country-stats');
+    },
+    getVulnerabilityStats() {
+      return apiClient.get('/database/vulnerability-stats');
+    },
+    advancedQuery(data) {
+      return apiClient.post('/database/advanced-query', data);
+    },
+    deleteAddresses(addressIds) {
+      return apiClient.post('/database/delete-addresses', { addressIds });
+    },
+    getVulnerabilityTypes() {
+      return apiClient.get('/database/vulnerability-types');
     },
     
-    // 获取漏洞统计
-    getVulnerabilityStats() {
-      return apiClient.get('/admin/database/vulnerability-stats');
+    getProtocolTypes() {
+      return apiClient.get('/database/protocol-types');
+    },
+
+    // 获取 IID 类型列表
+    getIIDTypes() {
+      return apiClient.get('/database/address-types');
+    },
+    
+    // 更新 IID 类型
+    updateIIDTypes(data) {
+      return apiClient.post('/database/update-iid-types', data);
     }
-  },
+  }
 }

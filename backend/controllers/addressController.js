@@ -380,81 +380,150 @@ exports.searchPrefix = async (req, res) => {
  */
 exports.getPrefixDetail = async (req, res) => {
   try {
-    const { prefixId } = req.params;
-
-    // 获取前缀基本信息
-    const [[prefix]] = await db.query(`
-      SELECT 
-        p.prefix_id,
-        p.prefix,
-        p.prefix_length,
-        p.version,
-        p.allocation_date,
-        p.registry,
-        p.is_private,
-        p.asn,
-        p.country_id,
-        a.as_name,
-        a.as_name_zh,
-        c.country_name,
-        c.country_name_zh,
-        (
-          SELECT COUNT(*) 
-          FROM active_addresses 
-          WHERE prefix_id = p.prefix_id
-        ) AS active_addresses_count
-      FROM 
-        ip_prefixes p
-      LEFT JOIN 
-        asns a ON p.asn = a.asn
-      LEFT JOIN 
-        countries c ON p.country_id = c.country_id
-      WHERE 
-        p.prefix_id = ?
-    `, [prefixId]);
-
-    if (!prefix) {
-      return res.status(404).json({
+    const prefixId = parseInt(req.params.prefixId);
+    
+    // 验证前缀ID
+    if (isNaN(prefixId)) {
+      return res.status(400).json({
         success: false,
-        message: '前缀不存在'
+        message: '无效的前缀ID'
       });
     }
-
-    // 获取前缀下的活跃地址（不显示完整地址）
-    const [addresses] = await db.query(`
+    
+    // 获取前缀基本信息
+    const [prefixInfo] = await db.query(`
       SELECT 
-        address_id,
-        SUBSTRING_INDEX(address, ':', 4) as partial_address,
-        version,
-        iid_type,
-        is_router,
-        is_dns_server,
-        is_web_server,
-        first_seen,
-        last_seen,
-        uptime_percentage
-      FROM active_addresses
-      WHERE prefix_id = ?
-      ORDER BY last_seen DESC
-      LIMIT 50
+        ip.prefix_id,
+        ip.prefix,
+        ip.prefix_length,
+        ip.version,
+        ip.asn,
+        a.as_name,
+        a.as_name_zh,
+        ip.country_id,
+        c.country_name,
+        c.country_name_zh,
+        ip.allocation_date,
+        ip.registry,
+        COUNT(aa.address_id) AS active_addresses
+      FROM ip_prefixes ip
+      LEFT JOIN asns a ON ip.asn = a.asn
+      LEFT JOIN countries c ON ip.country_id = c.country_id
+      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
+      WHERE ip.prefix_id = ?
+      GROUP BY ip.prefix_id
     `, [prefixId]);
-
+    
+    if (prefixInfo.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '未找到前缀信息'
+      });
+    }
+    
+    // 获取前缀的地址列表（限制1000条）
+    const [addressList] = await db.query(`
+      SELECT 
+        aa.address_id,
+        aa.address,
+        at.type_name AS iid_type,
+        at.is_risky
+      FROM active_addresses aa
+      LEFT JOIN address_types at ON aa.iid_type = at.type_id
+      WHERE aa.prefix_id = ?
+      ORDER BY aa.last_seen DESC
+      LIMIT 1000
+    `, [prefixId]);
+    
+    // 获取每个地址的协议信息
+    if (addressList.length > 0) {
+      const addressIds = addressList.map(addr => addr.address_id);
+      const addressIdsStr = addressIds.join(',');
+      
+      // 获取所有地址的协议信息
+      const [protocolsData] = await db.query(`
+        SELECT 
+          ap.address_id,
+          p.protocol_id,
+          p.protocol_name,
+          p.description,
+          p.risk_level,
+          ap.port
+        FROM address_protocols ap
+        JOIN protocols p ON ap.protocol_id = p.protocol_id
+        WHERE ap.address_id IN (${addressIdsStr})
+      `);
+      
+      // 获取所有地址的漏洞信息
+      const [vulnerabilitiesData] = await db.query(`
+        SELECT 
+          av.address_id,
+          v.vulnerability_id,
+          v.cve_id,
+          v.name,
+          v.severity,
+          av.is_fixed
+        FROM address_vulnerabilities av
+        JOIN vulnerabilities v ON av.vulnerability_id = v.vulnerability_id
+        WHERE av.address_id IN (${addressIdsStr})
+      `);
+      
+      // 将协议和漏洞信息关联到各个地址
+      addressList.forEach(address => {
+        // 添加协议信息
+        address.protocols = protocolsData.filter(p => p.address_id === address.address_id)
+          .map(p => ({
+            protocol_id: p.protocol_id,
+            protocol_name: p.protocol_name,
+            description: p.description,
+            risk_level: p.risk_level,
+            port: p.port
+          }));
+        
+        // 添加漏洞信息
+        address.vulnerabilities = vulnerabilitiesData.filter(v => v.address_id === address.address_id)
+          .map(v => ({
+            vulnerability_id: v.vulnerability_id,
+            cve_id: v.cve_id,
+            name: v.name,
+            severity: v.severity,
+            is_fixed: v.is_fixed
+          }));
+      });
+    }
+    
+    // 获取IID类型分布
+    const [iidDistribution] = await db.query(`
+      SELECT 
+        at.type_name,
+        at.is_risky,
+        COUNT(aa.address_id) AS address_count
+      FROM active_addresses aa
+      JOIN address_types at ON aa.iid_type = at.type_id
+      WHERE aa.prefix_id = ?
+      GROUP BY at.type_id
+      ORDER BY address_count DESC
+    `, [prefixId]);
+    
     res.json({
       success: true,
       data: {
-        ...prefix,
-        addresses
+        prefix: prefixInfo[0],
+        addresses: addressList,
+        iidDistribution: iidDistribution,
+        totalAddresses: prefixInfo[0].active_addresses,
+        limitApplied: prefixInfo[0].active_addresses > 1000
       }
     });
   } catch (error) {
-    logger.error('获取前缀详情失败:', error);
+    logger.error(`获取前缀 ${req.params.prefixId} 详情失败:`, error);
+    console.error('详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取前缀详情失败'
     });
   }
 };
-
 /**
  * 获取地址详情（部分信息）
  */
@@ -881,3 +950,280 @@ function determineSearchType(query) {
   // 其他情况视为名称搜索
   return 'name';
 }
+
+
+// ... 现有代码 ...
+
+/**
+ * 获取国家详细信息，包括ASN列表
+ */
+exports.getCountryDetail = async (req, res) => {
+  try {
+    const countryId = req.params.countryId;
+    
+    // 验证国家ID
+    if (!countryId || countryId.length !== 2) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的国家ID'
+      });
+    }
+    
+    // 获取国家基本信息
+    const [countryInfo] = await db.query(`
+      SELECT 
+        country_id, 
+        country_name, 
+        country_name_zh, 
+        region, 
+        subregion,
+        total_ipv6_prefixes,
+        total_active_ipv6,
+        last_updated
+      FROM countries
+      WHERE country_id = ?
+    `, [countryId]);
+    
+    if (countryInfo.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '未找到国家信息'
+      });
+    }
+    
+    // 获取国家的ASN列表
+    const [asnList] = await db.query(`
+      SELECT 
+        a.asn, 
+        a.as_name, 
+        a.as_name_zh, 
+        a.organization,
+        a.total_ipv6_prefixes,
+        a.total_active_ipv6,
+        COUNT(DISTINCT ip.prefix_id) AS prefix_count
+      FROM asns a
+      LEFT JOIN ip_prefixes ip ON a.asn = ip.asn
+      WHERE a.country_id = ?
+      GROUP BY a.asn
+      ORDER BY a.total_active_ipv6 DESC
+    `, [countryId]);
+    
+    // 获取国家的IPv6统计数据
+    const [ipv6Stats] = await db.query(`
+      SELECT 
+        COUNT(DISTINCT ip.prefix_id) AS total_prefixes,
+        COUNT(DISTINCT a.asn) AS total_asns,
+        SUM(CASE WHEN aa.iid_type IS NOT NULL THEN 1 ELSE 0 END) AS identified_iids,
+        COUNT(DISTINCT aa.address_id) AS total_addresses
+      FROM ip_prefixes ip
+      LEFT JOIN asns a ON ip.asn = a.asn
+      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
+      WHERE ip.country_id = ? AND ip.version = '6'
+    `, [countryId]);
+    
+    // 获取IID类型分布
+    const [iidDistribution] = await db.query(`
+      SELECT 
+        at.type_name,
+        at.is_risky,
+        COUNT(aa.address_id) AS address_count
+      FROM active_addresses aa
+      JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+      JOIN address_types at ON aa.iid_type = at.type_id
+      WHERE ip.country_id = ?
+      GROUP BY at.type_id
+      ORDER BY address_count DESC
+    `, [countryId]);
+    
+    res.json({
+      success: true,
+      data: {
+        country: countryInfo[0],
+        asns: asnList,
+        stats: ipv6Stats[0],
+        iidDistribution: iidDistribution
+      }
+    });
+  } catch (error) {
+    logger.error(`获取国家 ${req.params.countryId} 详情失败:`, error);
+    res.status(500).json({
+      success: false,
+      message: '获取国家详情失败'
+    });
+  }
+};
+
+/**
+ * 获取ASN详细信息，包括前缀列表
+ */
+exports.getAsnDetail = async (req, res) => {
+  try {
+    const asn = parseInt(req.params.asn);
+    
+    // 验证ASN
+    if (isNaN(asn)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的ASN'
+      });
+    }
+    
+    // 获取ASN基本信息
+    const [asnInfo] = await db.query(`
+      SELECT 
+        a.asn, 
+        a.as_name, 
+        a.as_name_zh, 
+        a.organization,
+        a.country_id,
+        c.country_name,
+        c.country_name_zh,
+        a.total_ipv6_prefixes,
+        a.total_active_ipv6
+      FROM asns a
+      LEFT JOIN countries c ON a.country_id = c.country_id
+      WHERE a.asn = ?
+    `, [asn]);
+    
+    if (asnInfo.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '未找到ASN信息'
+      });
+    }
+    
+    // 获取ASN的前缀列表
+    const [prefixList] = await db.query(`
+      SELECT 
+        ip.prefix_id,
+        ip.prefix,
+        ip.prefix_length,
+        ip.allocation_date,
+        ip.registry,
+        COUNT(aa.address_id) AS active_addresses
+      FROM ip_prefixes ip
+      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
+      WHERE ip.asn = ? AND ip.version = '6'
+      GROUP BY ip.prefix_id
+      ORDER BY active_addresses DESC
+    `, [asn]);
+    
+    // 获取IID类型分布
+    const [iidDistribution] = await db.query(`
+      SELECT 
+        at.type_name,
+        at.is_risky,
+        COUNT(aa.address_id) AS address_count
+      FROM active_addresses aa
+      JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+      JOIN address_types at ON aa.iid_type = at.type_id
+      WHERE ip.asn = ?
+      GROUP BY at.type_id
+      ORDER BY address_count DESC
+    `, [asn]);
+    
+    res.json({
+      success: true,
+      data: {
+        asn: asnInfo[0],
+        prefixes: prefixList,
+        iidDistribution: iidDistribution
+      }
+    });
+  } catch (error) {
+    logger.error(`获取ASN ${req.params.asn} 详情失败:`, error);
+    res.status(500).json({
+      success: false,
+      message: '获取ASN详情失败'
+    });
+  }
+};
+
+
+/**
+ * 获取全球IPv6统计排名
+ */
+exports.getGlobalStats = async (req, res) => {
+  try {
+    const { sort = 'total_active_ipv6', order = 'desc', limit = 500 } = req.query;
+    
+    // 验证排序字段
+    const allowedSortFields = ['total_active_ipv6', 'total_ipv6_prefixes', 'country_name'];
+    const sortField = allowedSortFields.includes(sort) ? sort : 'total_active_ipv6';
+    
+    // 验证排序方向
+    const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    
+    // 获取国家排名
+    const [countries] = await db.query(`
+      SELECT 
+        c.country_id, 
+        c.country_name, 
+        c.country_name_zh, 
+        c.region, 
+        c.subregion,
+        c.total_ipv6_prefixes,
+        c.total_active_ipv6,
+        COUNT(DISTINCT a.asn) AS asn_count
+      FROM countries c
+      LEFT JOIN asns a ON c.country_id = a.country_id
+      GROUP BY c.country_id
+      ORDER BY ${sortField} ${sortOrder}
+      LIMIT ?
+    `, [parseInt(limit)]);
+    
+    // 获取全球统计数据
+    const [globalStats] = await db.query(`
+      SELECT 
+        COUNT(DISTINCT c.country_id) AS total_countries,
+        COUNT(DISTINCT a.asn) AS total_asns,
+        COUNT(DISTINCT ip.prefix_id) AS total_prefixes,
+        COUNT(DISTINCT aa.address_id) AS total_addresses
+      FROM countries c
+      LEFT JOIN asns a ON c.country_id = a.country_id
+      LEFT JOIN ip_prefixes ip ON a.asn = ip.asn
+      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
+      WHERE ip.version = '6'
+    `);
+    
+    // 获取全球IID类型分布
+    const [iidDistribution] = await db.query(`
+      SELECT 
+        at.type_name,
+        at.is_risky,
+        COUNT(aa.address_id) AS address_count
+      FROM active_addresses aa
+      JOIN address_types at ON aa.iid_type = at.type_id
+      GROUP BY at.type_id
+      ORDER BY address_count DESC
+    `);
+    
+    // 获取区域分布
+    const [regionDistribution] = await db.query(`
+      SELECT 
+        c.region,
+        COUNT(DISTINCT c.country_id) AS country_count,
+        SUM(c.total_active_ipv6) AS address_count
+      FROM countries c
+      WHERE c.region IS NOT NULL
+      GROUP BY c.region
+      ORDER BY address_count DESC
+    `);
+    
+    res.json({
+      success: true,
+      data: {
+        countries: countries,
+        stats: globalStats[0],
+        iidDistribution: iidDistribution,
+        regionDistribution: regionDistribution
+      }
+    });
+  } catch (error) {
+    logger.error('获取全球IPv6统计失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取全球IPv6统计失败'
+    });
+  }
+};
