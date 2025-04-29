@@ -22,5 +22,21 @@ router.get('/search', addressController.searchIPv6);
 router.get('/global-stats', addressController.getGlobalStats);
 router.get('/addresses/global-stats', addressController.getGlobalStats);
 
+//协议组件相关路由
+router.get('/protocols', addressController.getProtocols);
+router.get('/protocols/:protocolId', addressController.getProtocolDetail);
+router.get('/protocols/:protocolId/asns', addressController.getProtocolAsns);
+router.get('/protocols/:protocolId/regions', addressController.getProtocolRegions);
+router.get('/asns/:asn/protocols/:protocolId', addressController.getAsnProtocolDetail);
+router.get('/protocols/:protocolId/countries', addressController.getProtocolCountries);
+router.get('/countries/:countryId/protocols/:protocolId', addressController.getCountryProtocolDetail);
 
+//漏洞组件相关路由
+router.get('/vulnerabilities', addressController.getVulnerabilities);
+router.get('/vulnerabilities/:vulnerabilityId', addressController.getVulnerabilityDetail);
+router.get('/vulnerabilities/:vulnerabilityId/asns', addressController.getVulnerabilityAsns);
+router.get('/vulnerabilities/:vulnerabilityId/regions', addressController.getVulnerabilityRegions);
+router.get('/asns/:asn/vulnerabilities/:vulnerabilityId', addressController.getAsnVulnerabilityDetail);
+router.get('/vulnerabilities/:vulnerabilityId/countries', addressController.getVulnerabilityCountries);
+router.get('/countries/:countryId/vulnerabilities/:vulnerabilityId', addressController.getCountryVulnerabilityDetail);
 module.exports = router;

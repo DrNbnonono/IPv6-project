@@ -5,12 +5,14 @@
       <canvas ref="particleCanvas" class="particle-canvas"></canvas>
     </div>
     
-    <header class="platform-header">
+        <header class="platform-header">
       <h1>IPv6网络探测平台</h1>
       <div class="time-display">{{ currentTime }}</div>
       <div class="user-info">
-        <button @click="goToAdvancedQuery" class="query-btn">高级查询</button>
-        <button @click="goToTools" class="tools-btn">工具平台</button>
+        <button @click="goToAdvancedQuery" class="nav-btn query-btn">高级查询</button>
+        <button @click="showProtocolAnalysis = true" class="nav-btn protocol-btn">协议分析</button>
+        <button @click="showVulnerabilityAnalysis = true" class="nav-btn vulnerability-btn">漏洞分析</button>
+        <button @click="goToTools" class="nav-btn tools-btn">工具平台</button>
         <span v-if="authStore.isAuthenticated">欢迎，{{ authStore.username }}</span>
         <button v-if="authStore.isAuthenticated" @click="handleLogout" class="logout-btn">退出</button>
         <button v-else @click="goToLogin" class="login-btn">登录</button>
@@ -280,9 +282,33 @@
     </div>
     <button v-if="!showDebug" @click="showDebug = true" class="debug-toggle-btn">显示调试</button>
     
+    <!-- 协议分析面板 -->
+    <div class="analysis-panel protocol-analysis-panel" :class="{ 'visible': showProtocolAnalysis }">
+          <div class="panel-header">
+            <h3>协议分析</h3>
+            <button @click="showProtocolAnalysis = false" class="close-btn">×</button>
+          </div>
+          <div class="panel-content">
+            <protocol-analysis-panel />
+          </div>
+        </div>
+    
+    <!-- 漏洞分析面板 -->
+    <div class="analysis-panel vulnerability-analysis-panel" :class="{ 'visible': showVulnerabilityAnalysis }">
+      <div class="panel-header">
+        <h3>漏洞分析</h3>
+        <button @click="showVulnerabilityAnalysis = false" class="close-btn">×</button>
+      </div>
+      <div class="panel-content">
+        <vulnerability-analysis-panel />
+      </div>
+    </div>
+
     <footer class="platform-footer">
       <p>IPv6网络探测平台 | 最后数据更新: {{ lastDataUpdate }}</p>
     </footer>
+
+
   </div>
 </template>
 
@@ -293,6 +319,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useDetectionStore } from '@/stores/detection'
 import GlobeMap from '@/components/detection/GlobeMap.vue'
 import SearchResultsPanel from '@/components/detection/SearchResultsPanel.vue';
+import ProtocolAnalysisPanel from '@/components/detection/ProtocolAnalysisPanel.vue'
+import VulnerabilityAnalysisPanel from '@/components/detection/VulnerabilityAnalysisPanel.vue'
 import axios from 'axios'
 // 路由和状态管理
 const router = useRouter()
@@ -323,6 +351,10 @@ const previousLabelState = ref(true) //保存详情页面打开前的标签状�
 const showLeftPanel = ref(true)
 const showRightPanel = ref(true)
 const isZoomedIn = ref(false)
+
+// 添加协议分析和漏洞分析状态变量
+const showProtocolAnalysis = ref(false)
+const showVulnerabilityAnalysis = ref(false)
 
 const countryRankingList = ref(null)
 const asnRankingList = ref(null)
@@ -1991,5 +2023,129 @@ onMounted(() => {
 
 .query-btn:hover {
   background: rgba(79, 195, 247, 0.5);
+}
+
+/* 统一导航按钮样式 */
+.nav-btn {
+  background: rgba(79, 195, 247, 0.2);
+  border: 1px solid rgba(79, 195, 247, 0.5);
+  color: #e0e0e0;
+  padding: 5px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 8px;
+}
+
+.nav-btn:hover {
+  background: rgba(79, 195, 247, 0.4);
+}
+
+.protocol-btn {
+  background: rgba(79, 195, 247, 0.2);
+  border: 1px solid rgba(79, 195, 247, 0.5);
+}
+
+.vulnerability-btn {
+  background: rgba(244, 67, 54, 0.2);
+  border: 1px solid rgba(244, 67, 54, 0.5);
+}
+
+.vulnerability-btn:hover {
+  background: rgba(244, 67, 54, 0.4);
+}
+
+/* 分析面板样式 */
+.analysis-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  width: 90%;
+  max-width: 1200px;
+  height: 80%;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.analysis-panel.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel-header h3 {
+  margin: 0;
+  color: #4fc3f7;
+  font-size: 1.2rem;
+}
+
+.panel-content {
+  flex: 1;
+  overflow: auto;
+  padding: 15px;
+}
+
+.protocol-analysis-panel .panel-header {
+  border-bottom-color: rgba(79, 195, 247, 0.3);
+}
+
+.vulnerability-analysis-panel .panel-header {
+  border-bottom-color: rgba(244, 67, 54, 0.3);
+}
+
+.vulnerability-analysis-panel .panel-header h3 {
+  color: #f44336;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #ffffff;
+}
+
+/* 确保按钮在移动设备上也能正常显示 */
+@media (max-width: 768px) {
+  .user-info {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 5px;
+  }
+  
+  .nav-btn {
+    margin: 5px;
+  }
+  
+  .analysis-panel {
+    width: 95%;
+    height: 90%;
+  }
 }
 </style>

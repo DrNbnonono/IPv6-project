@@ -151,76 +151,174 @@ exports.importAddresses = async (req, res) => {
  * 更新漏洞状态
  */
 exports.updateVulnerabilities = async (req, res) => {
+  console.log('--- Entered updateVulnerabilities function ---'); // 确认函数入口
+  console.log('Request body:', JSON.stringify(req.body)); // 记录请求体
+  const { vulnerabilityId, countryId, asn, isFixed, addresses } = req.body;
+
+  // 1. 验证输入参数
+  if (!vulnerabilityId) {
+    logger.warn('更新漏洞状态请求缺少 vulnerabilityId'); // 添加参数验证日志
+    return res.status(400).json({ success: false, message: '缺少漏洞ID' });
+  }
+  if (!countryId && !asn) {
+     logger.warn('更新漏洞状态请求缺少 countryId 或 asn');
+    return res.status(400).json({ success: false, message: '至少需要提供一个筛选条件(国家ID或ASN)' });
+  }
+  if (typeof isFixed === 'undefined' || isFixed === null) {
+     logger.warn('更新漏洞状态请求缺少 isFixed');
+     return res.status(400).json({ success: false, message: '缺少漏洞修复状态(isFixed)' });
+  }
+  if (!addresses || !Array.isArray(addresses) || addresses.length === 0) {
+     logger.warn('更新漏洞状态请求缺少有效的 addresses 列表');
+    return res.status(400).json({ success: false, message: '缺少有效的IPv6地址列表' });
+  }
+
+  let connection;
   try {
-    const { vulnerabilityId, countryId, asn, isFixed, addresses } = req.body;
-    
-    if (!vulnerabilityId) {
-      return res.status(400).json({ success: false, message: '缺少漏洞ID' });
-    }
-    
-    if (!countryId && !asn) {
-      return res.status(400).json({ success: false, message: '至少需要提供一个筛选条件(国家ID或ASN)' });
-    }
-    
-    if (!addresses || !Array.isArray(addresses) || addresses.length === 0) {
-      return res.status(400).json({ success: false, message: '缺少IPv6地址列表' });
-    }
-    
-    const connection = await db.getConnection();
+    console.log('尝试获取数据库连接...');
+    connection = await db.getConnection();
+    console.log('数据库连接获取成功，开始事务...');
     await connection.beginTransaction();
-    
-    try {
-      // 创建临时表存储地址列表
-      await connection.query(`
-        CREATE TEMPORARY TABLE IF NOT EXISTS temp_address_list (
-          address VARCHAR(128) NOT NULL,
-          PRIMARY KEY (address)
-        )
-      `);
-      
-      // 清空临时表
-      await connection.query(`TRUNCATE TABLE temp_address_list`);
-      
-      // 插入地址到临时表
-      const addressValues = addresses.map(addr => [addr]);
-      await connection.query(`
-        INSERT IGNORE INTO temp_address_list (address) VALUES ?
-      `, [addressValues]);
-      
-      // 调用存储过程更新漏洞状态
-      const [result] = await connection.query(`
-        CALL update_vulnerability_status(?, ?, ?, ?, @affected_rows)
-      `, [
-        vulnerabilityId,
-        countryId || null,
-        asn || null,
-        isFixed ? 1 : 0,
-      ]);
-      
-      // 获取受影响的行数
-      const [rows] = await connection.query(`SELECT @affected_rows as affected_rows`);
-      const affectedRows = rows[0].affected_rows;
-      
-      // 清理临时表
-      await connection.query(`DROP TEMPORARY TABLE IF EXISTS temp_address_list`);
-      
-      await connection.commit();
-      
-      return res.json({
-        success: true,
-        message: `成功更新${affectedRows}个IPv6地址的漏洞状态`,
-        data: { affectedRows }
-      });
-    } catch (error) {
+    console.log('事务已开始');
+
+    // 2. 检查漏洞ID是否存在
+    console.log(`检查漏洞ID ${vulnerabilityId} 是否存在...`);
+    const [vulnRows] = await connection.query(
+      'SELECT vulnerability_id FROM vulnerabilities WHERE vulnerability_id = ?',
+      [vulnerabilityId]
+    );
+    if (vulnRows.length === 0) {
+      logger.warn(`尝试更新不存在的漏洞ID: ${vulnerabilityId}`);
       await connection.rollback();
-      console.error('更新漏洞状态失败:', error);
-      return res.status(500).json({ success: false, message: `更新漏洞状态失败: ${error.message}` });
-    } finally {
-      connection.release();
+      connection.release(); // 释放连接
+      return res.status(400).json({ success: false, message: `指定的漏洞ID ${vulnerabilityId} 不存在` });
     }
+    console.log(`漏洞ID ${vulnerabilityId} 存在`);
+
+    // 3. 准备临时表
+    console.log('准备临时表 temp_address_list...');
+    await connection.query(`
+      CREATE TEMPORARY TABLE IF NOT EXISTS temp_address_list (
+        address VARCHAR(128) NOT NULL,
+        PRIMARY KEY (address)
+      )
+    `);
+    console.log('临时表已确保存在，清空临时表...');
+    await connection.query(`TRUNCATE TABLE temp_address_list`);
+    console.log('临时表已清空');
+
+    // 插入地址到临时表
+    const addressValues = addresses.map(addr => [addr]);
+    console.log(`准备向临时表插入 ${addressValues.length} 条地址...`);
+    await connection.query(`
+      INSERT IGNORE INTO temp_address_list (address) VALUES ?
+    `, [addressValues]);
+    console.log('地址已插入临时表 (忽略重复)');
+
+    // 检查是否有数据插入临时表
+    const [insertedCount] = await connection.query(`
+      SELECT COUNT(*) as count FROM temp_address_list
+    `);
+    console.log(`临时表数据插入结果: 已插入 ${insertedCount[0].count} 条唯一地址，原始地址列表长度: ${addresses.length}`);
+    if (insertedCount[0].count === 0) {
+       logger.warn('提供的地址列表无效或格式不正确，未能向临时表插入任何数据');
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
+        success: false,
+        message: '提供的地址列表无效或格式不正确，无法插入临时表'
+      });
+    }
+
+    // 4. 调用存储过程
+    console.log('设置存储过程输出变量 @affected_rows = 0...');
+    await connection.query(`SET @affected_rows = 0`);
+    console.log('准备调用存储过程 update_vulnerability_status...');
+    console.log(`存储过程参数: vulnerabilityId=${vulnerabilityId}, countryId=${countryId || null}, asn=${asn || null}, isFixed=${isFixed ? 1 : 0}`);
+
+    try {
+      await connection.query(
+        'CALL update_vulnerability_status(?, ?, ?, ?, @affected_rows)',
+        [
+          vulnerabilityId,
+          countryId || null,
+          asn || null,
+          isFixed ? 1 : 0
+        ]
+      );
+      console.log('存储过程调用成功');
+
+      // 获取输出参数的值
+      console.log('获取存储过程输出变量 @affected_rows...');
+      const [result] = await connection.query('SELECT @affected_rows AS affectedRows');
+      const affectedRows = result[0].affectedRows;
+      console.log(`存储过程影响行数: ${affectedRows}`);
+
+      // 5. 提交事务
+      console.log('准备提交事务...');
+      await connection.commit();
+      console.log('事务已提交');
+
+      res.json({
+        success: true,
+        message: `成功更新 ${affectedRows} 条地址的漏洞状态`,
+        affectedRows: affectedRows
+      });
+
+    } catch (procError) {
+      // 优先捕获存储过程SIGNAL的错误
+      console.error('!!! 调用存储过程 update_vulnerability_status 失败 !!!'); // 添加显式错误标记
+      logger.error('调用存储过程 update_vulnerability_status 失败详情:', procError); // <--- 记录存储过程错误
+      console.log('准备回滚事务...');
+      await connection.rollback(); // 回滚事务
+      console.log('事务已回滚');
+      // 尝试解析存储过程返回的错误信息
+      const procedureErrorMessage = procError.message.includes('SQLSTATE 45000')
+        ? procError.message.substring(procError.message.indexOf('MESSAGE_TEXT = \'') + 16, procError.message.lastIndexOf('\''))
+        : `更新漏洞状态时发生数据库错误: ${procError.message}`;
+      console.error(`解析后的存储过程错误信息: ${procedureErrorMessage}`);
+
+      return res.status(500).json({
+        success: false,
+        message: procedureErrorMessage
+      });
+    }
+
   } catch (error) {
-    console.error('更新漏洞状态失败:', error);
-    return res.status(500).json({ success: false, message: `更新漏洞状态失败: ${error.message}` });
+    // 处理获取连接、事务、准备临时表等过程中的错误
+    console.error('!!! 更新漏洞状态操作中发生未预期的错误 !!!'); // 添加显式错误标记
+    logger.error('更新漏洞状态操作失败详情:', error); // <--- 记录其他操作错误
+    if (connection) {
+      try {
+        console.log('尝试回滚事务...');
+        await connection.rollback(); // 确保回滚
+        console.log('事务已回滚');
+      } catch (rollbackError) {
+        logger.error('回滚事务失败:', rollbackError);
+      }
+    }
+    res.status(500).json({
+      success: false,
+      message: `服务器内部错误: ${error.message}`
+    });
+  } finally {
+    // 6. 清理资源
+    if (connection) {
+      try {
+        console.log('准备清理临时表 temp_address_list...');
+        await connection.query('DROP TEMPORARY TABLE IF EXISTS temp_address_list');
+        console.log('临时表 temp_address_list 已清理');
+      } catch (cleanupError) {
+        logger.error('清理临时表 temp_address_list 失败:', cleanupError); // <--- 记录清理错误
+      } finally {
+         console.log('准备释放数据库连接...');
+         connection.release(); // 确保连接被释放回池中
+         console.log('数据库连接已释放');
+      }
+    } else {
+        console.log('无需释放数据库连接 (可能获取连接失败)');
+    }
+     console.log('--- Exiting updateVulnerabilities function ---'); // 确认函数出口
   }
 };
 
@@ -254,6 +352,14 @@ exports.updateProtocolSupport = async (req, res) => {
           PRIMARY KEY (address)
         )
       `);
+
+      // 检查临时表是否存在
+      const [tempTableExists] = await connection.query(`
+        SELECT COUNT(*) FROM temp_address_list 
+      `);
+      
+      console.log('临时表检查结果:', tempTableExists[0].count > 0 ? '存在' : '不存在');
+      
       
       // 清空临时表
       await connection.query(`TRUNCATE TABLE temp_address_list`);

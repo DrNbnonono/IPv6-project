@@ -130,7 +130,6 @@ async function readLastLines(filePath, numLines) {
 
 
 // 验证白名单文件格式
-
 const validateWhitelistFile = (filePath) => {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -207,7 +206,6 @@ exports.uploadWhitelist = async (req, res) => {
     });
   }
 };
-
 
 // 获取用户上传的白名单文件列表
 exports.getWhitelists = async (req, res) => {

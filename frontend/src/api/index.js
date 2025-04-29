@@ -175,6 +175,60 @@ export default {
     getPrefixDetail(prefixId) {
       return apiClient.get(`/addresses/prefixes/${prefixId}`);
     },
+
+    // 协议相关API
+    getProtocols() {
+      return apiClient.get('/addresses/protocols');
+    },
+    getProtocolDetail(protocolId) {
+      return apiClient.get(`/addresses/protocols/${protocolId}`);
+    },
+    getProtocolAsns(protocolId, limit = 20, offset = 0) {
+      return apiClient.get(`/addresses/protocols/${protocolId}/asns`, {
+        params: { limit, offset }
+      });
+    },
+    getProtocolRegions(protocolId) {
+      return apiClient.get(`/addresses/protocols/${protocolId}/regions`);
+    },
+    getAsnProtocolDetail(asn, protocolId) {
+      return apiClient.get(`/addresses/asns/${asn}/protocols/${protocolId}`);
+    },
+    getProtocolCountries(protocolId, limit = 20, offset = 0) {
+      return apiClient.get(`/addresses/protocols/${protocolId}/countries`, {
+        params: { limit, offset }
+      });
+    },
+    getCountryProtocolDetail(countryId, protocolId) {
+      return apiClient.get(`/addresses/countries/${countryId}/protocols/${protocolId}`);
+    },
+
+    // 漏洞相关API
+    getVulnerabilities() {
+      return apiClient.get('/addresses/vulnerabilities');
+    },
+    getVulnerabilityDetail(vulnerabilityId) {
+      return apiClient.get(`/addresses/vulnerabilities/${vulnerabilityId}`);
+    },
+    getVulnerabilityAsns(vulnerabilityId, limit = 20, offset = 0) {
+      return apiClient.get(`/addresses/vulnerabilities/${vulnerabilityId}/asns`, {
+        params: { limit, offset }
+      });
+    },
+    getVulnerabilityRegions(vulnerabilityId) {
+      return apiClient.get(`/addresses/vulnerabilities/${vulnerabilityId}/regions`);
+    },
+    getAsnVulnerabilityDetail(asn, vulnerabilityId) {
+      return apiClient.get(`/addresses/asns/${asn}/vulnerabilities/${vulnerabilityId}`);
+    },
+    getVulnerabilityCountries(vulnerabilityId, limit = 20, offset = 0) {
+      return apiClient.get(`/addresses/vulnerabilities/${vulnerabilityId}/countries`, {
+        params: { limit, offset }
+      });
+    },
+    getCountryVulnerabilityDetail(countryId, vulnerabilityId) {
+      return apiClient.get(`/addresses/countries/${countryId}/vulnerabilities/${vulnerabilityId}`);
+    }
   },
 
   // 文档相关 API

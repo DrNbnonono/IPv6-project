@@ -174,56 +174,6 @@ BEGIN
 END //
 DELIMITER ;
 
--- 修改触发器：地址漏洞修复后更新统计（移除日志记录）
-DELIMITER //
-CREATE TRIGGER after_vulnerability_update
-AFTER UPDATE ON address_vulnerabilities
-FOR EACH ROW
-BEGIN
-    DECLARE v_country_id CHAR(2);
-    
-    -- 仅在修复状态变更时处理
-    IF NEW.is_fixed != OLD.is_fixed THEN
-        -- 获取地址所属国家
-        SELECT ip.country_id INTO v_country_id
-        FROM active_addresses aa
-        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-        WHERE aa.address_id = NEW.address_id;
-        
-        -- 更新国家漏洞统计
-        UPDATE country_vulnerability_stats
-        SET 
-            affected_addresses = (
-                SELECT COUNT(*) 
-                FROM address_vulnerabilities av
-                JOIN active_addresses aa ON av.address_id = aa.address_id
-                JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-                WHERE ip.country_id = v_country_id
-                  AND av.vulnerability_id = NEW.vulnerability_id
-                  AND av.is_fixed = 0
-            ),
-            percentage = (
-                SELECT ROUND(COUNT(*) * 100.0 / (
-                    SELECT COUNT(*) 
-                    FROM active_addresses a
-                    JOIN ip_prefixes p ON a.prefix_id = p.prefix_id
-                    WHERE p.country_id = v_country_id
-                ), 2)
-                FROM address_vulnerabilities av
-                JOIN active_addresses aa ON av.address_id = aa.address_id
-                JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-                WHERE ip.country_id = v_country_id
-                  AND av.vulnerability_id = NEW.vulnerability_id
-                  AND av.is_fixed = 0
-            ),
-            last_updated = NOW()
-        WHERE 
-            country_id = v_country_id AND
-            vulnerability_id = NEW.vulnerability_id;
-    END IF;
-END //
-DELIMITER ;
-
 -- 创建存储过程：批量更新IPv6地址漏洞信息
 DELIMITER //
 CREATE PROCEDURE update_vulnerability_status(
@@ -234,16 +184,52 @@ CREATE PROCEDURE update_vulnerability_status(
     OUT p_affected_rows INT
 )
 BEGIN
+    DECLARE v_count INT;
+    DECLARE v_vulnerability_exists INT;
+    DECLARE v_affected_rows INT DEFAULT 0;
+    DECLARE v_sqlstate CHAR(5);
+    DECLARE v_errno INT;
+    DECLARE v_error_msg TEXT;
+    
+    -- 改进错误处理，捕获并返回详细的错误信息
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
+        -- 获取详细的错误信息
+        GET DIAGNOSTICS CONDITION 1
+            v_sqlstate = RETURNED_SQLSTATE,
+            v_errno = MYSQL_ERRNO,
+            v_error_msg = MESSAGE_TEXT;
+        
+        -- 回滚事务
         ROLLBACK;
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '更新漏洞状态失败';
+        
+        -- 设置输出参数为0
+        SET p_affected_rows = 0;
+        
+        -- 返回详细的错误信息
+        SET @error_detail = CONCAT('数据库错误: ', v_errno, ' (', v_sqlstate, '): ', v_error_msg);
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = @error_detail;
     END;
     
-    START TRANSACTION;
+    -- 验证必要参数
+    IF p_vulnerability_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '缺少漏洞ID';
+    END IF;
     
-    -- 创建临时表存储需要更新的地址ID
-    -- 只选择临时表中存在的地址
+    -- 检查漏洞是否存在
+    SELECT COUNT(*) INTO v_vulnerability_exists FROM vulnerabilities WHERE vulnerability_id = p_vulnerability_id;
+    IF v_vulnerability_exists = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '指定的漏洞ID不存在';
+    END IF;
+    
+    -- 验证至少有一个筛选条件
+    IF p_country_id IS NULL AND p_asn IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '至少需要提供一个筛选条件(国家ID或ASN)';
+    END IF;
+    
+    START TRANSACTION;
+
+    -- 创建临时表存储需要更新的地址ID（使用IF NOT EXISTS避免回滚问题）
     CREATE TEMPORARY TABLE IF NOT EXISTS temp_update_addresses AS
     SELECT aa.address_id
     FROM active_addresses aa
@@ -251,6 +237,27 @@ BEGIN
     JOIN temp_address_list tal ON aa.address = tal.address
     WHERE (p_country_id IS NULL OR ip.country_id = p_country_id)
       AND (p_asn IS NULL OR ip.asn = p_asn);
+    
+    -- 检查是否有符合条件的地址
+    SELECT COUNT(*) INTO v_count FROM temp_update_addresses;
+    
+    IF v_count = 0 THEN
+        -- 如果没有找到匹配的地址，尝试直接根据国家和ASN筛选
+        TRUNCATE TABLE temp_update_addresses;
+        
+        INSERT INTO temp_update_addresses
+        SELECT aa.address_id
+        FROM active_addresses aa
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE (p_country_id IS NULL OR ip.country_id = p_country_id)
+          AND (p_asn IS NULL OR ip.asn = p_asn);
+        
+        SELECT COUNT(*) INTO v_count FROM temp_update_addresses;
+        
+        IF v_count = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '没有找到符合条件的地址';
+        END IF;
+    END IF;
     
     -- 更新或插入漏洞记录
     INSERT INTO address_vulnerabilities (address_id, vulnerability_id, is_fixed, detection_date, last_detected)
@@ -267,16 +274,52 @@ BEGIN
         last_detected = NOW();
     
     -- 获取受影响的行数
-    SET p_affected_rows = ROW_COUNT();
+    SET v_affected_rows = ROW_COUNT();
+    SET p_affected_rows = v_affected_rows;
+    SET @affected_rows = v_affected_rows;
     
-    -- 清理临时表
-    DROP TEMPORARY TABLE IF EXISTS temp_update_addresses;
+    -- 更新国家漏洞统计
+    IF p_country_id IS NOT NULL THEN
+        -- 更新或插入国家漏洞统计
+        INSERT INTO country_vulnerability_stats 
+            (country_id, vulnerability_id, affected_addresses, percentage, last_updated)
+        SELECT 
+            p_country_id,
+            p_vulnerability_id,
+            COUNT(*),
+            ROUND(COUNT(*) * 100.0 / (
+                SELECT COUNT(*) 
+                FROM active_addresses a
+                JOIN ip_prefixes p ON a.prefix_id = p.prefix_id
+                WHERE p.country_id = p_country_id
+            ), 2),
+            NOW()
+        FROM 
+            address_vulnerabilities av
+        JOIN 
+            active_addresses aa ON av.address_id = aa.address_id
+        JOIN 
+            ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE 
+            ip.country_id = p_country_id AND
+            av.vulnerability_id = p_vulnerability_id AND
+            av.is_fixed = 0
+        GROUP BY 
+            ip.country_id, av.vulnerability_id
+        ON DUPLICATE KEY UPDATE
+            affected_addresses = VALUES(affected_addresses),
+            percentage = VALUES(percentage),
+            last_updated = NOW();
+    END IF;
+    
+    -- 清理临时表（使用TRUNCATE而不是DROP）
+    TRUNCATE TABLE temp_update_addresses;
     
     COMMIT;
 END //
 DELIMITER ;
 
--- 创建存储过程：批量更新IPv6地址协议支持
+-- 创建存储过程：批量更新IPv6地址协议支持信息
 DELIMITER //
 CREATE PROCEDURE update_protocol_support(
     IN p_protocol_id INT,
@@ -382,6 +425,39 @@ BEGIN
             ap.protocol_id = p_protocol_id
         GROUP BY 
             ip.country_id, ap.protocol_id
+        ON DUPLICATE KEY UPDATE
+            address_count = VALUES(address_count),
+            percentage = VALUES(percentage),
+            last_updated = NOW();
+    END IF;
+    
+    -- 更新ASN协议统计（新增部分）
+    IF p_asn IS NOT NULL THEN
+        -- 更新或插入ASN协议统计
+        INSERT INTO asn_protocol_stats 
+            (asn, protocol_id, address_count, percentage, last_updated)
+        SELECT 
+            p_asn,
+            p_protocol_id,
+            COUNT(*),
+            ROUND(COUNT(*) * 100.0 / (
+                SELECT COUNT(*) 
+                FROM active_addresses a
+                JOIN ip_prefixes p ON a.prefix_id = p.prefix_id
+                WHERE p.asn = p_asn
+            ), 2),
+            NOW()
+        FROM 
+            address_protocols ap
+        JOIN 
+            active_addresses aa ON ap.address_id = aa.address_id
+        JOIN 
+            ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE 
+            ip.asn = p_asn AND
+            ap.protocol_id = p_protocol_id
+        GROUP BY 
+            ip.asn, ap.protocol_id
         ON DUPLICATE KEY UPDATE
             address_count = VALUES(address_count),
             percentage = VALUES(percentage),
@@ -543,3 +619,178 @@ SELECT
     v.last_updated
 FROM 
     vulnerabilities v;
+
+
+
+-- 创建触发器：地址协议关联后更新ASN和国家统计
+DELIMITER //
+CREATE TRIGGER after_protocol_insert
+AFTER INSERT ON address_protocols
+FOR EACH ROW
+BEGIN
+    DECLARE v_country_id CHAR(2);
+    DECLARE v_asn INT;
+    DECLARE v_total_addresses INT;
+    
+    -- 获取地址所属国家和ASN
+    SELECT ip.country_id, ip.asn, COUNT(*) INTO v_country_id, v_asn, v_total_addresses
+    FROM active_addresses aa
+    JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+    WHERE aa.address_id = NEW.address_id
+    GROUP BY ip.country_id, ip.asn;
+    
+    -- 更新ASN协议统计
+    IF v_asn IS NOT NULL THEN
+        INSERT INTO asn_protocol_stats 
+            (asn, protocol_id, address_count, percentage, last_updated)
+        SELECT 
+            v_asn,
+            NEW.protocol_id,
+            COUNT(*),
+            ROUND(COUNT(*) * 100.0 / (
+                SELECT COUNT(*) 
+                FROM active_addresses a
+                JOIN ip_prefixes p ON a.prefix_id = p.prefix_id
+                WHERE p.asn = v_asn
+            ), 2),
+            NOW()
+        FROM 
+            address_protocols ap
+        JOIN 
+            active_addresses aa ON ap.address_id = aa.address_id
+        JOIN 
+            ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE 
+            ip.asn = v_asn AND
+            ap.protocol_id = NEW.protocol_id
+        GROUP BY 
+            ip.asn, ap.protocol_id
+        ON DUPLICATE KEY UPDATE
+            address_count = VALUES(address_count),
+            percentage = VALUES(percentage),
+            last_updated = NOW();
+    END IF;
+    
+    -- 更新国家协议统计
+    IF v_country_id IS NOT NULL THEN
+        INSERT INTO country_protocol_stats 
+            (country_id, protocol_id, address_count, percentage, last_updated)
+        SELECT 
+            v_country_id,
+            NEW.protocol_id,
+            COUNT(*),
+            ROUND(COUNT(*) * 100.0 / (
+                SELECT COUNT(*) 
+                FROM active_addresses a
+                JOIN ip_prefixes p ON a.prefix_id = p.prefix_id
+                WHERE p.country_id = v_country_id
+            ), 2),
+            NOW()
+        FROM 
+            address_protocols ap
+        JOIN 
+            active_addresses aa ON ap.address_id = aa.address_id
+        JOIN 
+            ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE 
+            ip.country_id = v_country_id AND
+            ap.protocol_id = NEW.protocol_id
+        GROUP BY 
+            ip.country_id, ap.protocol_id
+        ON DUPLICATE KEY UPDATE
+            address_count = VALUES(address_count),
+            percentage = VALUES(percentage),
+            last_updated = NOW();
+    END IF;
+END //
+DELIMITER ;
+
+-- 创建触发器：地址协议删除后更新ASN和国家统计
+DELIMITER //
+CREATE TRIGGER after_protocol_delete
+AFTER DELETE ON address_protocols
+FOR EACH ROW
+BEGIN
+    DECLARE v_country_id CHAR(2);
+    DECLARE v_asn INT;
+    DECLARE v_address_count INT;
+    DECLARE v_total_addresses INT;
+    DECLARE v_percentage DECIMAL(5,2);
+    
+    -- 获取地址所属国家和ASN
+    SELECT ip.country_id, ip.asn INTO v_country_id, v_asn
+    FROM active_addresses aa
+    JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+    WHERE aa.address_id = OLD.address_id;
+    
+    -- 更新ASN协议统计
+    IF v_asn IS NOT NULL THEN
+        -- 计算新的地址数量
+        SELECT COUNT(*) INTO v_address_count
+        FROM address_protocols ap
+        JOIN active_addresses aa ON ap.address_id = aa.address_id
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ip.asn = v_asn AND ap.protocol_id = OLD.protocol_id;
+        
+        -- 计算总地址数
+        SELECT COUNT(*) INTO v_total_addresses
+        FROM active_addresses aa
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ip.asn = v_asn;
+        
+        -- 计算百分比
+        IF v_total_addresses > 0 THEN
+            SET v_percentage = ROUND(v_address_count * 100.0 / v_total_addresses, 2);
+        ELSE
+            SET v_percentage = 0;
+        END IF;
+        
+        -- 如果没有地址了，删除统计记录，否则更新
+        IF v_address_count = 0 THEN
+            DELETE FROM asn_protocol_stats
+            WHERE asn = v_asn AND protocol_id = OLD.protocol_id;
+        ELSE
+            UPDATE asn_protocol_stats
+            SET address_count = v_address_count,
+                percentage = v_percentage,
+                last_updated = NOW()
+            WHERE asn = v_asn AND protocol_id = OLD.protocol_id;
+        END IF;
+    END IF;
+    
+    -- 更新国家协议统计
+    IF v_country_id IS NOT NULL THEN
+        -- 计算新的地址数量
+        SELECT COUNT(*) INTO v_address_count
+        FROM address_protocols ap
+        JOIN active_addresses aa ON ap.address_id = aa.address_id
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ip.country_id = v_country_id AND ap.protocol_id = OLD.protocol_id;
+        
+        -- 计算总地址数
+        SELECT COUNT(*) INTO v_total_addresses
+        FROM active_addresses aa
+        JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
+        WHERE ip.country_id = v_country_id;
+        
+        -- 计算百分比
+        IF v_total_addresses > 0 THEN
+            SET v_percentage = ROUND(v_address_count * 100.0 / v_total_addresses, 2);
+        ELSE
+            SET v_percentage = 0;
+        END IF;
+        
+        -- 如果没有地址了，删除统计记录，否则更新
+        IF v_address_count = 0 THEN
+            DELETE FROM country_protocol_stats
+            WHERE country_id = v_country_id AND protocol_id = OLD.protocol_id;
+        ELSE
+            UPDATE country_protocol_stats
+            SET address_count = v_address_count,
+                percentage = v_percentage,
+                last_updated = NOW()
+            WHERE country_id = v_country_id AND protocol_id = OLD.protocol_id;
+        END IF;
+    END IF;
+END //
+DELIMITER ;
