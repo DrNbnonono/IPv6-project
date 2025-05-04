@@ -447,7 +447,7 @@ onMounted(() => {
   flex-direction: column;
   min-height: 100vh;
   background-color: #f5f7fa;
-  font-size: 16px; /* 放大基础字体大小 */
+  font-size: 12px; /* 放大基础字体大小 */
   line-height: 1.6;
 }
 
@@ -496,7 +496,7 @@ onMounted(() => {
     
     h1 {
       margin: 0;
-      font-size: 1.8rem;
+      font-size: 1.5rem;
       font-weight: 600;
       letter-spacing: 1px;
     }

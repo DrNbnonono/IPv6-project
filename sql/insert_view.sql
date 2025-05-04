@@ -1,3 +1,5 @@
+use ipv6_project;
+
 -- 先删除已存在的视图（如果存在）
 DROP VIEW IF EXISTS protocol_stats;
 DROP VIEW IF EXISTS asn_protocol_stats;

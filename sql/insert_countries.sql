@@ -269,5 +269,5 @@ INSERT INTO countries (country_id, country_name, country_name_zh, iso3_code, reg
 
 -- 有争议地区(根据实际需求可选)
 INSERT INTO countries (country_id, country_name, country_name_zh, iso3_code, region, subregion, latitude, longitude) VALUES
-('TW', 'Taiwan (Province of China)', '台湾地区(中国的省份)', 'TWN', 'Asia', 'Eastern Asia', 23.69781, 120.960515),
+('TW', 'Taiwan', '中国台湾', 'TWN', 'Asia', 'Eastern Asia', 23.69781, 120.960515),
 ('EH', 'Western Sahara', '西撒哈拉', 'ESH', 'Africa', 'Northern Africa', 24.215527, -12.885834);

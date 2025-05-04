@@ -24,8 +24,9 @@ app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/database', databaseRoutes);
 
+// 更新CORS配置，允许所有来源访问或指定您的域名
 app.use(cors({
-  origin: 'http://localhost:5173', // 前端实际运行的端口地址
+  origin: '*', // 允许所有来源访问，生产环境建议设置为您的域名
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Content-Disposition'] // 允许前端访问Content-Disposition
@@ -36,7 +37,7 @@ app.get('/api/test', (req, res) => {
   res.send('Hello World!');
 });
 
-// 启动服务
-app.listen(PORT, () => {
-  console.log(`服务器正在运行在 http://localhost:${PORT}`);
+// 启动服务，监听所有网络接口
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`服务器正在运行在 http://0.0.0.0:${PORT}`);
 });

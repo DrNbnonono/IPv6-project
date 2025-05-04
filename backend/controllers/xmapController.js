@@ -451,6 +451,9 @@ exports.scan = async (req, res) => {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
 
+    xmapProcess.stdin.write('NKU@ipv6!218\n');
+    xmapProcess.stdin.end();
+
     activeProcesses.set(taskId, xmapProcess);
     const errorStream = fs.createWriteStream(errorLogFile);
     xmapProcess.stderr.pipe(errorStream);

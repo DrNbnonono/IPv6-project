@@ -31,7 +31,7 @@ CREATE TABLE `tasks` (
 INSERT INTO users (phone, password_hash, role)
 VALUES (
   '13526656040',  -- 替换为管理员手机号
-  '$2b$10$mf7nawIOp1X4J64nDG3JOeAS18D4X./ed93U8OG21LjtVTWRfPbwW',  -- 替换为步骤 2 生成的 hash
+  'admin',  -- 替换为步骤 2 生成的 hash
   'admin'
 );
 

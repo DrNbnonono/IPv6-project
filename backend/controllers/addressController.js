@@ -1007,31 +1007,15 @@ exports.getCountryDetail = async (req, res) => {
       ORDER BY a.total_active_ipv6 DESC
     `, [countryId]);
     
-    // 获取国家的IPv6统计数据
+    // 获取国家的IPv6统计数据，直接使用ASN表格数据
     const [ipv6Stats] = await db.query(`
       SELECT 
         COUNT(DISTINCT ip.prefix_id) AS total_prefixes,
         COUNT(DISTINCT a.asn) AS total_asns,
-        SUM(CASE WHEN aa.iid_type IS NOT NULL THEN 1 ELSE 0 END) AS identified_iids,
-        COUNT(DISTINCT aa.address_id) AS total_addresses
+        SUM(a.total_active_ipv6) AS total_addresses
       FROM ip_prefixes ip
       LEFT JOIN asns a ON ip.asn = a.asn
-      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
       WHERE ip.country_id = ? AND ip.version = '6'
-    `, [countryId]);
-    
-    // 获取IID类型分布
-    const [iidDistribution] = await db.query(`
-      SELECT 
-        at.type_name,
-        at.is_risky,
-        COUNT(aa.address_id) AS address_count
-      FROM active_addresses aa
-      JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-      JOIN address_types at ON aa.iid_type = at.type_id
-      WHERE ip.country_id = ?
-      GROUP BY at.type_id
-      ORDER BY address_count DESC
     `, [countryId]);
     
     res.json({
@@ -1039,8 +1023,7 @@ exports.getCountryDetail = async (req, res) => {
       data: {
         country: countryInfo[0],
         asns: asnList,
-        stats: ipv6Stats[0],
-        iidDistribution: iidDistribution
+        stats: ipv6Stats[0]
       }
     });
   } catch (error) {
@@ -1091,7 +1074,7 @@ exports.getAsnDetail = async (req, res) => {
       });
     }
     
-    // 获取ASN的前缀列表
+    // 获取ASN的前缀列表，直接使用ip_prefixes表中的active_ipv6_count字段
     const [prefixList] = await db.query(`
       SELECT 
         ip.prefix_id,
@@ -1099,27 +1082,16 @@ exports.getAsnDetail = async (req, res) => {
         ip.prefix_length,
         ip.allocation_date,
         ip.registry,
-        COUNT(aa.address_id) AS active_addresses
+        ip.active_ipv6_count AS active_addresses
       FROM ip_prefixes ip
-      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
       WHERE ip.asn = ? AND ip.version = '6'
-      GROUP BY ip.prefix_id
-      ORDER BY active_addresses DESC
+      ORDER BY ip.active_ipv6_count DESC
     `, [asn]);
     
-    // 获取IID类型分布
-    const [iidDistribution] = await db.query(`
-      SELECT 
-        at.type_name,
-        at.is_risky,
-        COUNT(aa.address_id) AS address_count
-      FROM active_addresses aa
-      JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-      JOIN address_types at ON aa.iid_type = at.type_id
-      WHERE ip.asn = ?
-      GROUP BY at.type_id
-      ORDER BY address_count DESC
-    `, [asn]);
+    // 获取IID类型分布（如果仍需要此信息，可以保留，但不再使用活跃地址表）
+    // 由于不再使用活跃地址表，此处可以移除或修改为其他统计信息
+    // 以下是一个示例，如果您有其他数据源可以替换
+    const iidDistribution = [];
     
     res.json({
       success: true,
@@ -1144,7 +1116,11 @@ exports.getAsnDetail = async (req, res) => {
  */
 exports.getGlobalStats = async (req, res) => {
   try {
+    console.log('开始执行getGlobalStats函数...');
+    const startTime = performance.now();
+    
     const { sort = 'total_active_ipv6', order = 'desc', limit = 500 } = req.query;
+    console.log(`请求参数: sort=${sort}, order=${order}, limit=${limit}`);
     
     // 验证排序字段
     const allowedSortFields = ['total_active_ipv6', 'total_ipv6_prefixes', 'country_name'];
@@ -1153,6 +1129,8 @@ exports.getGlobalStats = async (req, res) => {
     // 验证排序方向
     const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     
+    console.log('开始查询国家排名...');
+    const countryQueryStart = performance.now();
     // 获取国家排名
     const [countries] = await db.query(`
       SELECT 
@@ -1170,34 +1148,23 @@ exports.getGlobalStats = async (req, res) => {
       ORDER BY ${sortField} ${sortOrder}
       LIMIT ?
     `, [parseInt(limit)]);
+    console.log(`国家排名查询完成，耗时: ${(performance.now() - countryQueryStart).toFixed(2)}ms, 返回${countries.length}条记录`);
     
-    // 获取全球统计数据
+    console.log('开始查询全球统计数据...');
+    const statsQueryStart = performance.now();
+    // 优化全球统计数据查询 - 直接从countries和asns表获取汇总数据
     const [globalStats] = await db.query(`
       SELECT 
-        COUNT(DISTINCT c.country_id) AS total_countries,
-        COUNT(DISTINCT a.asn) AS total_asns,
-        COUNT(DISTINCT ip.prefix_id) AS total_prefixes,
-        COUNT(DISTINCT aa.address_id) AS total_addresses
-      FROM countries c
-      LEFT JOIN asns a ON c.country_id = a.country_id
-      LEFT JOIN ip_prefixes ip ON a.asn = ip.asn
-      LEFT JOIN active_addresses aa ON ip.prefix_id = aa.prefix_id
-      WHERE ip.version = '6'
+        (SELECT COUNT(*) FROM countries) AS total_countries,
+        (SELECT COUNT(*) FROM asns) AS total_asns,
+        (SELECT SUM(total_ipv6_prefixes) FROM countries) AS total_prefixes,
+        (SELECT SUM(total_active_ipv6) FROM countries) AS total_addresses
     `);
-    
-    // 获取全球IID类型分布
-    const [iidDistribution] = await db.query(`
-      SELECT 
-        at.type_name,
-        at.is_risky,
-        COUNT(aa.address_id) AS address_count
-      FROM active_addresses aa
-      JOIN address_types at ON aa.iid_type = at.type_id
-      GROUP BY at.type_id
-      ORDER BY address_count DESC
-    `);
+    console.log(`全球统计数据查询完成，耗时: ${(performance.now() - statsQueryStart).toFixed(2)}ms`);
     
     // 获取区域分布
+    console.log('开始查询区域分布...');
+    const regionQueryStart = performance.now();
     const [regionDistribution] = await db.query(`
       SELECT 
         c.region,
@@ -1208,13 +1175,16 @@ exports.getGlobalStats = async (req, res) => {
       GROUP BY c.region
       ORDER BY address_count DESC
     `);
+    console.log(`区域分布查询完成，耗时: ${(performance.now() - regionQueryStart).toFixed(2)}ms, 返回${regionDistribution.length}条记录`);
+    
+    const totalTime = performance.now() - startTime;
+    console.log(`getGlobalStats函数执行完成，总耗时: ${totalTime.toFixed(2)}ms`);
     
     res.json({
       success: true,
       data: {
         countries: countries,
         stats: globalStats[0],
-        iidDistribution: iidDistribution,
         regionDistribution: regionDistribution
       }
     });
@@ -1226,7 +1196,6 @@ exports.getGlobalStats = async (req, res) => {
     });
   }
 };
-
 
 /**
  * 获取所有协议列表

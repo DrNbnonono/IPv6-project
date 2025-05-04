@@ -1,0 +1,3 @@
+country,asn,prefix,file,batch,as_name
+IN,55644,2402:3a80::/32,/home/ipv6/periphery/result/Original/IN/V/uniq_ips.txt,1000,Vodafone Idea Ltd
+IN,9829,2001:4490::/30,/home/ipv6/periphery/result/Original/IN/BSNL/uniq_ips.txt,1000,Bharat Sanchar Nigam Limited

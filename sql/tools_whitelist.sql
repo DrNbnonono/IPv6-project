@@ -34,7 +34,5 @@ ALTER TABLE `whitelists`
 ADD COLUMN `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否删除(0:未删除,1:已删除)' AFTER `description`;
 
 INSERT INTO `tools` (`name`, `description`) VALUES 
-('xmap', 'IPv6网络探测工具'),
-('addr6', 'IPv6地址生成工具'),
 ('zgrab2', '应用层协议扫描工具'),
 ('database', '数据库更新工具');  -- 添加您需要的其他工具类型

@@ -3,8 +3,8 @@ import { useAuthStore } from '@/stores/auth'
 const authStore = useAuthStore()
 // 创建 axios 实例
 const apiClient = axios.create({
-  baseURL: '/api',
-  timeout: 10000,
+  baseURL: 'http://202.112.47.141:3000/api',
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }

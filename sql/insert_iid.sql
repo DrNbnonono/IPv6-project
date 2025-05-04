@@ -1,3 +1,5 @@
+use ipv6_project;
+
 -- 插入接口标识符类型数据
 INSERT IGNORE INTO address_types (type_name, description, is_risky, example) VALUES
 ('ieee', '基于IEEE EUI-64标准生成的IID', FALSE, '::200:5eff:fe12:3456'),
