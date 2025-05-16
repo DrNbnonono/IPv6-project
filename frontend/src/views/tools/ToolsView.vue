@@ -227,220 +227,221 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
-import axios from 'axios'
+  import { ref, onMounted, computed } from 'vue'
+  import { useAuthStore } from '@/stores/auth'
+  import { useRouter } from 'vue-router'
+  import axios from 'axios'
 
-const authStore = useAuthStore()
-const router = useRouter()
+  const authStore = useAuthStore()
+  const router = useRouter()
 
-// 用户信息
-const userIP = ref('获取中...')
-const userCountry = ref('中国')
-const onlineUsers = ref(12)
-const startupTime = ref('2025-03-30 08:00:00')
-const lastUpdate = ref(new Date().toLocaleDateString())
+  // 用户信息
+  const userIP = ref('获取中...')
+  const userCountry = ref('中国')
+  const onlineUsers = ref(12)
+  const startupTime = ref('2025-03-30 08:00:00')
+  const lastUpdate = ref(new Date().toLocaleDateString())
 
 
-const currentTool = ref('')
-const whitelists = ref({
-  data: [],
-  pagination: {
-    page: 1,
-    pageSize: 10,
-    total: 0,
-    totalPages: 1
+  const currentTool = ref('')
+  const whitelists = ref({
+    data: [],
+    pagination: {
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      totalPages: 1
+    }
+  })
+
+  // 上传相关状态
+  const uploadTool = ref('xmap')
+  const uploadDescription = ref('')
+  const selectedFile = ref(null)
+  const fileInput = ref(null)
+  // 跳转到探测平台
+  const goToDetectionPlatform = () => {
+    router.push('/detection-platform')
   }
-})
 
-// 上传相关状态
-const uploadTool = ref('xmap')
-const uploadDescription = ref('')
-const selectedFile = ref(null)
-const fileInput = ref(null)
-// 跳转到探测平台
-const goToDetectionPlatform = () => {
-  router.push('/detection-platform')
-}
+  // 工具列表 - 未来可以扩展
+  const availableTools = ref([
+    { path: '/tools/database', name: 'database', icon: 'icon-database'},
+    { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
+    { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
+    { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
+    { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
+  ])
 
-// 工具列表 - 未来可以扩展
-const availableTools = ref([
-  { path: '/tools/database', name: 'database', icon: 'icon-database'},
-  { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
-  { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
-  { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
-  { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
-])
+  // 统计数据
+  const stats = ref([
+    { title: '总任务数', value: 0, label: '全部扫描任务', icon: 'icon-total', bgColor: 'bg-blue' },
+    { title: '进行中', value: 0, label: '正在运行任务', icon: 'icon-running', bgColor: 'bg-orange' },
+    { title: '已完成', value: 0, label: '成功完成任务', icon: 'icon-completed', bgColor: 'bg-green' },
+    { title: '今日新增', value: 0, label: '24小时内新增', icon: 'icon-new', bgColor: 'bg-purple' }
+  ])
 
-// 统计数据
-const stats = ref([
-  { title: '总任务数', value: 0, label: '全部扫描任务', icon: 'icon-total', bgColor: 'bg-blue' },
-  { title: '进行中', value: 0, label: '正在运行任务', icon: 'icon-running', bgColor: 'bg-orange' },
-  { title: '已完成', value: 0, label: '成功完成任务', icon: 'icon-completed', bgColor: 'bg-green' },
-  { title: '今日新增', value: 0, label: '24小时内新增', icon: 'icon-new', bgColor: 'bg-purple' }
-])
-
-// 获取用户IP和国家
-const fetchUserInfo = async () => {
-  try {
-    // 实际项目中这里应该调用您的后端API
-    const ipResponse = await axios.get('https://api.ipify.org?format=json')
-    userIP.value = ipResponse.data.ip
-    
-    // 模拟国家信息
-    const countries = ['中国', '美国', '日本', '德国', '英国']
-    userCountry.value = countries[Math.floor(Math.random() * countries.length)]
-  } catch (error) {
-    userIP.value = '未知'
-    userCountry.value = '未知'
+  // 获取用户IP和国家
+  const fetchUserInfo = async () => {
+    try {
+      // 实际项目中这里应该调用您的后端API
+      const ipResponse = await axios.get('https://api.ipify.org?format=json')
+      userIP.value = ipResponse.data.ip
+      
+      // 模拟国家信息
+      const countries = ['中国', '美国', '日本', '德国', '英国']
+      userCountry.value = countries[Math.floor(Math.random() * countries.length)]
+    } catch (error) {
+      userIP.value = '未知'
+      userCountry.value = '未知'
+    }
   }
-}
 
-// 计算属性
-const canUpload = computed(() => {
-  return uploadTool.value && selectedFile.value
-})
+  // 计算属性
+  const canUpload = computed(() => {
+    return uploadTool.value && selectedFile.value
+  })
 
-// 获取白名单列表
-const fetchWhitelists = async () => {
-  try {
-    const response = await axios.get('/api/xmap/whitelists', {
-      params: {
-        tool: currentTool.value,
-        page: whitelists.value.pagination.page,
-        pageSize: whitelists.value.pagination.pageSize
+  // 获取白名单列表
+  const fetchWhitelists = async () => {
+    try {
+      const response = await axios.get('/api/xmap/whitelists', {
+        params: {
+          tool: currentTool.value,
+          page: whitelists.value.pagination.page,
+          pageSize: whitelists.value.pagination.pageSize
+        }
+      })
+      
+      if (response.data.success) {
+        whitelists.value.data = response.data.data
+        whitelists.value.pagination = response.data.pagination
       }
-    })
-    
-    if (response.data.success) {
-      whitelists.value.data = response.data.data
-      whitelists.value.pagination = response.data.pagination
+    } catch (error) {
+      console.error('获取白名单列表失败:', error)
     }
-  } catch (error) {
-    console.error('获取白名单列表失败:', error)
   }
-}
 
-// 分页切换
-const changePage = (newPage) => {
-  if (newPage < 1 || newPage > whitelists.value.pagination.totalPages) return
-  whitelists.value.pagination.page = newPage
-  fetchWhitelists()
-}
+  // 分页切换
+  const changePage = (newPage) => {
+    if (newPage < 1 || newPage > whitelists.value.pagination.totalPages) return
+    whitelists.value.pagination.page = newPage
+    fetchWhitelists()
+  }
 
-// 文件选择处理
-const handleFileSelect = (event) => {
-  selectedFile.value = event.target.files[0]
-}
+  // 文件选择处理
+  const handleFileSelect = (event) => {
+    selectedFile.value = event.target.files[0]
+  }
 
-// 上传文件
-const handleUpload = async () => {
-  if (!canUpload.value) return
-  
-  const formData = new FormData()
-  formData.append('file', selectedFile.value)
-  formData.append('tool', uploadTool.value)
-  formData.append('description', uploadDescription.value)
-  
-  try {
-    const response = await axios.post('/api/xmap/whitelist', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
+  // 上传文件
+  const handleUpload = async () => {
+    if (!canUpload.value) return
+    
+    const formData = new FormData()
+    formData.append('file', selectedFile.value)
+    formData.append('tool', uploadTool.value)
+    formData.append('description', uploadDescription.value)
+    
+    try {
+      const response = await axios.post('/api/xmap/whitelist', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      
+      if (response.data.success) {
+        // 上传成功后重置表单并刷新列表
+        uploadDescription.value = ''
+        selectedFile.value = null
+        if (fileInput.value) fileInput.value.value = ''
+        fetchWhitelists()
       }
-    })
-    
-    if (response.data.success) {
-      // 上传成功后重置表单并刷新列表
-      uploadDescription.value = ''
-      selectedFile.value = null
-      if (fileInput.value) fileInput.value.value = ''
-      fetchWhitelists()
+    } catch (error) {
+      console.error('上传失败:', error)
     }
-  } catch (error) {
-    console.error('上传失败:', error)
   }
-}
 
-// 删除确认
-const confirmDelete = (id) => {
-  if (confirm('确定要删除这个白名单文件吗？此操作不可恢复。')) {
-    deleteWhitelist(id)
-  }
-}
-
-// 删除文件
-const deleteWhitelist = async (id) => {
-  try {
-    const response = await axios.delete(`/api/xmap/whitelist/${id}`)
-    if (response.data.success) {
-      fetchWhitelists() // 刷新列表
+  // 删除确认
+  const confirmDelete = (id) => {
+    if (confirm('确定要删除这个白名单文件吗？此操作不可恢复。')) {
+      deleteWhitelist(id)
     }
-  } catch (error) {
-    console.error('删除失败:', error)
   }
-}
 
-// 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
-}
-
-// 获取任务统计
-const fetchTaskStats = async () => {
-  try {
-    const response = await axios.get('/api/xmap/tasks')
-    if (response.data.tasks) {
-      const tasks = response.data.tasks
-      stats.value[0].value = tasks.length
-      stats.value[1].value = tasks.filter(t => t.status === 'running').length
-      stats.value[2].value = tasks.filter(t => t.status === 'completed').length
-      stats.value[3].value = tasks.filter(t => {
-        const taskDate = new Date(t.created_at)
-        const now = new Date()
-        return (now - taskDate) < 24 * 60 * 60 * 1000
-      }).length
+  // 删除文件
+  const deleteWhitelist = async (id) => {
+    try {
+      const response = await axios.delete(`/api/xmap/whitelist/${id}`)
+      if (response.data.success) {
+        fetchWhitelists() // 刷新列表
+      }
+    } catch (error) {
+      console.error('删除失败:', error)
     }
-  } catch (error) {
-    console.error('获取任务统计失败:', error)
   }
-}
 
-// 刷新数据
-const refreshData = () => {
-  fetchUserInfo()
-  fetchTaskStats()
-}
+  // 格式化日期
+  const formatDate = (dateString) => {
+    if (!dateString) return ''
+    const date = new Date(dateString)
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
+  }
 
-// 返回首页
-const goToHome = () => {
-  router.push('/tools')
-}
+  // 获取任务统计
+  const fetchTaskStats = async () => {
+    try {
+      const response = await axios.get('/api/xmap/tasks')
+      if (response.data.tasks) {
+        const tasks = response.data.tasks
+        stats.value[0].value = tasks.length
+        stats.value[1].value = tasks.filter(t => t.status === 'running').length
+        stats.value[2].value = tasks.filter(t => t.status === 'completed').length
+        stats.value[3].value = tasks.filter(t => {
+          const taskDate = new Date(t.created_at)
+          const now = new Date()
+          return (now - taskDate) < 24 * 60 * 60 * 1000
+        }).length
+      }
+    } catch (error) {
+      console.error('获取任务统计失败:', error)
+    }
+  }
 
-// 显示关于信息
-const showAbout = () => {
-  alert('IPv6探测平台 v1.0.0\n©2023 网络探测研发中心')
-}
+  // 刷新数据
+  const refreshData = () => {
+    fetchUserInfo()
+    fetchTaskStats()
+  }
 
-// 退出登录
-const handleLogout = () => {
-  authStore.logout()
-  router.push('/login')
-}
+  // 返回首页
+  const goToHome = () => {
+    router.push('/tools')
+  }
 
-onMounted(() => {
-  fetchUserInfo()
-  fetchTaskStats()
-  fetchWhitelists()
-  // 模拟在线用户数变化
-  setInterval(() => {
-    onlineUsers.value = Math.max(5, Math.floor(Math.random() * 20))
-  }, 10000)
-})
+  // 显示关于信息
+  const showAbout = () => {
+    alert('IPv6探测平台 v1.0.0\n©2025 网络探测研发中心')
+  }
+
+  // 退出登录
+  const handleLogout = () => {
+    authStore.logout()
+    router.push('/login')
+  }
+
+  onMounted(() => {
+    fetchUserInfo()
+    fetchTaskStats()
+    fetchWhitelists()
+    // 模拟在线用户数变化
+    setInterval(() => {
+      onlineUsers.value = Math.max(5, Math.floor(Math.random() * 20))
+    }, 10000)
+  })
 </script>
 
+// ... existing code ...
 <style scoped lang="scss">
 .tools-view {
   display: flex;
@@ -479,13 +480,13 @@ onMounted(() => {
 .tools-header {
   background: linear-gradient(135deg, #35495e 0%, #2c3e50 100%);
   color: white;
-  padding: 0.8rem 0;
+  padding: 0.6rem 0; // 减小垂直内边距
   box-shadow: 0 2px 15px rgba(0, 0, 0, 0.15);
   
   .header-content {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 3rem;
+    max-width: 1400px; // 保持头部内容居中，如果需要头部内容也靠左，可以移除此行和下一行
+    margin: 0 auto;    // 保持头部内容居中
+    padding: 0 1.5rem; // 减小水平内边距
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -496,13 +497,13 @@ onMounted(() => {
     
     h1 {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.4rem; // 略微减小字体
       font-weight: 600;
       letter-spacing: 1px;
     }
     
     .logo-subtitle {
-      font-size: 0.9rem;
+      font-size: 0.85rem; // 略微减小字体
       opacity: 0.8;
     }
   }
@@ -512,14 +513,14 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: 0.4rem; // 减小间距
   
   .ip-info {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    margin-bottom: 0.5rem;
+    gap: 0.4rem; // 减小间距
+    font-size: 0.85rem; // 略微减小字体
+    margin-bottom: 0.4rem; // 减小间距
     
     .ip-label {
       opacity: 0.8;
@@ -532,29 +533,29 @@ onMounted(() => {
     
     .ip-country {
       background-color: rgba(255, 255, 255, 0.1);
-      padding: 0.2rem 0.5rem;
-      border-radius: 12px;
-      font-size: 0.8rem;
+      padding: 0.15rem 0.4rem; // 减小内边距
+      border-radius: 10px; // 调整圆角
+      font-size: 0.75rem; // 略微减小字体
     }
   }
   
   .user-actions {
     display: flex;
-    gap: 0.8rem;
+    gap: 0.6rem; // 减小间距
   }
 }
 
 .btn {
-  padding: 0.6rem 1.2rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  padding: 0.5rem 1rem; // 减小内边距
+  border-radius: 5px; // 调整圆角
+  font-size: 0.85rem; // 略微减小字体
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem; // 减小间距
   cursor: pointer;
   transition: all 0.2s ease;
   
-  &-home {
+  &-home, &-logout, &-platform { // 合并相似按钮样式
     background-color: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.3);
     color: white;
@@ -564,14 +565,11 @@ onMounted(() => {
     }
   }
   
-  &-logout {
-    background-color: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    
-    &:hover {
-      background-color: rgba(255, 99, 71, 0.3);
-    }
+  &-logout:hover {
+    background-color: rgba(255, 99, 71, 0.3);
+  }
+   &-platform:hover {
+    background-color: rgba(70, 130, 180, 0.3);
   }
   
   &-refresh {
@@ -588,42 +586,42 @@ onMounted(() => {
 .tools-container {
   display: flex;
   flex: 1;
-  max-width: 1400px;
-  margin: 0 auto;
+  // max-width: 1400px; // 移除此行使容器占满宽度
+  // margin: 0 auto;    // 移除此行使容器占满宽度
   width: 100%;
-  padding: 0 1rem;
+  padding: 0; // 移除容器的水平内边距，使侧边栏紧贴左侧
 }
 
 .tools-sidebar {
-  width: 260px; /* 加宽侧边栏 */
+  width: 240px; // 略微减小侧边栏宽度
   background-color: white;
   border-right: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
-  padding: 1.5rem 0;
+  padding: 1rem 0; // 减小垂直内边距
   
   .sidebar-header {
-    padding: 0 1.5rem 1rem;
+    padding: 0 1rem 0.8rem; // 减小内边距
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid #eee;
-    margin-bottom: 1rem;
+    margin-bottom: 0.8rem; // 减小外边距
     
     h3 {
       margin: 0;
-      font-size: 1.2rem;
+      font-size: 1.1rem; // 略微减小字体
       color: #444;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem; // 减小间距
     }
     
     .tool-count {
-      font-size: 0.8rem;
+      font-size: 0.75rem; // 略微减小字体
       background-color: #f0f0f0;
-      padding: 0.2rem 0.5rem;
-      border-radius: 10px;
+      padding: 0.15rem 0.4rem; // 减小内边距
+      border-radius: 8px; // 调整圆角
     }
   }
 }
@@ -631,17 +629,17 @@ onMounted(() => {
 .tools-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem 0;
+  padding: 0.4rem 0; // 减小垂直内边距
   
   .nav-item {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.9rem 1.5rem;
+    gap: 0.8rem; // 减小间距
+    padding: 0.7rem 1rem; // 减小内边距
     color: #555;
     text-decoration: none;
     transition: all 0.2s ease;
-    font-size: 1rem;
+    font-size: 0.9rem; // 略微减小字体
     position: relative;
     
     &:hover {
@@ -660,14 +658,14 @@ onMounted(() => {
         left: 0;
         top: 0;
         bottom: 0;
-        width: 4px;
+        width: 3px; // 减小指示器宽度
         background-color: #42b983;
       }
     }
     
     i {
-      font-size: 1.2rem;
-      width: 24px;
+      font-size: 1.1rem; // 略微减小图标大小
+      width: 20px; // 调整宽度
       text-align: center;
     }
     
@@ -676,32 +674,32 @@ onMounted(() => {
     }
     
     .tool-badge {
-      font-size: 0.7rem;
+      font-size: 0.65rem; // 略微减小字体
       background-color: #ff4757;
       color: white;
-      padding: 0.2rem 0.5rem;
-      border-radius: 10px;
+      padding: 0.15rem 0.4rem; // 减小内边距
+      border-radius: 8px; // 调整圆角
     }
   }
 }
 
 .sidebar-footer {
-  padding: 1.5rem;
+  padding: 1rem; // 减小内边距
   border-top: 1px solid #eee;
   
   .system-status {
     .status-item {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 0.85rem;
+      gap: 0.4rem; // 减小间距
+      font-size: 0.8rem; // 略微减小字体
       color: #666;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.4rem; // 减小外边距
       
       .status-dot {
         display: inline-block;
-        width: 8px;
-        height: 8px;
+        width: 7px; // 减小点大小
+        height: 7px; // 减小点大小
         border-radius: 50%;
         background-color: #ccc;
         
@@ -715,7 +713,7 @@ onMounted(() => {
 
 .tools-main {
   flex: 1;
-  padding: 2rem;
+  padding: 1.5rem; // 减小内边距
   background-color: white;
   display: flex;
   flex-direction: column;
@@ -727,139 +725,128 @@ onMounted(() => {
 }
 
 .dashboard-overview {
-  margin-bottom: 2.5rem;
-  padding-bottom: 2rem;
+  margin-bottom: 1.5rem; // 减小外边距
+  padding-bottom: 1.5rem; // 减小内边距
   border-bottom: 1px solid #eee;
   
   .overview-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem; // 减小外边距
     
     h2 {
       margin: 0;
-      font-size: 1.5rem;
+      font-size: 1.3rem; // 略微减小字体
       color: #444;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem; // 减小间距
     }
   }
 }
 
 .overview-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); // 调整最小宽度
+  gap: 1rem; // 减小间距
 }
 
 .card {
   background-color: white;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  padding: 1.8rem;
+  border-radius: 8px; // 调整圆角
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07); // 调整阴影
+  padding: 1.2rem; // 减小内边距
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem; // 减小间距
   transition: all 0.3s ease;
   border: 1px solid #eee;
   
   &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-4px); // 调整悬浮效果
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.1); // 调整悬浮阴影
   }
   
   .card-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 12px;
+    width: 50px; // 减小图标容器大小
+    height: 50px; // 减小图标容器大小
+    border-radius: 10px; // 调整圆角
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
-    font-size: 1.8rem;
+    font-size: 1.6rem; // 减小图标大小
     
-    &.bg-blue {
-      background-color: #4299e1;
-    }
-    
-    &.bg-green {
-      background-color: #48bb78;
-    }
-    
-    &.bg-orange {
-      background-color: #ed8936;
-    }
-    
-    &.bg-purple {
-      background-color: #9f7aea;
-    }
+    &.bg-blue { background-color: #4299e1; }
+    &.bg-green { background-color: #48bb78; }
+    &.bg-orange { background-color: #ed8936; }
+    &.bg-purple { background-color: #9f7aea; }
   }
   
   .card-content {
     flex: 1;
     
     h4 {
-      margin: 0 0 0.5rem;
-      font-size: 1rem;
+      margin: 0 0 0.3rem; // 调整外边距
+      font-size: 0.9rem; // 略微减小字体
       color: #666;
       font-weight: 500;
     }
     
     .card-value {
       margin: 0;
-      font-size: 1.8rem;
+      font-size: 1.6rem; // 略微减小字体
       font-weight: 600;
       color: #333;
       line-height: 1.2;
     }
     
     .card-label {
-      margin: 0.3rem 0 0;
-      font-size: 0.85rem;
+      margin: 0.2rem 0 0; // 调整外边距
+      font-size: 0.8rem; // 略微减小字体
       color: #999;
     }
   }
 }
 
 .tools-footer {
-  margin-top: 3rem;
-  padding-top: 2rem;
+  margin-top: 2rem; // 减小外边距
+  padding-top: 1.5rem; // 减小内边距
   border-top: 1px solid #eee;
   
   .footer-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 2rem;
-    margin-bottom: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); // 调整最小宽度
+    gap: 1.5rem; // 减小间距
+    margin-bottom: 1rem; // 减小外边距
     
     .footer-section {
       h4 {
-        margin: 0 0 1rem;
-        font-size: 1.1rem;
+        margin: 0 0 0.8rem; // 调整外边距
+        font-size: 1rem; // 略微减小字体
         color: #444;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.4rem; // 减小间距
       }
       
       p {
-        margin: 0.5rem 0;
+        margin: 0.4rem 0; // 调整外边距
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.4rem; // 减小间距
         color: #666;
-        font-size: 0.95rem;
+        font-size: 0.85rem; // 略微减小字体
       }
     }
   }
   
   .copyright {
     text-align: center;
-    padding: 1rem 0;
+    padding: 0.8rem 0; // 减小内边距
     color: #999;
-    font-size: 0.9rem;
+    font-size: 0.85rem; // 略微减小字体
     border-top: 1px solid #eee;
     
     a {
@@ -874,8 +861,8 @@ onMounted(() => {
 }
 
 .whitelist-management {
-  margin-top: 3rem;
-  padding: 2rem;
+  margin-top: 2rem; // 减小外边距
+  padding: 1.5rem; // 减小内边距
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -885,11 +872,11 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem; // 减小外边距
   
   h3 {
     margin: 0;
-    font-size: 1.3rem;
+    font-size: 1.2rem; // 略微减小字体
     color: #35495e;
     display: flex;
     align-items: center;
@@ -900,55 +887,57 @@ onMounted(() => {
 .tool-filter {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.8rem; // 减小间距
 }
 
 .upload-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem; // 减小外边距
 }
 
 .upload-card {
-  padding: 1.5rem;
+  padding: 1rem; // 减小内边距
   background-color: #f8fafc;
   border-radius: 8px;
   border: 1px dashed #cbd5e0;
   
   h4 {
     margin-top: 0;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem; // 减小外边距
     color: #4a5568;
+    font-size: 1.1rem; // 略微减小字体
   }
 }
 
 .form-group {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1rem; // 减小外边距
   
   label {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem; // 减小外边距
     font-weight: 500;
     color: #4a5568;
+    font-size: 0.9rem; // 略微减小字体
   }
 }
 
 .form-select, .form-input {
   width: 100%;
-  padding: 0.8rem;
+  padding: 0.7rem; // 减小内边距
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.9rem; // 略微减小字体
   
   &:focus {
     outline: none;
     border-color: #4299e1;
-    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.2);
+    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2); // 调整阴影
   }
 }
 .btn-primary {
   background-color: #42b983;
   color: white;
   border: none;
-  padding: 0.8rem 1.5rem;
+  padding: 0.7rem 1.2rem; // 减小内边距
   border-radius: 6px;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -968,7 +957,7 @@ onMounted(() => {
   background-color: #f56565;
   color: white;
   border: none;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.8rem; // 减小内边距
   border-radius: 6px;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -981,7 +970,7 @@ onMounted(() => {
 
 .file-upload-btn {
   display: block;
-  padding: 0.8rem;
+  padding: 0.7rem; // 减小内边距
   background-color: #f7fafc;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
@@ -1002,7 +991,7 @@ onMounted(() => {
 
 
 .whitelist-table {
-  margin-top: 2rem;
+  margin-top: 1.5rem; // 减小外边距
   overflow-x: auto;
   
   table {
@@ -1010,7 +999,7 @@ onMounted(() => {
     border-collapse: collapse;
     
     th, td {
-      padding: 1rem;
+      padding: 0.8rem; // 减小内边距
       text-align: left;
       border-bottom: 1px solid #e2e8f0;
     }
@@ -1019,6 +1008,7 @@ onMounted(() => {
       background-color: #f8fafc;
       font-weight: 500;
       color: #4a5568;
+      font-size: 0.9rem; // 略微减小字体
     }
     
     tr:hover {
@@ -1031,21 +1021,21 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 1rem;
-  margin-top: 2rem;
-  padding-top: 1rem;
+  gap: 0.8rem; // 减小间距
+  margin-top: 1.5rem; // 减小外边距
+  padding-top: 0.8rem; // 减小内边距
   border-top: 1px solid #e2e8f0;
 }
 
 .empty-state {
   text-align: center;
-  padding: 3rem 0;
+  padding: 2rem 0; // 减小内边距
   color: #a0aec0;
   
   i {
-    font-size: 2rem;
+    font-size: 1.8rem; // 减小图标大小
     opacity: 0.5;
-    margin-bottom: 1rem;
+    margin-bottom: 0.8rem; // 减小外边距
   }
 }
 
@@ -1077,4 +1067,8 @@ onMounted(() => {
 .icon-delete:before { content: "🗑️"; }
 .icon-empty:before { content: "📭"; }
 .icon-database:before { content: "🗄️"; }
+.icon-zgrab2:before { content: "🛰️"; } // 添加zgrab2图标示例
+.icon-addr6:before { content: "🌐"; } // 添加addr6图标示例
+.icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例
+.icon-upload:before { content: "📤"; } // 添加上传图标示例
 </style>

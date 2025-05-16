@@ -27,7 +27,6 @@ const upload = multer({
 // 上传白名单文件
 router.post('/whitelist', upload.single('file'), xmapController.uploadWhitelist)
 
-// 其他路由保持不变...
 router.get('/log/:taskId', xmapController.getLog);
 router.post('/', xmapController.scan);
 router.post('/cancel/:taskId', xmapController.cancelTask);

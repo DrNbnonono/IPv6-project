@@ -185,9 +185,9 @@
                       {{ formatNumber(scope.row.affected_addresses) }}
                     </template>
                   </el-table-column>
-                  <el-table-column prop="total_active_ipv6" label="国家总地址数" min-width="120">
+                  <el-table-column prop="total_addresses" label="国家总地址数" min-width="120">
                     <template #default="scope">
-                      {{ formatNumber(scope.row.total_active_ipv6) }}
+                      {{ formatNumber(scope.row.total_addresses) }}
                     </template>
                   </el-table-column>
                   <el-table-column prop="affected_percentage" label="占比" min-width="150">
@@ -235,27 +235,27 @@
         </div>
         <div v-else>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="ASN">{{ asnProtocolDetail.info.asn }}</el-descriptions-item>
-            <el-descriptions-item label="名称">{{ asnProtocolDetail.info.as_name_zh || asnProtocolDetail.info.as_name }}</el-descriptions-item>
-            <el-descriptions-item label="国家">{{ asnProtocolDetail.info.country_name_zh || asnProtocolDetail.info.country_name }}</el-descriptions-item>
-            <el-descriptions-item label="协议">{{ asnProtocolDetail.info.protocol_name }}</el-descriptions-item>
-            <el-descriptions-item label="受影响地址数">{{ formatNumber(asnProtocolDetail.info.affected_addresses) }}</el-descriptions-item>
-            <el-descriptions-item label="总地址数">{{ formatNumber(asnProtocolDetail.info.total_active_ipv6) }}</el-descriptions-item>
+            <el-descriptions-item label="ASN">{{ asnProtocolDetail.info?.asn }}</el-descriptions-item>
+            <el-descriptions-item label="名称">{{ asnProtocolDetail.info?.as_name_zh || asnProtocolDetail.info?.as_name }}</el-descriptions-item>
+            <el-descriptions-item label="国家">{{ asnProtocolDetail.info?.country_name_zh || asnProtocolDetail.info?.country_name }}</el-descriptions-item>
+            <el-descriptions-item label="协议">{{ asnProtocolDetail.info?.protocol_name }}</el-descriptions-item>
+            <el-descriptions-item label="受影响地址数">{{ formatNumber(asnProtocolDetail.info?.affected_addresses) }}</el-descriptions-item>
+            <el-descriptions-item label="总地址数">{{ formatNumber(asnProtocolDetail.info?.total_active_ipv6) }}</el-descriptions-item>
             <el-descriptions-item label="占比" :span="2">
               <el-progress 
-                :percentage="parseFloat(asnProtocolDetail.info.affected_percentage || 0)" 
+                :percentage="parseFloat(asnProtocolDetail.info?.affected_percentage || 0)" 
                 :format="percentFormat"
-                :color="getPercentageColor(asnProtocolDetail.info.affected_percentage)"
+                :color="getPercentageColor(asnProtocolDetail.info?.affected_percentage)"
               />
             </el-descriptions-item>
           </el-descriptions>
   
-          <div class="chart-container" v-if="asnProtocolDetail.prefixDistribution.length > 0">
+          <div class="chart-container" v-if="asnProtocolDetail.prefixDistribution && asnProtocolDetail.prefixDistribution.length > 0">
             <h4>前缀分布</h4>
             <div ref="prefixChartRef" style="width: 100%; height: 400px;"></div>
           </div>
   
-          <div class="prefix-table" v-if="asnProtocolDetail.prefixDistribution.length > 0">
+          <div class="prefix-table" v-if="asnProtocolDetail.prefixDistribution && asnProtocolDetail.prefixDistribution.length > 0">
             <h4>前缀详情</h4>
             <el-table
               :data="asnProtocolDetail.prefixDistribution"
@@ -361,16 +361,16 @@
       </el-dialog>
 
     </div>
-  </template>
+</template>
   
-  <script setup>
+<script setup>
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { useDetectionStore } from '@/stores/detection';
   import * as echarts from 'echarts/core';
   import { PieChart, BarChart } from 'echarts/charts';
   import { TooltipComponent, LegendComponent, GridComponent, TitleComponent } from 'echarts/components';
   import { CanvasRenderer } from 'echarts/renderers';
-  
+  import { ElMessage } from 'element-plus';
   // 注册ECharts组件
   echarts.use([
     PieChart,
@@ -381,9 +381,9 @@
     TitleComponent,
     CanvasRenderer
   ]);
-  
+
   const detectionStore = useDetectionStore();
-  
+
   // 状态变量
   const isLoading = ref(false);
   const isLoadingAsns = ref(false);
@@ -408,7 +408,7 @@
   let prefixChart = null;
   let countryChart = null; // 新增国家图表实例
   let countryAsnChart = null; // 新增国家ASN图表实例
-  
+
   // 计算属性
   const protocols = computed(() => detectionStore.protocols || []);
   const protocolAsns = computed(() => detectionStore.protocolAsns || { asns: [], total: 0 });
@@ -418,28 +418,75 @@
   onMounted(async () => {
     await fetchProtocols();
   });
+
+  // 监听标签页变化
+watch(() => activeTab.value, async (newTab) => {
+  console.log('协议分析面板标签页切换:', newTab);
   
-  // 监听选项卡变化
-  watch(activeTab, async (newTab) => {
-    if (newTab === 'asns' && selectedProtocol.value) {
-      await fetchProtocolAsns();
-    } else if (newTab === 'regions' && selectedProtocol.value) {
+  if (newTab === 'regions') {
+    console.log('切换到地区选项卡');
+    // 如果已经有数据，则在下一个渲染周期尝试渲染图表
+    if (protocolRegions.value && protocolRegions.value.length > 0) {
+      nextTick(() => {
+        // 延迟一点时间确保DOM已经完全渲染
+        setTimeout(() => {
+          if (regionChartRef.value) {
+            console.log('地区选项卡DOM已渲染，准备渲染图表');
+            renderRegionChart();
+          } else {
+            console.warn('切换到地区选项卡，但DOM元素不存在');
+          }
+        }, 300);
+      });
+    } else if (selectedProtocol.value) {
+      // 如果没有数据但有选中的协议，则获取数据
+      console.log('地区选项卡无数据，准备获取数据');
       await fetchProtocolRegions();
-      // 添加延迟确保DOM渲染完成
-      await nextTick();
-      await nextTick();
-      renderRegionChart();
-    } else if (newTab === 'countries' && selectedProtocol.value) {
-      await fetchProtocolCountries();
-      // 添加延迟确保DOM渲染完成
-      await nextTick();
-      await nextTick();
-      renderCountryChart();
+      // 获取数据后尝试渲染图表
+      nextTick(() => {
+        setTimeout(() => {
+          if (regionChartRef.value && protocolRegions.value && protocolRegions.value.length > 0) {
+            renderRegionChart();
+          }
+        }, 300);
+      });
     }
-  });
+  }
   
-// 监听协议ASN数据变化，更新图表
-watch(protocolRegions, async () => {
+  // 添加countries监听逻辑
+  if (newTab === 'countries') {
+    console.log('切换到国家选项卡');
+    // 如果已经有数据，则在下一个渲染周期尝试渲染图表
+    if (protocolCountries.value?.countries && protocolCountries.value.countries.length > 0) {
+      nextTick(() => {
+        // 延迟一点时间确保DOM已经完全渲染
+        setTimeout(() => {
+          if (countryChartRef.value) {
+            console.log('国家选项卡DOM已渲染，准备渲染图表');
+            renderCountryChart();
+          } else {
+            console.warn('切换到国家选项卡，但DOM元素不存在');
+          }
+        }, 300);
+      });
+    } else if (selectedProtocol.value) {
+      // 如果没有数据但有选中的协议，则获取数据
+      console.log('国家选项卡无数据，准备获取数据');
+      await fetchProtocolCountries();
+      // 获取数据后尝试渲染图表
+      nextTick(() => {
+        setTimeout(() => {
+          if (countryChartRef.value && protocolCountries.value?.countries && protocolCountries.value.countries.length > 0) {
+            renderCountryChart();
+          }
+        }, 300);
+      });
+    }
+  }
+});
+
+  // 监听协议ASN数据变化，更新图表
+  watch(protocolRegions, async () => {
   if (activeTab.value === 'regions' && protocolRegions.value && protocolRegions.value.length > 0) {
     console.log('地区数据已更新，准备渲染图表:', protocolRegions.value);
     // 使用两次nextTick确保DOM完全渲染
@@ -447,8 +494,8 @@ watch(protocolRegions, async () => {
     await nextTick();
     renderRegionChart();
   }
-}, { deep: true });
-  
+  }, { deep: true });
+
   // 监听ASN协议详情变化，更新图表
   watch(asnProtocolDetail, async () => {
     if (showAsnDetail.value && asnProtocolDetail.value) {
@@ -457,17 +504,17 @@ watch(protocolRegions, async () => {
       renderPrefixChart();
     }
   });
-  
+
   // 监听分页变化
   watch([currentPage, pageSize], async () => {
     if (selectedProtocol.value && activeTab.value === 'asns') {
       await fetchProtocolAsns();
     }
   });
-  
 
-// 监听国家数据变化，更新图表
-watch(() => protocolCountries.value.countries, async () => {
+
+  // 监听国家数据变化，更新图表
+  watch(() => protocolCountries.value.countries, async () => {
   if (activeTab.value === 'countries' && protocolCountries.value.countries && protocolCountries.value.countries.length > 0) {
     console.log('国家数据已更新，准备渲染图表:', protocolCountries.value.countries);
     // 使用两次nextTick确保DOM完全渲染
@@ -475,23 +522,23 @@ watch(() => protocolCountries.value.countries, async () => {
     await nextTick();
     renderCountryChart();
   }
-}, { deep: true });
+  }, { deep: true });
 
-// 监听国家协议详情变化，更新图表
-watch(countryProtocolDetail, async () => {
+  // 监听国家协议详情变化，更新图表
+  watch(countryProtocolDetail, async () => {
   if (showCountryDetail.value && countryProtocolDetail.value) {
     console.log('国家协议详情数据:', JSON.stringify(countryProtocolDetail.value));
     await nextTick();
     renderCountryAsnChart();
   }
-});
+  });
 
-// 监听国家分页变化
-watch([countriesCurrentPage, countriesPageSize], async () => {
+  // 监听国家分页变化
+  watch([countriesCurrentPage, countriesPageSize], async () => {
   if (selectedProtocol.value && activeTab.value === 'countries') {
     await fetchProtocolCountries();
   }
-});
+  });
 
   // 方法
   async function fetchProtocols() {
@@ -504,7 +551,7 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
       isLoading.value = false;
     }
   }
-  
+
   async function handleProtocolSelect(row) {
     isLoadingAsns.value = true;
     try {
@@ -525,7 +572,7 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
       isLoadingAsns.value = false;
     }
   }
-  
+
   async function fetchProtocolAsns() {
     if (!selectedProtocol.value) return;
     
@@ -542,7 +589,7 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
       isLoadingAsns.value = false;
     }
   }
-  
+
   async function fetchProtocolRegions() {
     if (!selectedProtocol.value) return;
     
@@ -559,7 +606,7 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
   // 添加获取协议国家分布的函数
   async function fetchProtocolCountries() {
   if (!selectedProtocol.value) return;
-  
+
   isLoadingCountries.value = true;
   try {
     await detectionStore.fetchProtocolCountries(
@@ -572,52 +619,62 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
   } finally {
     isLoadingCountries.value = false;
   }
-}
-  
+  }
+
   function backToList() {
-  selectedProtocol.value = null;
-  activeTab.value = 'asns';
-  currentPage.value = 1;
-  countriesCurrentPage.value = 1; // 重置国家分页
-  showAsnDetail.value = false; // 确保关闭ASN详情对话框
-  showCountryDetail.value = false; // 确保关闭国家详情对话框
-  asnProtocolDetail.value = null; // 清空ASN详情数据
-  countryProtocolDetail.value = null; // 清空国家详情数据
-}
-  
+    detectionStore.resetProtocolState();
+    selectedProtocol.value = null;
+    activeTab.value = 'asns';
+    currentPage.value = 1;
+    countriesCurrentPage.value = 1; // 重置国家分页
+    showAsnDetail.value = false; // 确保关闭ASN详情对话框
+    showCountryDetail.value = false; // 确保关闭国家详情对话框
+    asnProtocolDetail.value = null; // 清空ASN详情数据
+    countryProtocolDetail.value = null; // 清空国家详情数据
+  }
+
   function handleSizeChange(size) {
     pageSize.value = size;
     currentPage.value = 1;
   }
-  
+
   function handleCurrentChange(page) {
     currentPage.value = page;
   }
-  
-  async function handleAsnSelect(row) {
-    try {
-      asnProtocolDetail.value = null;
-      showAsnDetail.value = true;
-      
-      const detail = await detectionStore.fetchAsnProtocolDetail(
-        row.asn,
-        selectedProtocol.value.protocol_id
-      );
-      
-      if (detail) {
-        asnProtocolDetail.value = detail;
-      }
-    } catch (error) {
-      console.error('获取ASN协议详情失败:', error);
+
+  // 处理ASN选择
+  const handleAsnSelect = async (row) => {
+  try {
+    const asn = row.asn
+    const protocolId = selectedProtocol.value.protocol_id
+    
+    console.log(`获取ASN ${asn} 的协议 ${protocolId} 详情`)
+    const data = await detectionStore.fetchAsnProtocolDetail(asn, protocolId)
+    
+    // 确保数据存在且格式正确
+    if (!data) {
+      throw new Error(`未能获取ASN ${asn} 的协议 ${protocolId} 详情`)
     }
+    
+    console.log('API响应完整数据:', data)
+    
+    // 设置当前选中的ASN详情
+    asnProtocolDetail.value = data
+    
+    // 显示ASN详情对话框
+    showAsnDetail.value = true
+  } catch (error) {
+    console.error('获取ASN协议详情失败:', error)
+    ElMessage.error(`获取ASN协议详情失败: ${error.message}`)
   }
-  
+}
+
   function renderRegionChart() {
     if (!regionChartRef.value) {
     console.error('地区图表容器不存在');
     return;
   }
-  
+
   // 确保DOM元素已经渲染
   if (!document.body.contains(regionChartRef.value)) {
     console.warn('地区图表DOM元素尚未渲染到页面中，将在下一个渲染周期尝试');
@@ -626,9 +683,9 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
     });
     return;
   }
-  
+
   console.log('开始渲染地区图表，数据:', protocolRegions.value);
-  
+
   try {
     if (regionChart) {
       regionChart.dispose();
@@ -723,53 +780,64 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
   } catch (error) {
     console.error('渲染地区图表时发生错误:', error);
   }
-}
-  
-  function renderPrefixChart() {
-    if (!prefixChartRef.value || !asnProtocolDetail.value) return;
+  }
+
+// 渲染前缀分布图表
+function renderPrefixChart() {
+  try {
+    console.log('开始渲染前缀分布图表');
+    if (!prefixChartRef.value) {
+      console.error('前缀图表DOM引用不存在');
+      return;
+    }
     
+    if (!asnProtocolDetail.value || !asnProtocolDetail.value.prefixDistribution) {
+      console.error('前缀分布数据不存在');
+      return;
+    }
+    
+    if (asnProtocolDetail.value.prefixDistribution.length === 0) {
+      console.warn('前缀分布数据为空数组');
+      return;
+    }
+    
+    console.log('前缀分布数据:', asnProtocolDetail.value.prefixDistribution);
+    
+    // 初始化图表
     if (prefixChart) {
       prefixChart.dispose();
     }
     
     prefixChart = echarts.init(prefixChartRef.value);
     
+    // 准备数据
     const prefixData = asnProtocolDetail.value.prefixDistribution.map(item => {
-      // 确保 affected_percentage 是数字类型
-      const percentage = typeof item.affected_percentage === 'number' 
-        ? item.affected_percentage 
-        : parseFloat(item.affected_percentage || '0');
-      
       return {
         name: `${item.prefix}/${item.prefix_length}`,
-        value: item.affected_addresses,
-        percentage: percentage.toFixed(2)
+        value: item.affected_addresses
       };
     });
     
+    // 设置图表选项
     const option = {
       title: {
-        text: 'ASN前缀协议分布',
+        text: '前缀分布',
         left: 'center'
       },
       tooltip: {
         trigger: 'item',
-        formatter: '{a} <br/>{b}: {c} 地址 ({d}%)'
+        formatter: '{a} <br/>{b}: {c} ({d}%)'
       },
       legend: {
-        type: 'scroll',
         orient: 'vertical',
-        right: 10,
-        top: 20,
-        bottom: 20,
+        left: 'left',
         data: prefixData.map(item => item.name)
       },
       series: [
         {
           name: '受影响地址数',
           type: 'pie',
-          radius: '55%',
-          center: ['40%', '50%'],
+          radius: '50%',
           data: prefixData,
           emphasis: {
             itemStyle: {
@@ -782,24 +850,27 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
       ]
     };
     
+    // 设置图表
     prefixChart.setOption(option);
-    
-    window.addEventListener('resize', () => {
-      prefixChart && prefixChart.resize();
-    });
+    console.log('前缀分布图表渲染完成');
+  } catch (error) {
+    console.error('渲染前缀分布图表时发生错误:', error);
+    console.error('错误详情:', error.message);
+    console.error('错误堆栈:', error.stack);
   }
-  
+}
+
   // 辅助函数
   function formatNumber(num) {
     if (num === undefined || num === null) return '0';
     return new Intl.NumberFormat().format(num);
   }
-  
+
   function percentFormat(percentage) {
     if (percentage === undefined || percentage === null) return '0%';
     return (typeof percentage === 'number' ? percentage.toFixed(2) : parseFloat(percentage || 0).toFixed(2)) + '%';
   }
-  
+
   function getPercentageColor(percentage) {
     const value = parseFloat(percentage || 0);
     if (value >= 70) return '#F56C6C';
@@ -808,7 +879,7 @@ watch([countriesCurrentPage, countriesPageSize], async () => {
   }
 
   // 处理国家选择
-async function handleCountrySelect(row) {
+  async function handleCountrySelect(row) {
   try {
     countryProtocolDetail.value = null;
     showCountryDetail.value = true;
@@ -824,10 +895,10 @@ async function handleCountrySelect(row) {
   } catch (error) {
     console.error('获取国家协议详情失败:', error);
   }
-}
+  }
 
-// 处理国家详情中ASN的选择
-async function handleCountryAsnSelect(row) {
+  // 处理国家详情中ASN的选择
+  async function handleCountryAsnSelect(row) {
   try {
     asnProtocolDetail.value = null;
     showAsnDetail.value = true;
@@ -844,45 +915,45 @@ async function handleCountryAsnSelect(row) {
   } catch (error) {
     console.error('获取ASN协议详情失败:', error);
   }
-}
+  }
 
-// 处理国家分页大小变化
-function handleCountriesSizeChange(size) {
+  // 处理国家分页大小变化
+  function handleCountriesSizeChange(size) {
   countriesPageSize.value = size;
   countriesCurrentPage.value = 1;
-}
+  }
 
-// 处理国家当前页变化
-function handleCountriesCurrentChange(page) {
+  // 处理国家当前页变化
+  function handleCountriesCurrentChange(page) {
   countriesCurrentPage.value = page;
-}
+  }
 
-// 渲染国家分布图表
-function renderCountryChart() {
+  // 渲染国家分布图表
+  function renderCountryChart() {
   if (!countryChartRef.value) {
     console.error('国家图表容器不存在');
     return;
   }
-  
+
   // 确保DOM元素已经渲染
   if (!document.body.contains(countryChartRef.value)) {
     console.warn('国家图表容器尚未渲染到DOM中');
     return;
   }
-  
+
   // 确保有数据
   if (!protocolCountries.value.countries || protocolCountries.value.countries.length === 0) {
     console.warn('没有国家数据可供渲染');
     return;
   }
-  
+
   // 初始化或重用图表实例
   if (!countryChart) {
     countryChart = echarts.init(countryChartRef.value);
   } else {
     countryChart.clear();
   }
-  
+
   // 准备数据
   const data = protocolCountries.value.countries
     .slice(0, 10) // 只取前10个国家
@@ -890,7 +961,7 @@ function renderCountryChart() {
       name: country.country_name_zh || country.country_name,
       value: country.affected_addresses
     }));
-  
+
   // 设置图表选项
   const option = {
     title: {
@@ -935,26 +1006,26 @@ function renderCountryChart() {
       }
     ]
   };
-  
+
   // 应用选项
   countryChart.setOption(option);
-  
+
   // 响应窗口大小变化
   window.addEventListener('resize', () => {
     countryChart.resize();
   });
-}
+  }
 
-// 渲染国家ASN分布图表
-function renderCountryAsnChart() {
+  // 渲染国家ASN分布图表
+  function renderCountryAsnChart() {
   if (!countryAsnChartRef.value || !countryProtocolDetail.value) return;
-  
+
   if (countryAsnChart) {
     countryAsnChart.dispose();
   }
-  
+
   countryAsnChart = echarts.init(countryAsnChartRef.value);
-  
+
   const asnData = countryProtocolDetail.value.asnDistribution.map(item => {
     // 确保 affected_percentage 是数字类型
     const percentage = typeof item.affected_percentage === 'number' 
@@ -967,7 +1038,7 @@ function renderCountryAsnChart() {
       percentage: percentage.toFixed(2)
     };
   });
-  
+
   const option = {
     title: {
       text: '国家ASN协议分布',
@@ -1002,16 +1073,16 @@ function renderCountryAsnChart() {
       }
     ]
   };
-  
+
   countryAsnChart.setOption(option);
-  
+
   window.addEventListener('resize', () => {
     countryAsnChart && countryAsnChart.resize();
   });
-}
+  }
 
-// 在组件卸载时清理图表实例
-onUnmounted(() => {
+  // 在组件卸载时清理图表实例
+  onUnmounted(() => {
   if (regionChart) {
     regionChart.dispose();
     regionChart = null;
@@ -1028,8 +1099,8 @@ onUnmounted(() => {
     countryAsnChart.dispose();
     countryAsnChart = null;
   }
-});
-  </script>
+  });
+</script>
   
   <style scoped>
   .protocol-analysis-panel {

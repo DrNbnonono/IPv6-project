@@ -32,6 +32,26 @@ export const useDetectionStore = defineStore('detection', () => {
   const countryVulnerabilityDetail = ref(null) // 添加国家漏洞详情数据
 
 
+// 添加重置协议相关状态的函数
+  const resetProtocolState = () => {
+    selectedProtocol.value = null
+    protocolAsns.value = { asns: [], total: 0 }
+    protocolCountries.value = { countries: [], total: 0 }
+    protocolRegions.value = []
+    asnProtocolDetail.value = null
+    countryProtocolDetail.value = null
+  }
+
+  // 添加重置漏洞相关状态的函数
+  const resetVulnerabilityState = () => {
+    selectedVulnerability.value = null
+    vulnerabilityAsns.value = { asns: [], total: 0 }
+    vulnerabilityCountries.value = { countries: [], total: 0 }
+    vulnerabilityRegions.value = []
+    asnVulnerabilityDetail.value = null
+    countryVulnerabilityDetail.value = null
+  }
+
   const fetchMapData = async () => {
     try {
       isLoading.value = true
@@ -238,6 +258,7 @@ export const useDetectionStore = defineStore('detection', () => {
     }
   }
 
+  // 获取ASN的协议详情
   const fetchAsnProtocolDetail = async (asn, protocolId) => {
     try {
       isLoading.value = true
@@ -422,6 +443,9 @@ export const useDetectionStore = defineStore('detection', () => {
   searchIPv6Data,
   fetchPrefixDetail,
   fetchGlobalStats,
+
+  resetProtocolState,
+  resetVulnerabilityState,
 
   // 添加协议相关返回值
   protocols,

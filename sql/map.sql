@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS ip_prefixes (
     CONSTRAINT fk_prefix_country FOREIGN KEY (country_id) REFERENCES countries(country_id)
 ) ENGINE=InnoDB COMMENT='IP前缀表';
 
+ALTER TABLE ip_prefixes 
+ADD COLUMN active_ipv6_count INT DEFAULT 0 COMMENT '活跃IPv6地址数量';
+
 -- 地址类型表(IID类型) - 存储接口标识符类型分类
 CREATE TABLE IF NOT EXISTS address_types (
     type_id INT AUTO_INCREMENT PRIMARY KEY COMMENT '类型ID',

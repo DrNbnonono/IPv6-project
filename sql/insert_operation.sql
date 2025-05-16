@@ -472,6 +472,7 @@ END //
 DELIMITER ;
 
 -- 创建IPv6地址详情视图
+/*
 CREATE OR REPLACE VIEW ipv6_address_details_view AS
 SELECT 
     aa.address_id,
@@ -513,8 +514,10 @@ LEFT JOIN
     countries c ON ip.country_id = c.country_id
 LEFT JOIN 
     address_types at ON aa.iid_type = at.type_id;
+*/
 
 -- 创建国家IPv6统计视图
+/*
 CREATE OR REPLACE VIEW country_ipv6_stats_view AS
 SELECT 
     c.country_id,
@@ -549,8 +552,10 @@ SELECT
     c.last_updated
 FROM 
     countries c;
+*/
 
 -- 创建协议支持统计视图
+/*
 CREATE OR REPLACE VIEW protocol_support_stats_view AS
 SELECT 
     p.protocol_id,
@@ -583,8 +588,10 @@ SELECT
     ) AS top_countries
 FROM 
     protocols p;
+*/
 
 -- 创建漏洞统计视图
+/*
 CREATE OR REPLACE VIEW vulnerability_stats_view AS
 SELECT 
     v.vulnerability_id,
@@ -619,7 +626,7 @@ SELECT
     v.last_updated
 FROM 
     vulnerabilities v;
-
+*/
 
 
 -- 创建触发器：地址协议关联后更新ASN和国家统计

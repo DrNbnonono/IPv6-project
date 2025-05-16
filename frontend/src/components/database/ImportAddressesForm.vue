@@ -1,447 +1,412 @@
 <template>
   <div class="import-form">
-    <!-- 国家选择 -->
-    <div class="form-group">
-      <label for="country">国家</label>
-      <div class="country-select-container">
-        <!-- 国家搜索输入框 -->
-        <div class="search-container">
-          <input
-            id="countrySearch"
-            v-model="countrySearch"
-            type="text"
-            placeholder="输入国家名称搜索"
-            @input="searchCountries"
-          />
-          <ul v-if="matchedCountries.length" class="search-results">
-            <li
-              v-for="country in matchedCountries"
-              :key="country.country_id"
-              @click="selectCountry(country)"
-            >
-              {{ country.country_name_zh || country.country_name }}
-            </li>
-          </ul>
-          <div v-if="countryError" class="error-message">
-            {{ countryError }}
+    <!-- 全局消息提示 -->
+    <div v-if="globalError" class="error-message global-error">{{ globalError }}</div>
+    <div v-if="globalSuccess" class="success-message global-success">{{ globalSuccess }}</div>
+
+    <!-- 第一部分: 地址导入任务列表 -->
+    <section class="import-tasks-section card">
+      <h3 class="card-header">
+        <i class="icon-list"></i> 导入任务列表
+        <button @click="refreshTaskList" class="btn btn-sm btn-secondary float-right">
+          <i class="icon-refresh"></i> 刷新列表
+        </button>
+      </h3>
+      <div class="card-body">
+        <div v-if="tasksLoading" class="loading-message">加载任务列表中...</div>
+        <div v-else>
+          <table v-if="importTasks.length > 0" class="table table-striped table-hover">
+            <thead>
+              <tr>
+                <th>任务ID</th>
+                <th>国家</th>
+                <th>ASN</th>
+                <th>前缀</th>
+                <th>文件</th>
+                <th>状态</th>
+                <th>进度</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="task in importTasks" :key="task.task_id">
+                <td>{{ task.task_id }}</td>
+                <td>{{ getCountryName(task.country_id) }}</td>
+                <td>AS{{ task.asn }}</td>
+                <td>{{ task.prefix }}</td>
+                <td>{{ getFileName(task.file_id) }}</td>
+                <td>
+                  <span class="status-badge" :class="'status-' + task.status.toLowerCase()">
+                    {{ getStatusText(task.status) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="progress-bar" v-if="task.status === 'processing'">
+                    <div class="progress" :style="{ width: task.progress + '%' }"></div>
+                    <span class="progress-text">{{ task.progress }}%</span>
+                  </div>
+                  <span v-else>-</span>
+                </td>
+                <td>{{ formatDate(task.created_at) }}</td>
+                <td>
+                  <button 
+                    v-if="task.status === 'processing'" 
+                    @click="cancelTask(task)" 
+                    class="btn btn-sm btn-warning mr-1"
+                  >
+                    <i class="icon-cancel"></i> 取消
+                  </button>
+                  <button 
+                    v-if="task.status === 'completed'" 
+                    @click="downloadResult(task)" 
+                    class="btn btn-sm btn-info mr-1"
+                  >
+                    <i class="icon-download"></i> 下载
+                  </button>
+                  <button 
+                    v-if="task.status === 'failed'" 
+                    @click="viewTaskError(task)" 
+                    class="btn btn-sm btn-danger"
+                  >
+                    <i class="icon-error"></i> 查看错误
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="text-muted">暂无导入任务</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 第二部分: 批量导入表单 -->
+    <section class="batch-import-section card mt-4">
+      <h3 class="card-header">
+        <i class="icon-import"></i> 批量导入地址
+      </h3>
+      <div class="card-body">
+        <div class="batch-operations-table">
+          <div class="batch-operations-header">
+            <div>国家 <span class="required">*</span></div>
+            <div>ASN <span class="required">*</span></div>
+            <div>前缀 <span class="required">*</span></div>
+            <div>文件 <span class="required">*</span></div>
+            <div></div> <!-- 用于删除按钮列 -->
+          </div>
+          <div v-for="(op, index) in batchImportOperations" :key="op.id" class="batch-operation-row">
+            <!-- 国家选择 -->
+            <div class="form-group search-container">
+              <input
+                type="text"
+                v-model="op.countrySearch"
+                placeholder="搜索或选择国家"
+                @input="debouncedSearchCountries(index)"
+                @focus="op.showCountryResults = true"
+                @blur="handleBlurCountrySearch(index)"
+              />
+              <ul v-if="op.showCountryResults && op.matchedCountries.length" class="search-results">
+                <li v-for="country in op.matchedCountries" :key="country.country_id" @mousedown.prevent="selectCountryForRow(index, country)">
+                  {{ country.country_name_zh || country.country_name }}
+                </li>
+              </ul>
+              <input type="hidden" v-model="op.countryId" />
+            </div>
+
+            <!-- ASN选择 -->
+            <div class="form-group search-container">
+              <input
+                type="text"
+                v-model="op.asnSearch"
+                placeholder="搜索或选择ASN"
+                @input="debouncedSearchAsns(index)"
+                @focus="op.showAsnResults = true"
+                @blur="handleBlurAsnSearch(index)"
+              />
+              <ul v-if="op.showAsnResults && op.matchedAsns.length" class="search-results">
+                <li v-for="asn in op.matchedAsns" :key="asn.asn" @mousedown.prevent="selectAsnForRow(index, asn)">
+                  {{ asn.as_name_zh || asn.as_name }} (AS{{ asn.asn }})
+                </li>
+              </ul>
+              <input type="hidden" v-model="op.asn" />
+            </div>
+
+            <!-- 前缀选择 -->
+            <div class="form-group search-container">
+              <input
+                type="text"
+                v-model="op.prefixSearch"
+                placeholder="搜索或选择前缀"
+                @input="debouncedSearchPrefixes(index)"
+                @focus="op.showPrefixResults = true"
+                @blur="handleBlurPrefixSearch(index)"
+              />
+              <ul v-if="op.showPrefixResults && op.matchedPrefixes.length" class="search-results">
+                <li v-for="prefix in op.matchedPrefixes" :key="prefix.prefix_id" @mousedown.prevent="selectPrefixForRow(index, prefix)">
+                  {{ prefix.prefix }}
+                </li>
+              </ul>
+              <input type="hidden" v-model="op.prefix" />
+            </div>
+
+            <!-- 文件选择 -->
+            <div class="form-group">
+              <select v-model="op.fileId" required>
+                <option value="">选择文件</option>
+                <option v-for="file in addressFiles" :key="file.id" :value="file.id">
+                  {{ file.file_name }}
+                </option>
+              </select>
+            </div>
+
+            <!-- 删除按钮 -->
+            <div>
+              <button @click="removeBatchOperation(index)" class="btn btn-sm btn-danger" :disabled="batchImportOperations.length <= 1">
+                <i class="icon-minus"></i>
+              </button>
+            </div>
           </div>
         </div>
-        <!-- 国家下拉选择 -->
-        <select 
-          id="country" 
-          v-model="formData.countryId" 
-          required 
-          @change="handleCountryChange"
-          class="country-dropdown"
-        >
-          <option value="">从列表选择国家</option>
-          <option v-for="country in sortedCountries" :key="country.country_id" :value="country.country_id">
-            {{ country.country_name_zh || country.country_name }}
-          </option>
-        </select>
+
+        <div class="form-actions mt-3">
+          <button @click="addBatchOperation" class="btn btn-secondary mr-2">
+            <i class="icon-plus"></i> 添加导入项
+          </button>
+          <button @click="handleBatchImport" class="btn btn-primary" :disabled="isSubmitting || !isFormValid">
+            <i class="icon-upload"></i> 
+            {{ isSubmitting ? '提交中...' : '开始导入' }}
+          </button>
+        </div>
       </div>
-    </div>
-    
-    <!-- ASN 选择 -->
-    <div class="form-group">
-      <label for="asn">ASN</label>
-      <div class="input-select-container">
-        <!-- 输入搜索部分 -->
-        <div class="search-container">
-          <input
-            id="asn"
-            v-model="formData.asn"
-            type="text"
-            placeholder="输入ASN编号或名称"
-            @input="searchAsns"
-            required
+    </section>
+
+    <!-- 第三部分: 文件上传 -->
+    <section class="file-upload-section card mt-4">
+      <h3 class="card-header">
+        <i class="icon-upload"></i> 上传地址文件
+      </h3>
+      <div class="card-body">
+        <div class="file-upload">
+          <input 
+            id="fileUpload" 
+            type="file" 
+            @change="handleFileUpload" 
+            accept=".txt"
+            ref="fileInput"
+            :disabled="isUploading"
           />
-          <ul v-if="matchedAsns.length" class="search-results">
-            <li
-              v-for="asn in matchedAsns"
-              :key="asn.asn"
-              @click="selectAsn(asn)"
-            >
-              {{ asn.as_name_zh || asn.as_name }} (AS{{ asn.asn }})
-            </li>
-          </ul>
+          <div class="upload-info">
+            <span v-if="!uploadFile">点击或拖拽文件到此处</span>
+            <span v-else>{{ uploadFile.name }} ({{ formatFileSize(uploadFile.size) }})</span>
+          </div>
+          <div v-if="uploadProgress > 0 && uploadProgress < 100" class="progress-bar">
+            <div class="progress" :style="{ width: uploadProgress + '%' }"></div>
+            <span class="progress-text">{{ uploadProgress }}%</span>
+          </div>
         </div>
-        <!-- 下拉选择部分 -->
-        <select 
-          v-model="formData.asn" 
-          class="dropdown-select"
-          @change="handleAsnSelect"
-        >
-          <option value="">从列表选择</option>
-          <option 
-            v-for="asn in filteredAsns" 
-            :key="asn.asn" 
-            :value="asn.asn"
+        <p class="file-hint">支持TXT格式，每行一个IPv6地址</p>
+        <div class="form-actions">
+          <button 
+            class="btn btn-primary" 
+            @click="uploadFileToServer" 
+            :disabled="!uploadFile || isUploading"
           >
-            {{ asn.as_name_zh || asn.as_name }} (AS{{ asn.asn }})
-          </option>
-        </select>
-      </div>
-    </div>
-    
-    <!-- 前缀选择 -->
-    <div class="form-group">
-      <label for="prefix">IPv6前缀</label>
-      <div class="search-container">
-        <input
-          id="prefix"
-          v-model="formData.prefix"
-          type="text"
-          placeholder="例如: 2001:db8::/32"
-          @input="searchPrefixes"
-          required
-        />
-        <ul v-if="matchedPrefixes.length" class="search-results">
-          <li
-            v-for="prefix in matchedPrefixes"
-            :key="prefix.prefix_id"
-            @click="selectPrefix(prefix)"
-          >
-            {{ prefix.prefix }} ({{ prefix.country_name_zh || prefix.country_name }})
-          </li>
-        </ul>
-      </div>
-    </div>
-    
-    <!-- 文件来源选择 -->
-    <div class="form-group">
-      <label>文件来源</label>
-      <div class="radio-group">
-        <label class="radio-label">
-          <input type="radio" v-model="fileSource" value="upload" />
-          <span>上传新文件</span>
-        </label>
-        <label class="radio-label">
-          <input type="radio" v-model="fileSource" value="whitelist" />
-          <span>从白名单导入</span>
-        </label>
-      </div>
-    </div>
-    
-    <!-- 上传新文件 -->
-    <div v-if="fileSource === 'upload'" class="form-group">
-      <label for="file">IPv6地址文件</label>
-      <div class="file-upload">
-        <input 
-          id="file" 
-          type="file" 
-          @change="handleFileChange" 
-          accept=".txt"
-          ref="fileInput"
-        />
-        <div class="file-info">
-          <span v-if="!selectedFile">点击或拖拽文件到此处</span>
-          <span v-else>{{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})</span>
+            <i class="icon-upload"></i>
+            {{ isUploading ? '上传中...' : '上传文件' }}
+          </button>
         </div>
       </div>
-      <p class="file-hint">支持TXT格式，每行一个IPv6地址</p>
-    </div>
-    
-    <!-- 从白名单选择 -->
-    <div v-if="fileSource === 'whitelist'" class="form-group">
-      <label for="whitelist">选择白名单文件</label>
-      <select id="whitelist" v-model="selectedWhitelist" @change="handleWhitelistSelect" class="full-width">
-        <option value="">请选择白名单文件</option>
-        <option 
-          v-for="whitelist in whitelists" 
-          :key="whitelist.id" 
-          :value="whitelist.id"
-        >
-          {{ whitelist.file_name }} ({{ formatDate(whitelist.uploaded_at) }})
-        </option>
-      </select>
-      <div v-if="selectedWhitelistInfo" class="whitelist-info">
-        <p><strong>描述:</strong> {{ selectedWhitelistInfo.description || '无描述' }}</p>
-        <p><strong>上传时间:</strong> {{ formatDate(selectedWhitelistInfo.uploaded_at) }}</p>
-        <p><strong>上传用户:</strong> {{ selectedWhitelistInfo.username }}</p>
+    </section>
+
+    <!-- 错误详情模态框 -->
+    <div v-if="showErrorModal" class="modal-overlay" @click.self="closeErrorModal">
+      <div class="modal-content">
+        <h4>任务错误详情</h4>
+        <div class="error-details">
+          <pre>{{ selectedTaskError }}</pre>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" @click="closeErrorModal">关闭</button>
+        </div>
       </div>
-    </div>
-    
-    <div class="form-actions">
-      <button 
-        class="btn btn-primary" 
-        @click="handleImport" 
-        :disabled="isLoading || !isFormValid"
-      >
-        <i class="icon-import"></i>
-        {{ isLoading ? '导入中...' : '开始导入' }}
-      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
-import { useDetectionStore } from '@/stores/detection';
-import axios from 'axios';
-import api from '@/api';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { useDatabaseStore } from '@/stores/database';
+import { storeToRefs } from 'pinia';
+import { debounce } from 'lodash';
 
-const props = defineProps({
-  isLoading: {
-    type: Boolean,
-    default: false
-  }
-});
+const store = useDatabaseStore();
+const { countries, asns, prefixes } = storeToRefs(store);
 
-const emit = defineEmits(['import-addresses']);
+// 全局状态
+const globalError = ref('');
+const globalSuccess = ref('');
+const tasksLoading = ref(false);
+const isSubmitting = ref(false);
+const isUploading = ref(false);
+const uploadProgress = ref(0);
+const uploadFile = ref(null);
+const showErrorModal = ref(false);
+const selectedTaskError = ref('');
 
-const detectionStore = useDetectionStore();
-const countries = ref([]);
-const asns = ref([]);
-const filteredAsns = ref([]);
-const selectedFile = ref(null);
-const matchedAsns = ref([]);
-const matchedPrefixes = ref([]);
-const matchedCountries = ref([]);
-const countrySearch = ref('');
-const countryError = ref('');
-const fileSource = ref('upload');
-const whitelists = ref([]);
-const selectedWhitelist = ref('');
-const selectedWhitelistInfo = ref(null);
-const loading = ref(true);
+// 导入任务列表
+const importTasks = ref([]);
+const addressFiles = ref([]);
 
-// 表单数据
-const formData = ref({
-  countryId: '',
-  asn: '',
-  prefix: '',
-  format: 'txt'
-});
+// 批量导入操作
+let operationIdCounter = 0;
+const batchImportOperations = ref([createBatchOperation()]);
 
-// 按中文名称排序国家列表
-const sortedCountries = computed(() => {
-  return [...countries.value].sort((a, b) => {
-    const nameA = a.country_name_zh || a.country_name;
-    const nameB = b.country_name_zh || b.country_name;
-    return nameA.localeCompare(nameB, 'zh-CN');
-  });
-});
+// 创建新的批量导入操作
+function createBatchOperation() {
+  operationIdCounter++;
+  return {
+    id: operationIdCounter,
+    countryId: '',
+    countrySearch: '',
+    matchedCountries: [],
+    showCountryResults: false,
+    asn: '',
+    asnSearch: '',
+    matchedAsns: [],
+    showAsnResults: false,
+    prefix: '',
+    prefixSearch: '',
+    matchedPrefixes: [],
+    showPrefixResults: false,
+    fileId: ''
+  };
+}
 
 // 表单验证
 const isFormValid = computed(() => {
-  if (fileSource.value === 'upload') {
-    return formData.value.countryId && 
-           formData.value.asn && 
-           formData.value.prefix && 
-           selectedFile.value;
-  } else {
-    return formData.value.countryId && 
-           formData.value.asn && 
-           formData.value.prefix && 
-           selectedWhitelist.value;
-  }
+  return batchImportOperations.value.every(op => 
+    op.countryId && op.asn && op.prefix && op.fileId
+  );
 });
 
-// 加载国家和ASN数据
-const loadData = async () => {
+// 加载导入任务列表
+const loadImportTasks = async () => {
   try {
-    loading.value = true;
-    console.log('开始加载基础数据...');
+    tasksLoading.value = true;
+    const response = await store.getImportTasks();
+    importTasks.value = response.data || [];
     
-    // 并行加载数据
-    await Promise.all([
-      loadCountries(),
-      loadAsns(),
-      fetchWhitelists()
-    ]);
-    
-    console.log('所有基础数据加载完成');
-    loading.value = false;
-  } catch (error) {
-    console.error('加载数据失败:', error);
-    loading.value = false;
-  }
-};
-
-// 加载国家数据
-const loadCountries = async () => {
-  try {
-    console.log('开始加载国家数据...');
-    const response = await axios.get('/api/addresses/countries/ranking', {
-      params: { limit: 250 }
-    });
-    
-    if (!response.data || !response.data.data) {
-      console.error('国家数据响应格式错误:', response);
-      throw new Error('国家数据响应格式错误');
-    }
-    
-    countries.value = response.data.data;
-    console.log(`成功加载${countries.value.length}个国家`);
-  } catch (error) {
-    console.error('加载国家数据失败:', error);
-    throw error;
-  }
-};
-
-// 加载ASN数据
-const loadAsns = async () => {
-  try {
-    console.log('开始加载ASN数据...');
-    const response = await axios.get('/api/addresses/asns/ranking', {
-      params: { limit: 250 }
-    });
-    
-    if (!response.data || !response.data.data) {
-      console.error('ASN数据响应格式错误:', response);
-      throw new Error('ASN数据响应格式错误');
-    }
-    
-    asns.value = response.data.data;
-    filteredAsns.value = asns.value;
-    console.log(`成功加载${asns.value.length}个ASN`);
-  } catch (error) {
-    console.error('加载ASN数据失败:', error);
-    throw error;
-  }
-};
-
-// 加载特定国家的ASN
-const loadAsnsByCountry = async (countryId) => {
-  try {
-    console.log(`加载国家ID ${countryId} 的ASN...`);
-    const response = await axios.get(`/api/database/countries/${countryId}/asns`);
-    
-    if (!response.data || !response.data.data) {
-      console.error('国家ASN响应格式错误:', response);
-      return;
-    }
-    
-    filteredAsns.value = response.data.data;
-    console.log(`成功加载${filteredAsns.value.length}个国家ASN`);
-  } catch (error) {
-    console.error(`加载国家ID ${countryId} 的ASN失败:`, error);
-    // 如果API失败，尝试从本地过滤
-    filteredAsns.value = asns.value.filter(asn => asn.country_id === countryId);
-  }
-};
-
-// 获取白名单列表
-const fetchWhitelists = async () => {
-  try {
-    console.log('开始加载白名单列表...');
-    const response = await axios.get('/api/xmap/whitelists', {
-      params: {
-        tool: 'database',
-        page: 1,
-        pageSize: 100
+    // 对于正在处理的任务，启动进度轮询
+    importTasks.value.forEach(task => {
+      if (task.status === 'processing') {
+        startTaskProgressPolling(task.task_id);
       }
     });
-    
-    if (response.data.success) {
-      whitelists.value = response.data.data;
-      console.log(`成功加载${whitelists.value.length}个白名单`);
-    }
   } catch (error) {
-    console.error('获取白名单列表失败:', error);
+    console.error('加载导入任务失败:', error);
+    globalError.value = error.response?.data?.message || '加载导入任务失败';
+  } finally {
+    tasksLoading.value = false;
   }
 };
 
-// 搜索国家
-const searchCountries = () => {
-  countryError.value = '';
-  
-  if (!countrySearch.value || countrySearch.value.length < 2) {
-    matchedCountries.value = [];
-    return;
-  }
-  
-  const query = countrySearch.value.toLowerCase();
-  matchedCountries.value = countries.value.filter(country => {
-    const nameCN = (country.country_name_zh || '').toLowerCase();
-    const nameEN = (country.country_name || '').toLowerCase();
-    return nameCN.includes(query) || nameEN.includes(query);
-  }).slice(0, 5);
-  
-  if (matchedCountries.value.length === 0) {
-    countryError.value = '未找到匹配的国家';
-  }
+// 刷新任务列表
+const refreshTaskList = () => {
+  loadImportTasks();
 };
 
-// 选择国家
-const selectCountry = (country) => {
-  formData.value.countryId = country.country_id;
-  countrySearch.value = country.country_name_zh || country.country_name;
-  matchedCountries.value = [];
+// 任务进度轮询
+const taskProgressPolling = {};
+const startTaskProgressPolling = (taskId) => {
+  if (taskProgressPolling[taskId]) return;
   
-  // 清空ASN和前缀
-  formData.value.asn = '';
-  formData.value.prefix = '';
-  
-  // 加载该国家的ASN
-  loadAsnsByCountry(country.country_id);
-};
-
-// 处理国家变更
-const handleCountryChange = () => {
-  // 清空ASN和前缀
-  formData.value.asn = '';
-  formData.value.prefix = '';
-  
-  // 如果通过下拉框选择了国家，更新搜索框
-  if (formData.value.countryId) {
-    const country = countries.value.find(c => c.country_id === formData.value.countryId);
-    if (country) {
-      countrySearch.value = country.country_name_zh || country.country_name;
+  taskProgressPolling[taskId] = setInterval(async () => {
+    try {
+      const response = await store.getImportTaskStatus(taskId);
+      const task = importTasks.value.find(t => t.task_id === taskId);
+      
+      if (task) {
+        task.status = response.data.status;
+        task.progress = response.data.progress;
+        
+        // 如果任务完成或失败，停止轮询
+        if (['completed', 'failed', 'cancelled'].includes(response.data.status)) {
+          clearInterval(taskProgressPolling[taskId]);
+          delete taskProgressPolling[taskId];
+        }
+      }
+    } catch (error) {
+      console.error(`轮询任务 ${taskId} 状态失败:`, error);
+      clearInterval(taskProgressPolling[taskId]);
+      delete taskProgressPolling[taskId];
     }
-    
-    // 加载该国家的ASN
-    loadAsnsByCountry(formData.value.countryId);
-  } else {
-    filteredAsns.value = asns.value;
-  }
+  }, 2000);
 };
 
-// 处理文件选择
-const handleFileChange = (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    selectedFile.value = file;
-  }
-};
-
-// 处理白名单选择
-const handleWhitelistSelect = async () => {
-  if (!selectedWhitelist.value) {
-    selectedWhitelistInfo.value = null;
-    return;
-  }
+// 取消任务
+const cancelTask = async (task) => {
+  if (!window.confirm(`确定要取消任务 ${task.task_id} 吗？`)) return;
   
   try {
-    // 获取白名单详情
-    const response = await axios.get(`/api/xmap/whitelist/${selectedWhitelist.value}`);
-    if (response.data.success) {
-      selectedWhitelistInfo.value = response.data.data;
-    }
+    await store.cancelImportTask(task.task_id);
+    globalSuccess.value = '任务已取消';
+    loadImportTasks();
   } catch (error) {
-    console.error('获取白名单详情失败:', error);
-    selectedWhitelistInfo.value = null;
+    console.error('取消任务失败:', error);
+    globalError.value = error.response?.data?.message || '取消任务失败';
   }
 };
 
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return '0 Bytes';
-  
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+// 下载结果
+const downloadResult = async (task) => {
+  try {
+    await store.downloadImportResult(task.task_id);
+  } catch (error) {
+    console.error('下载结果失败:', error);
+    globalError.value = error.response?.data?.message || '下载结果失败';
+  }
+};
+
+// 查看任务错误
+const viewTaskError = (task) => {
+  selectedTaskError.value = task.error_message || '未知错误';
+  showErrorModal.value = true;
+};
+
+// 关闭错误模态框
+const closeErrorModal = () => {
+  showErrorModal.value = false;
+  selectedTaskError.value = '';
+};
+
+// 获取状态文本
+const getStatusText = (status) => {
+  const statusMap = {
+    'pending': '等待中',
+    'processing': '处理中',
+    'completed': '已完成',
+    'failed': '失败',
+    'cancelled': '已取消'
+  };
+  return statusMap[status] || status;
+};
+
+// 获取国家名称
+const getCountryName = (countryId) => {
+  const country = countries.value.find(c => c.country_id === countryId);
+  return country ? (country.country_name_zh || country.country_name) : countryId;
+};
+
+// 获取文件名
+const getFileName = (fileId) => {
+  const file = addressFiles.value.find(f => f.id === fileId);
+  return file ? file.file_name : fileId;
 };
 
 // 格式化日期
 const formatDate = (dateString) => {
   if (!dateString) return '';
-  
-  const date = new Date(dateString);
-  return date.toLocaleString('zh-CN', {
+  return new Date(dateString).toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -450,243 +415,317 @@ const formatDate = (dateString) => {
   });
 };
 
-// 搜索ASN
-const searchAsns = async () => {
-  if (!formData.value.asn || formData.value.asn.length < 2) {
-    matchedAsns.value = [];
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+// 添加批量导入操作
+const addBatchOperation = () => {
+  batchImportOperations.value.push(createBatchOperation());
+};
+
+// 移除批量导入操作
+const removeBatchOperation = (index) => {
+  if (batchImportOperations.value.length > 1) {
+    batchImportOperations.value.splice(index, 1);
+  }
+};
+
+// 处理批量导入
+const handleBatchImport = async () => {
+  if (!isFormValid.value) return;
+  
+  try {
+    isSubmitting.value = true;
+    globalError.value = '';
+    globalSuccess.value = '';
+    
+    const tasks = batchImportOperations.value.map(op => ({
+      countryId: op.countryId,
+      asn: op.asn,
+      prefix: op.prefix,
+      fileId: op.fileId
+    }));
+    
+    await store.createImportTask(tasks);
+    globalSuccess.value = '导入任务已创建';
+    
+    // 重置表单
+    batchImportOperations.value = [createBatchOperation()];
+    
+    // 刷新任务列表
+    await loadImportTasks();
+  } catch (error) {
+    console.error('创建导入任务失败:', error);
+    globalError.value = error.response?.data?.message || '创建导入任务失败';
+  } finally {
+    isSubmitting.value = false;
+  }
+};
+
+// 文件上传相关
+const handleFileUpload = (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    uploadFile.value = file;
+    uploadProgress.value = 0;
+  }
+};
+
+const uploadFileToServer = async () => {
+  if (!uploadFile.value) return;
+  
+  try {
+    isUploading.value = true;
+    const formData = new FormData();
+    formData.append('file', uploadFile.value);
+    
+    await store.uploadAddressFile(formData);
+    globalSuccess.value = '文件上传成功';
+    uploadFile.value = null;
+    uploadProgress.value = 0;
+    if (fileInput.value) {
+      fileInput.value.value = '';
+    }
+    
+    // 刷新文件列表
+    await loadAddressFiles();
+  } catch (error) {
+    console.error('上传文件失败:', error);
+    globalError.value = error.response?.data?.message || '上传文件失败';
+  } finally {
+    isUploading.value = false;
+  }
+};
+
+// 加载地址文件列表
+const loadAddressFiles = async () => {
+  try {
+    const response = await store.getAddressFiles();
+    addressFiles.value = response.data || [];
+  } catch (error) {
+    console.error('加载文件列表失败:', error);
+    globalError.value = error.response?.data?.message || '加载文件列表失败';
+  }
+};
+
+// 搜索相关函数
+const debouncedSearchCountries = debounce((index) => {
+  const op = batchImportOperations.value[index];
+  if (!op) return;
+  
+  const searchTerm = op.countrySearch.toLowerCase();
+  if (!searchTerm) {
+    op.matchedCountries = countries.value.slice(0, 20);
     return;
   }
+  
+  op.matchedCountries = countries.value.filter(country => {
+    const nameCN = (country.country_name_zh || '').toLowerCase();
+    const nameEN = (country.country_name || '').toLowerCase();
+    return nameCN.includes(searchTerm) || nameEN.includes(searchTerm);
+  });
+}, 300);
 
+const debouncedSearchAsns = debounce(async (index) => {
+  const op = batchImportOperations.value[index];
+  if (!op) return;
+  
   try {
-    const response = await axios.get('/api/database/asns/search', {
-      params: {
-        query: formData.value.asn,
-        limit: 5,
-        country_id: formData.value.countryId || undefined
-      }
-    });
-    matchedAsns.value = response.data.data || [];
+    let asnsData = [];
+    if (op.asnSearch && op.asnSearch.length >= 2) {
+      asnsData = await store.searchAsns(op.asnSearch, op.countryId);
+    } else if (op.countryId) {
+      asnsData = await store.fetchAsnsByCountry(op.countryId);
+    } else {
+      const response = await store.getAllAsns(1, 20);
+      asnsData = response.data || [];
+    }
+    op.matchedAsns = asnsData;
   } catch (error) {
     console.error('搜索ASN失败:', error);
-    matchedAsns.value = [];
+    op.matchedAsns = [];
   }
-};
+}, 300);
 
-// 选择ASN
-const selectAsn = (asn) => {
-  formData.value.asn = asn.asn;
-  matchedAsns.value = [];
+const debouncedSearchPrefixes = debounce(async (index) => {
+  const op = batchImportOperations.value[index];
+  if (!op) return;
   
-  // 如果 ASN 有关联的国家，自动设置国家
-  if (asn.country_id) {
-    formData.value.countryId = asn.country_id;
-    // 更新国家搜索框
-    const country = countries.value.find(c => c.country_id === asn.country_id);
-    if (country) {
-      countrySearch.value = country.country_name_zh || country.country_name;
-    }
-  }
-};
-
-// 添加 ASN 下拉选择处理函数
-const handleAsnSelect = () => {
-  // 清空搜索结果
-  matchedAsns.value = [];
-  
-  // 如果选择了 ASN，查找对应的国家并设置
-  if (formData.value.asn) {
-    const selectedAsn = asns.value.find(a => a.asn == formData.value.asn);
-    if (selectedAsn && selectedAsn.country_id) {
-      formData.value.countryId = selectedAsn.country_id;
-      // 更新国家搜索框
-      const country = countries.value.find(c => c.country_id === selectedAsn.country_id);
-      if (country) {
-        countrySearch.value = country.country_name_zh || country.country_name;
-      }
-    }
-  }
-};
-
-// 搜索前缀
-const searchPrefixes = async () => {
-  if (!formData.value.prefix || formData.value.prefix.length < 2) {
-    matchedPrefixes.value = [];
-    return;
-  }
-
   try {
-    const response = await axios.get('/api/database/prefixes/search', {
-      params: {
-        query: formData.value.prefix,
-        limit: 5,
-        country_id: formData.value.countryId || undefined
-      }
-    });
-    matchedPrefixes.value = response.data.data || [];
+    const response = await store.searchPrefixes(op.prefixSearch, op.countryId);
+    op.matchedPrefixes = response.data || [];
   } catch (error) {
     console.error('搜索前缀失败:', error);
-    matchedPrefixes.value = [];
+    op.matchedPrefixes = [];
   }
-};
+}, 300);
 
-// 选择前缀
-const selectPrefix = (prefix) => {
-  formData.value.prefix = prefix.prefix;
-  matchedPrefixes.value = [];
+// 选择处理函数
+const selectCountryForRow = (index, country) => {
+  const op = batchImportOperations.value[index];
+  op.countryId = country.country_id;
+  op.countrySearch = country.country_name_zh || country.country_name;
+  op.showCountryResults = false;
   
-  // 如果前缀有关联的国家，自动设置国家
-  if (prefix.country_id) {
-    formData.value.countryId = prefix.country_id;
-    // 更新国家搜索框
-    const country = countries.value.find(c => c.country_id === prefix.country_id);
-    if (country) {
-      countrySearch.value = country.country_name_zh || country.country_name;
-    }
-    
-    // 加载该国家的ASN
-    loadAsnsByCountry(prefix.country_id);
-  }
-  
-  // 如果前缀有关联的 ASN，自动设置 ASN
-  if (prefix.asn) {
-    formData.value.asn = prefix.asn;
-  }
+  // 清空并更新ASN列表
+  op.asn = '';
+  op.asnSearch = '';
+  debouncedSearchAsns(index);
 };
 
-// 处理导入
-const handleImport = async () => {
-  if (!isFormValid.value) return;
-
-  try {
-    let addresses = [];
-    
-    if (fileSource.value === 'upload') {
-      const fileContent = await readFile(selectedFile.value);
-      addresses = fileContent.split(/\r?\n/)
-        .filter(line => line.trim())
-        .map(addr => addr.trim());
-    } else {
-      const response = await axios.get(`/api/xmap/whitelist/${selectedWhitelist.value}/content`);
-      if (response.data.success) {
-        addresses = response.data.data.split(/\r?\n/)
-          .filter(line => line.trim())
-          .map(addr => addr.trim());
-      }
-    }
-
-    if (addresses.length === 0) {
-      throw new Error('未找到有效的IPv6地址');
-    }
-
-    // 添加调试日志
-    console.log('准备导入的地址:', {
-      countryId: formData.value.countryId,
-      asn: formData.value.asn,
-      prefix: formData.value.prefix,
-      addressCount: addresses.length,
-      sampleAddresses: addresses.slice(0, 5)
-    });
-
-    const importData = {
-      countryId: formData.value.countryId,
-      asn: formData.value.asn,
-      prefix: formData.value.prefix,
-      addresses: addresses
-    };
-    
-    emit('import-addresses', importData);
-  } catch (error) {
-    console.error('导入失败详情:', {
-      error: error,
-      response: error.response?.data
-    });
-    alert(`导入失败: ${error.response?.data?.message || error.message}`);
-  }
+const selectAsnForRow = (index, asn) => {
+  const op = batchImportOperations.value[index];
+  op.asn = asn.asn;
+  op.asnSearch = `${asn.as_name_zh || asn.as_name} (AS${asn.asn})`;
+  op.showAsnResults = false;
 };
 
-// 读取文件内容
-const readFile = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      resolve(e.target.result);
-    };
-    
-    reader.onerror = (e) => {
-      reject(new Error('文件读取失败'));
-    };
-    
-    reader.readAsText(file);
-  });
+const selectPrefixForRow = (index, prefix) => {
+  const op = batchImportOperations.value[index];
+  op.prefix = prefix.prefix;
+  op.prefixSearch = prefix.prefix;
+  op.showPrefixResults = false;
 };
 
-// 监听国家ID变化，更新国家搜索框
-watch(() => formData.value.countryId, (newVal) => {
-  if (newVal) {
-    const country = countries.value.find(c => c.country_id === newVal);
-    if (country && !countrySearch.value) {
-      countrySearch.value = country.country_name_zh || country.country_name;
-    }
-  } else {
-    countrySearch.value = '';
-  }
+// 失去焦点处理
+const handleBlurCountrySearch = (index) => {
+  setTimeout(() => {
+    batchImportOperations.value[index].showCountryResults = false;
+  }, 200);
+};
+
+const handleBlurAsnSearch = (index) => {
+  setTimeout(() => {
+    batchImportOperations.value[index].showAsnResults = false;
+  }, 200);
+};
+
+const handleBlurPrefixSearch = (index) => {
+  setTimeout(() => {
+    batchImportOperations.value[index].showPrefixResults = false;
+  }, 200);
+};
+
+// 组件挂载时加载数据
+onMounted(async () => {
+  await Promise.all([
+    loadImportTasks(),
+    loadAddressFiles(),
+    store.getCountries(1, 500, ''),
+    store.getAllAsns()
+  ]);
 });
 
-onMounted(() => {
-  loadData();
+// 组件卸载时清理轮询
+onUnmounted(() => {
+  Object.values(taskProgressPolling).forEach(interval => clearInterval(interval));
 });
 </script>
 
 <style scoped lang="scss">
+// 复用漏洞管理组件的样式
 .import-form {
-  max-width: 800px;
+  font-family: 'Arial', sans-serif;
+  color: #333;
 }
 
-.form-group {
-  margin-bottom: 1.5rem;
-  
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: #4a5568;
-  }
-  
-  input, select {
-    width: 100%;
-    padding: 0.8rem 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    
-    &:focus {
-      outline: none;
-      border-color: #42b983;
-    }
-  }
+.card {
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
 }
 
-.full-width {
-  width: 100%;
-}
-
-.country-select-container,
-.input-select-container {
+.card-header {
+  background-color: #f8f9fa;
+  padding: 12px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 1.1em;
+  font-weight: 600;
   display: flex;
-  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-body {
+  padding: 20px;
+}
+
+// 状态徽章
+.status-badge {
+  padding: 0.25em 0.6em;
+  font-size: 75%;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 0.25rem;
+  color: #fff;
+}
+
+.status-pending { background-color: #6c757d; }
+.status-processing { background-color: #17a2b8; }
+.status-completed { background-color: #28a745; }
+.status-failed { background-color: #dc3545; }
+.status-cancelled { background-color: #ffc107; color: #212529; }
+
+// 进度条
+.progress-bar {
+  background-color: #e9ecef;
+  border-radius: 4px;
+  height: 20px;
+  position: relative;
+  overflow: hidden;
   
-  .search-container {
-    flex: 2;
+  .progress {
+    background-color: #17a2b8;
+    height: 100%;
+    transition: width 0.3s ease;
   }
   
-  .country-dropdown,
-  .dropdown-select {
-    flex: 1;
-    min-width: 150px;
+  .progress-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 500;
   }
 }
 
+// 批量操作表格
+.batch-operations-table {
+  margin-bottom: 1rem;
+}
+
+.batch-operations-header {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 1.5fr 1.5fr 40px;
+  gap: 10px;
+  padding: 10px 0;
+  font-weight: bold;
+  border-bottom: 2px solid #eee;
+}
+
+.batch-operation-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 1.5fr 1.5fr 40px;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+  align-items: center;
+}
+
+// 搜索容器
 .search-container {
   position: relative;
 }
@@ -695,68 +734,40 @@ onMounted(() => {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 0;
+  width: 100%;
   max-height: 200px;
   overflow-y: auto;
   background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 0 0 6px 6px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  z-index: 10;
-  margin: 0;
+  border: 1px solid #ced4da;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
   padding: 0;
+  margin: 0;
   list-style: none;
-
-  li {
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    border-bottom: 1px solid #f1f1f1;
-
-    &:hover {
-      background-color: #f8fafc;
-    }
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
-}
-
-.error-message {
-  color: #e53e3e;
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
-}
-
-.radio-group {
-  display: flex;
-  gap: 1.5rem;
-  margin-top: 0.5rem;
   
-  .radio-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  li {
+    padding: 8px 12px;
     cursor: pointer;
     
-    input[type="radio"] {
-      width: auto;
+    &:hover {
+      background-color: #f8f9fa;
     }
   }
 }
 
+// 文件上传区域
 .file-upload {
   position: relative;
-  border: 1px dashed #e2e8f0;
-  border-radius: 6px;
-  padding: 1.5rem;
+  border: 2px dashed #ced4da;
+  border-radius: 4px;
+  padding: 20px;
   text-align: center;
-  background-color: #f8fafc;
+  background-color: #f8f9fa;
   cursor: pointer;
   transition: all 0.2s ease;
   
   &:hover {
-    border-color: #42b983;
+    border-color: #17a2b8;
   }
   
   input[type="file"] {
@@ -768,65 +779,67 @@ onMounted(() => {
     opacity: 0;
     cursor: pointer;
   }
-  
-  .file-info {
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    color: #718096;
-  }
 }
 
-.file-hint {
-  margin: 0.5rem 0 0;
-  font-size: 0.8rem;
-  color: #a0aec0;
-}
-
-.whitelist-info {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background-color: #f8fafc;
-  border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  font-size: 0.9rem;
-  
-  p {
-    margin: 0.25rem 0;
-    color: #4a5568;
-  }
-}
-
-.form-actions {
+// 错误模态框
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
   display: flex;
-  justify-content: flex-end;
-  margin-top: 2rem;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
 }
 
-.btn {
-  padding: 0.8rem 1.5rem;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
+.modal-content {
+  background-color: #fff;
+  padding: 25px;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
   
-  &-primary {
-    background-color: #42b983;
-    color: white;
+  h4 {
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+  }
+  
+  .error-details {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+    max-height: 300px;
+    overflow-y: auto;
     
-    &:hover {
-      background-color: #3aa876;
-    }
-    
-    &:disabled {
-      background-color: #a0aec0;
-      cursor: not-allowed;
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
     }
   }
 }
 
+// 图标
+.icon-list:before { content: "📋"; }
+.icon-refresh:before { content: "🔄"; }
 .icon-import:before { content: "📥"; }
+.icon-upload:before { content: "📤"; }
+.icon-plus:before { content: "➕"; }
+.icon-minus:before { content: "➖"; }
+.icon-cancel:before { content: "❌"; }
+.icon-download:before { content: "📥"; }
+.icon-error:before { content: "⚠️"; }
+
+// 工具类
+.float-right { float: right; }
+.mr-1 { margin-right: 0.25rem !important; }
+.mr-2 { margin-right: 0.5rem !important; }
+.mt-3 { margin-top: 1rem !important; }
+.mt-4 { margin-top: 1.5rem !important; }
+.text-muted { color: #6c757d; }
 </style>

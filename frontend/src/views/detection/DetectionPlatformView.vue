@@ -284,20 +284,20 @@
     
     <!-- 协议分析面板 -->
     <div class="analysis-panel protocol-analysis-panel" :class="{ 'visible': showProtocolAnalysis }">
-          <div class="panel-header">
-            <h3>协议分析</h3>
-            <button @click="showProtocolAnalysis = false" class="close-btn">×</button>
-          </div>
-          <div class="panel-content">
-            <protocol-analysis-panel />
-          </div>
-        </div>
+      <div class="panel-header">
+        <h3>协议分析</h3>
+        <button @click="toggleProtocolAnalysis" class="close-btn">×</button>
+      </div>
+      <div class="panel-content">
+        <protocol-analysis-panel />
+      </div>
+    </div>
     
     <!-- 漏洞分析面板 -->
     <div class="analysis-panel vulnerability-analysis-panel" :class="{ 'visible': showVulnerabilityAnalysis }">
       <div class="panel-header">
         <h3>漏洞分析</h3>
-        <button @click="showVulnerabilityAnalysis = false" class="close-btn">×</button>
+        <button @click="toggleVulnerabilityAnalysis" class="close-btn">×</button>
       </div>
       <div class="panel-content">
         <vulnerability-analysis-panel />
@@ -364,7 +364,30 @@ const isCountryScrollPaused = ref(false)
 const isAsnScrollPaused = ref(false)
 const scrollSpeed = 1 // 滚动速度，可以根据需要调整
 
+function toggleProtocolAnalysis() {
+  if (showProtocolAnalysis.value) {
+    // 关闭面板时重置状态
+    showProtocolAnalysis.value = false
+    detectionStore.resetProtocolState()
+  } else {
+    // 打开面板前重置状态
+    detectionStore.resetProtocolState()
+    showProtocolAnalysis.value = true
+  }
+}
 
+// 修改漏洞分析面板显示逻辑
+function toggleVulnerabilityAnalysis() {
+  if (showVulnerabilityAnalysis.value) {
+    // 关闭面板时重置状态
+    showVulnerabilityAnalysis.value = false
+    detectionStore.resetVulnerabilityState()
+  } else {
+    // 打开面板前重置状态
+    detectionStore.resetVulnerabilityState()
+    showVulnerabilityAnalysis.value = true
+  }
+}
 
 // 开始自动滚动国家排名
 const startCountryScroll = () => {

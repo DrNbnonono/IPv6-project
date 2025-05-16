@@ -289,6 +289,138 @@ export default {
     // 更新 IID 类型
     updateIIDTypes(data) {
       return apiClient.post('/database/update-iid-types', data);
-    }
-  }
+    },
+
+
+    //---------------国家管理相关的API----------------//
+
+    createCountry(data) {
+      return apiClient.post('/database/countries', data);
+    },
+    updateCountry(id, data) {
+      return apiClient.put(`/database/countries/${id}`, data);
+    },
+    deleteCountry(id) {
+      return apiClient.delete(`/database/countries/${id}`);
+    },
+
+    //---------------ASN管理相关的API----------------//
+    createAsn(data) {
+      return apiClient.post('/database/asns', data);
+    },
+    updateAsn(id, data) {
+      return apiClient.put(`/database/asns/${id}`, data);
+    },
+    deleteAsn(id) {
+      return apiClient.delete(`/database/asns/${id}`);
+    },
+
+    //---------------前缀管理相关的API----------------//
+    getPrefixes(params) {
+      return apiClient.get('/database/prefixes', { params });
+    },
+    createPrefix(data) {
+      return apiClient.post('/database/prefixes', data);
+    },
+    updatePrefix(id, data) {
+      return apiClient.put(`/database/prefixes/${id}`, data);
+    },
+    deletePrefix(id) {
+      return apiClient.delete(`/database/prefixes/${id}`);
+    },
+
+    //---------------文件上传相关API----------------//
+    uploadAddressFile(formData) {
+      return apiClient.post('/database/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+    },
+    getAddressFiles() {
+      return apiClient.get('/database/files');
+    },
+    deleteAddressFile(fileId) {
+      return apiClient.delete(`/database/files/${fileId}`);
+    },
+    downloadAddressFile(fileId, config = {}) {
+      return apiClient.get(`/database/files/${fileId}/download`, config);
+    },
+
+    //---------------地址导入任务相关API----------------//
+    createImportTask(data) {
+      return apiClient.post('/database/import-tasks', data);
+    },
+    getImportTasks() {
+      return apiClient.get('/database/import-tasks');
+    },
+    getImportTaskStatus(taskId) {
+      return apiClient.get(`/database/import-tasks/${taskId}`);
+    },
+    cancelImportTask(taskId) {
+      return apiClient.delete(`/database/import-tasks/${taskId}`);
+    },
+
+    //---------------协议管理相关API----------------//
+    getProtocolDefinitions() {
+      return apiClient.get('/database/protocols');
+    },
+    createProtocolDefinition(data) {
+      return apiClient.post('/database/protocols', data);
+    },
+    updateProtocolDefinition(id, data) {
+      return apiClient.put(`/database/protocols/${id}`, data);
+    },
+    deleteProtocolDefinition(id) {
+      return apiClient.delete(`/database/protocols/${id}`);
+    },
+    // 更新asn_protocol_stats
+    batchUpdateAsnProtocolStats(data) {
+      return apiClient.post('/database/asn-protocol-stats/batch-update', data);
+    },
+
+    //---------------漏洞管理相关API----------------//
+    getVulnerabilityDefinitions() {
+      return apiClient.get('/database/vulnerabilities');
+    },
+    createVulnerabilityDefinition(data) {
+      return apiClient.post('/database/vulnerabilities', data);
+    },
+    updateVulnerabilityDefinition(id, data) {
+      return apiClient.put(`/database/vulnerabilities/${id}`, data);
+    },
+    deleteVulnerabilityDefinition(id) {
+      return apiClient.delete(`/database/vulnerabilities/${id}`);
+    },
+    // 更新asn_vulnerability_stats
+    batchUpdateAsnVulnerabilityStats(data) {
+      return apiClient.post('/database/asn-vulnerability-stats/batch-update', data);
+    },
+    //--------------查询相关的API----------------//
+    getAsnsByCountry(countryId, query = '') {
+      return apiClient.get(`/database/asns/country/${countryId}${query ? `?query=${query}` : ''}`);
+    },
+    getAllAsns(page = 1, limit = 100) {
+      return apiClient.get(`/database/asns/all?page=${page}&limit=${limit}`);
+    },
+    searchAsns(query, countryId = null) { // 修改搜索ASN方法，添加可选的countryId参数
+        const params = new URLSearchParams();
+        if (query) params.append('query', query);
+        if (countryId) params.append('country_id', countryId);
+        return apiClient.get(`/database/asns?${params.toString()}&limit=20`);
+    },
+    getCountries(params = {}) {
+      const { page = 1, limit = 50, search = '' } = params;
+      // 构建URL参数，确保所有参数都正确传递
+      const urlParams = new URLSearchParams();
+      urlParams.append('page', page);
+      urlParams.append('limit', limit);
+      if (search) {
+        urlParams.append('search', search);
+      }
+      console.log(`API: 获取国家列表，参数: page=${page}, limit=${limit}, search=${search}`);
+      return apiClient.get(`/database/countries?${urlParams.toString()}`);
+    },
+
+  }       
 }

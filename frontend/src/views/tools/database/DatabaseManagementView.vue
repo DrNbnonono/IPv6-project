@@ -47,44 +47,68 @@
         </div>
         
         <!-- 漏洞管理 -->
-        <div v-if="activeTab === 'vulnerabilities'" class="vulnerabilities-section">
-          <div class="section-header">
-            <h3><i class="icon-security"></i> 漏洞管理</h3>
-            <p>管理IPv6地址漏洞信息</p>
+          <div v-if="activeTab === 'vulnerabilities'" key="vulnerabilitiesTab" class="vulnerabilities-section">
+            <div class="section-header">
+              <h3><i class="icon-security"></i> 漏洞管理</h3>
+              <p>管理IPv6地址漏洞信息</p>
+            </div>
+            
+            <VulnerabilityManagementForm 
+              @update-vulnerabilities="handleUpdateVulnerabilities"
+              :is-loading="isUpdatingVulnerabilities"
+            />
           </div>
           
-          <VulnerabilityManagementForm 
-            @update-vulnerabilities="handleUpdateVulnerabilities"
-            :is-loading="isUpdatingVulnerabilities"
-          />
-        </div>
-        
-        <!-- 协议支持 -->
-        <div v-if="activeTab === 'protocols'" class="protocols-section">
-          <div class="section-header">
-            <h3><i class="icon-protocol"></i> 协议支持管理</h3>
-            <p>更新IPv6地址协议支持状态</p>
+          <!-- 协议支持 -->
+          <div v-if="activeTab === 'protocols'" key="protocolsTab" class="protocols-section">
+            <div class="section-header">
+              <h3><i class="icon-protocol"></i> 协议支持管理</h3>
+              <p>更新IPv6地址协议支持状态</p>
+            </div>
+            
+            <ProtocolSupportForm 
+              @update-protocols="handleUpdateProtocols"
+              :is-loading="isUpdatingProtocols"
+            />
           </div>
-          
-          <ProtocolSupportForm 
-            @update-protocols="handleUpdateProtocols"
-            :is-loading="isUpdatingProtocols"
-          />
-        </div>
 
-        <!-- IID 类型管理 -->
-        <div v-if="activeTab === 'iidtypes'" class="iidtypes-section">
-          <div class="section-header">
-            <h3><i class="icon-iid"></i> IID类型管理</h3>
-            <p>更新IPv6地址的IID类型检测结果</p>
+          <!-- IID 类型管理 -->
+          <div v-if="activeTab === 'iidtypes'" key="iidtypesTab" class="iidtypes-section">
+            <div class="section-header">
+              <h3><i class="icon-iid"></i> IID类型管理</h3>
+              <p>更新IPv6地址的IID类型检测结果</p>
+            </div>
+            
+            <IIDTypeManagementForm 
+              @update-iid-types="handleUpdateIIDTypes"
+              :is-loading="isUpdatingIIDTypes"
+            />
           </div>
           
-          <IIDTypeManagementForm 
-            @update-iid-types="handleUpdateIIDTypes"
-            :is-loading="isUpdatingIIDTypes"
-          />
-        </div>
-
+          <!-- 国家管理 -->
+          <div v-if="activeTab === 'country'" key="countryTab" class="country-section">
+            <div class="section-header">
+              <h3><i class="icon-database"></i> 国家管理</h3>
+              <p>管理国家信息</p>
+            </div>
+            <CountryManagementForm />
+          </div>
+          <!-- ASN管理 -->
+          <div v-if="activeTab === 'asn'" key="asnTab" class="asn-section">
+            <div class="section-header">
+              <h3><i class="icon-network"></i> ASN管理</h3>
+              <p>管理ASN信息</p>
+            </div>
+            <AsnManagementForm />
+          </div>
+          <!-- 前缀管理 -->
+          <div v-if="activeTab === 'prefix'" key="prefixTab" class="prefix-section">
+            <div class="section-header">
+              <h3><i class="icon-network"></i> 前缀管理</h3>
+              <p>管理前缀信息</p>
+            </div>
+            <PrefixManagementForm />
+          </div>
 
         <!-- 高级查询 -->
         <div v-if="activeTab === 'query'" class="query-section">
@@ -216,8 +240,11 @@ import { useDatabaseStore } from '@/stores/database';
 import ImportAddressesForm from '@/components/database/ImportAddressesForm.vue';
 import VulnerabilityManagementForm from '@/components/database/VulnerabilityManagementForm.vue';
 import ProtocolSupportForm from '@/components/database/ProtocolSupportForm.vue';
-import IIDTypeManagementForm from '@/components/database/IIDTypeManagementForm.vue'; // 新增导入 IID 类型管理组件
+import IIDTypeManagementForm from '@/components/database/IIDTypeManagementForm.vue'; 
 import AdvancedQueryForm from '@/components/database/AdvancedQueryForm.vue';
+import CountryManagementForm from '@/components/database/CountryManagementForm.vue';
+import AsnManagementForm from '@/components/database/AsnManagementForm.vue';
+import PrefixManagementForm from '@/components/database/PrefixManagementForm.vue';
 
 import * as echarts from 'echarts/core';
 import { BarChart, PieChart } from 'echarts/charts';
@@ -233,7 +260,7 @@ echarts.use([
   GridComponent,
   CanvasRenderer
 ]);
-
+let operationIdCounter = 0; 
 const databaseStore = useDatabaseStore();
 const activeTab = ref('import');
 const isImporting = ref(false);
@@ -250,6 +277,9 @@ const tabs = [
   { id: 'vulnerabilities', label: '漏洞管理', icon: 'icon-security' },
   { id: 'protocols', label: '协议支持', icon: 'icon-protocol' },
   { id: 'iidtypes', label: 'IID类型', icon: 'icon-iid' }, // IID 类型选项卡
+  { id: 'country', label: '国家管理', icon: 'icon-database' },
+  { id: 'asn', label: 'ASN管理', icon: 'icon-network' },
+  { id: 'prefix', label: '前缀管理', icon: 'icon-network' },
   { id: 'query', label: '高级查询', icon: 'icon-search' },
   { id: 'stats', label: '数据统计', icon: 'icon-chart' },
   { id: 'help', label: '使用帮助', icon: 'icon-help', badge: '新' }
