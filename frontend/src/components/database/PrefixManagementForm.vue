@@ -12,6 +12,26 @@
           <i class="icon-plus"></i> 添加新前缀
         </button>
       </h3>
+
+      <!-- 添加搜索框 -->
+      <div class="card-search">
+        <div class="search-container">
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="搜索前缀、ASN或国家..." 
+            @input="debouncedSearchPrefixes"
+            class="search-input"
+          />
+          <button class="btn btn-sm btn-primary" @click="searchPrefixes">
+            <i class="icon-search"></i> 搜索
+          </button>
+          <button class="btn btn-sm btn-secondary" @click="resetSearch" v-if="searchQuery">
+            <i class="icon-close"></i> 重置
+          </button>
+        </div>
+      </div>
+
       <div class="card-body">
         <div v-if="definitionsLoading" class="loading-message">加载前缀列表中...</div>
         <div v-else>
@@ -22,7 +42,8 @@
                 <th>ASN</th>
                 <th>AS名称</th>
                 <th>所属国家</th>
-                <th>类型</th>
+                <th>注册机构</th>
+                <th>活跃IPv6地址数</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -32,12 +53,13 @@
                 <td>AS{{ prefix.asn }}</td>
                 <td>{{ getAsnName(prefix.asn) }}</td>
                 <td>
-                  <span v-if="getCountryName(prefix.asn)">
-                    {{ getCountryName(prefix.asn) }}
+                  <span v-if="prefix.country_name_zh || prefix.country_name">
+                    {{ prefix.country_name_zh || prefix.country_name }}
                   </span>
                   <span v-else>-</span>
                 </td>
-                <td>{{ prefix.type || '-' }}</td>
+                <td>{{ prefix.registry || '-' }}</td>
+                <td>{{ prefix.active_ipv6_count ?? 0 }}</td>
                 <td>
                   <button @click="openPrefixModal('edit', prefix)" class="btn btn-sm btn-info mr-1">
                     <i class="icon-edit"></i> 编辑
@@ -64,8 +86,13 @@
         <form @submit.prevent="handleSavePrefix">
           <div class="form-group">
             <label for="prefix">前缀 <span class="required">*</span></label>
-            <input type="text" id="prefix" v-model="currentPrefix.prefix" required :disabled="modalMode === 'edit'" />
+            <input type="text" id="prefix" v-model="currentPrefix.prefix" required :="modalMode === 'edit'" />
             <small class="form-text text-muted">例如：2001:db8::/32</small>
+          </div>
+          <div class="form-group">
+            <label for="prefix-length">前缀长度 <span class="required">*</span></label>
+            <input type="number" id="prefix-length" v-model="currentPrefix.prefix_length" required min="1" max="128" />
+            <small class="form-text text-muted">IPv6前缀长度范围：1-128</small>
           </div>
           <div class="form-group">
             <label for="prefix-asn">所属ASN <span class="required">*</span></label>
@@ -78,13 +105,21 @@
             </select>
           </div>
           <div class="form-group">
-            <label for="prefix-type">类型</label>
-            <select id="prefix-type" v-model="currentPrefix.type">
-              <option value="">选择类型</option>
-              <option value="allocated">已分配</option>
-              <option value="assigned">已分配使用</option>
-              <option value="reserved">保留</option>
+            <label for="prefix-registry">注册机构</label>
+            <select id="prefix-registry" v-model="currentPrefix.registry">
+              <option value="">选择注册机构</option>
+              <option value="APNIC">APNIC</option>
+              <option value="ARIN">ARIN</option>
+              <option value="RIPE">RIPE</option>
+              <option value="LACNIC">LACNIC</option>
+              <option value="AFRINIC">AFRINIC</option>
             </select>
+            <small class="form-text text-muted">如APNIC, ARIN等区域互联网注册机构</small>
+          </div>
+          <div class="form-group">
+            <label for="active-ipv6-count">活跃IPv6地址数</label>
+            <input type="number" id="active-ipv6-count" v-model="currentPrefix.active_ipv6_count" min="0" placeholder="0" />
+            <small class="form-text text-muted">可选，表示该前缀下的活跃IPv6地址数量</small>
           </div>
           <div v-if="modalError" class="error-message">{{ modalError }}</div>
           <div class="form-actions">
@@ -120,25 +155,59 @@ const modalSubmitting = ref(false);
 const modalError = ref('');
 const prefixes = ref([]);
 
+const searchQuery = ref('');
+const searchTimeout = ref(null);
+
+
 const defaultPrefix = {
   prefix: '',
+  prefix_length: '',
   asn: '',
-  type: ''
+  registry: ''
 };
 
-// 获取ASN名称的辅助函数
 const getAsnName = (asn) => {
   if (!asn || !asns.value) return null;
-  const asnObj = asns.value.find(a => a.asn === asn);
-  return asnObj ? (asnObj.as_name_zh || asnObj.as_name) : null;
+  const asnObj = asns.value.find(a => a.asn === parseInt(asn)); // 确保类型匹配
+  return asnObj ? (asnObj.as_name_zh || asnObj.as_name || '未知') : null;
 };
 
-// 获取国家名称的辅助函数
-const getCountryName = (asn) => {
-  if (!asn || !asns.value) return null;
-  const asnObj = asns.value.find(a => a.asn === asn);
-  if (!asnObj || !asnObj.country_id) return null;
-  return asnObj.country_name_zh || asnObj.country_name;
+const getCountryName = (countryId) => {
+  if (!countryId) return null;
+  // 从前缀对象中直接获取国家名称
+  return countryId ? (store.countries.find(c => c.country_id === countryId)?.country_name_zh || 
+                      store.countries.find(c => c.country_id === countryId)?.country_name || 
+                      countryId) : null;
+};
+
+
+const debouncedSearchPrefixes = () => {
+  clearTimeout(searchTimeout.value);
+  searchTimeout.value = setTimeout(() => {
+    searchPrefixes();
+  }, 300);
+};
+
+const searchPrefixes = async () => {
+  if (searchQuery.value && searchQuery.value.length >= 2) {
+    definitionsLoading.value = true;
+    try {
+      const results = await store.searchPrefixes(searchQuery.value);
+      prefixes.value = results;
+    } catch (error) {
+      console.error('搜索前缀失败:', error);
+      globalError.value = `搜索前缀失败: ${error.message}`;
+    } finally {
+      definitionsLoading.value = false;
+    }
+  } else {
+    loadPrefixes();
+  }
+};
+
+const resetSearch = () => {
+  searchQuery.value = '';
+  loadPrefixes();
 };
 
 const loadPrefixes = async () => {
@@ -159,14 +228,24 @@ const loadPrefixes = async () => {
   }
 };
 
+// 修改loadAsns函数
 const loadAsns = async () => {
   try {
-    await store.getAllAsns(1, 1000);
+    const asnData = await store.getAllAsns(1, 1000);
+    // 确保asns.value被正确赋值
+    if (Array.isArray(asnData)) {
+      asns.value = asnData;
+      console.log(`[PrefixManagementForm] 成功加载${asns.value.length}个ASN`);
+    } else {
+      console.warn('[PrefixManagementForm] ASN数据格式异常:', asnData);
+      asns.value = [];
+    }
   } catch (error) {
     console.error('[PrefixManagementForm] 加载ASN列表失败:', error);
     globalError.value = `加载ASN列表失败: ${error.message}`;
   }
 };
+
 
 function openPrefixModal(mode, prefix = null) {
   modalMode.value = mode;
@@ -175,6 +254,10 @@ function openPrefixModal(mode, prefix = null) {
     currentPrefix.value = { ...defaultPrefix };
   } else {
     currentPrefix.value = { ...prefix };
+    // 确保前缀长度字段存在
+    if (!currentPrefix.value.prefix_length && currentPrefix.value.prefix.includes('/')) {
+      currentPrefix.value.prefix_length = currentPrefix.value.prefix.split('/')[1];
+    }
   }
   showPrefixModal.value = true;
 }
@@ -189,15 +272,35 @@ async function handleSavePrefix() {
   modalError.value = '';
   globalSuccess.value = '';
   try {
-    const dataToSave = { ...currentPrefix.value };
+    // 从前缀中提取前缀长度（如果未手动输入）
+    if (!currentPrefix.value.prefix_length && currentPrefix.value.prefix.includes('/')) {
+      currentPrefix.value.prefix_length = currentPrefix.value.prefix.split('/')[1];
+    }
+    
+    // 确保前缀长度是有效的整数
+    if (!currentPrefix.value.prefix_length || isNaN(parseInt(currentPrefix.value.prefix_length))) {
+      throw new Error('请输入有效的前缀长度');
+    }
+    
+    // 确保包含所有必填字段
+    const dataToSave = { 
+      ...currentPrefix.value,
+      prefix_length: parseInt(currentPrefix.value.prefix_length), // 确保是整数
+      version: currentPrefix.value.prefix.includes(':') ? '6' : '4',
+      country_id: currentPrefix.value.country_id || (currentPrefix.value.asn ? 
+        asns.value.find(a => a.asn === parseInt(currentPrefix.value.asn))?.country_id : null)
+    };
     
     if (modalMode.value === 'create') {
       await store.createPrefix(dataToSave);
       globalSuccess.value = '前缀创建成功!';
     } else {
-      await store.updatePrefix(currentPrefix.value.prefix, dataToSave);
+      // 使用prefix_id作为标识，如果没有则使用prefix
+      const idToUse = currentPrefix.value.prefix_id || currentPrefix.value.prefix;
+      await store.updatePrefix(idToUse, dataToSave);
       globalSuccess.value = '前缀信息更新成功!';
     }
+    
     await loadPrefixes(); // 重新加载前缀列表
     closePrefixModal();
     setTimeout(() => globalSuccess.value = '', 3000);
@@ -214,7 +317,9 @@ async function confirmDeletePrefix(prefix) {
     globalError.value = '';
     globalSuccess.value = '';
     try {
-      await store.deletePrefix(prefix.prefix);
+      // 使用prefix_id作为标识，如果没有则使用prefix
+      const idToUse = prefix.prefix_id || prefix.prefix;
+      await store.deletePrefix(idToUse);
       globalSuccess.value = '前缀删除成功!';
       await loadPrefixes(); // 重新加载前缀列表
       setTimeout(() => globalSuccess.value = '', 3000);
@@ -228,12 +333,48 @@ async function confirmDeletePrefix(prefix) {
 }
 
 onMounted(async () => {
-  console.log('[PrefixManagementForm] 组件挂载，加载初始数据...');
-  await Promise.all([loadAsns(), loadPrefixes()]);
+  console.log('[PrefixManagementForm] 组件挂载，开始加载数据...');
+  try {
+    // 先加载ASN数据，再加载前缀数据
+    await loadAsns();
+    console.log('[PrefixManagementForm] 数据加载完成，ASN数量:', asns.value.length);
+    await loadPrefixes();
+  } catch (error) {
+    console.error('[PrefixManagementForm] 初始化数据加载失败:', error);
+    globalError.value = `初始化数据加载失败: ${error.message}`;
+  }
 });
 </script>
 
 <style scoped>
+
+/* 添加搜索框样式 */
+.card-search {
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+  background-color: #f9f9f9;
+}
+
+.search-container {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
 /* 复用 CountryManagementForm 的样式 */
 .prefix-management-form {
   font-family: 'Arial', sans-serif;

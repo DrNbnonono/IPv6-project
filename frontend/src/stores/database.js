@@ -185,62 +185,8 @@ export const useDatabaseStore = defineStore('database', {
       }
     },
 
-    //---------------文件上传相关Action----------------//
-    async uploadAddressFile(formData) {
-      try {
-        this.isLoading = true;
-        const response = await api.database.uploadAddressFile(formData);
-        return response.data;
-      } catch (error) {
-        console.error('上传文件失败:', error);
-        this.error = error.response?.data?.message || error.message;
-        throw error;
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async getAddressFiles() {
-      try {
-        this.isLoading = true;
-        const response = await api.database.getAddressFiles();
-        return response.data;
-      } catch (error) {
-        console.error('获取文件列表失败:', error);
-        this.error = error.response?.data?.message || error.message;
-        throw error;
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async deleteAddressFile(fileId) {
-      try {
-        this.isLoading = true;
-        const response = await api.database.deleteAddressFile(fileId);
-        return response.data;
-      } catch (error) {
-        console.error('删除文件失败:', error);
-        this.error = error.response?.data?.message || error.message;
-        throw error;
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async downloadAddressFile(fileId, config = {}) {
-      try {
-        this.isLoading = true;
-        const response = await api.database.downloadAddressFile(fileId, config);
-        return response;
-      } catch (error) {
-        console.error('下载文件失败:', error);
-        this.error = error.response?.data?.message || error.message;
-        throw error;
-      } finally {
-        this.isLoading = false;
-      }
-    },
+    //---------------文件上传相关Action已经单独实现----------------//
+    
 
     //---------------IPv6地址导入任务相关Action----------------//
     async createImportTask(data) {
@@ -260,12 +206,89 @@ export const useDatabaseStore = defineStore('database', {
     async getImportTasks() {
       try {
         this.isLoading = true;
+        console.log('[databaseStore] 开始获取导入任务列表...');
+        
+        // 清除之前的错误
+        this.error = null;
+        
         const response = await api.database.getImportTasks();
-        return response.data;
+        console.log('[databaseStore] 获取导入任务列表响应:', response);
+        
+        // 检查响应数据
+        if (!response.data) {
+          console.error('[databaseStore] 响应数据为空');
+          throw new Error('响应数据为空');
+        }
+
+        // 处理任务数据，确保正确解析国家、ASN和前缀信息
+        const tasks = (response.data.tasks || []).map(task => {
+          // 从description中提取信息
+          const description = task.description || '';
+          let countryId = task.country_id;
+          let asn = task.asn;
+          let prefix = task.prefix;
+
+          // 如果从数据库字段中没有获取到信息，尝试从description中解析
+          if (!countryId || !asn || !prefix) {
+            const countryMatch = description.match(/国家:?\s*([A-Z]{2})/);
+            const asnMatch = description.match(/ASN:?\s*(\d+)/);
+            const prefixMatch = description.match(/前缀:?\s*([0-9a-fA-F:]+(?:\/\d+)?)/);
+
+            countryId = countryId || (countryMatch ? countryMatch[1] : null);
+            asn = asn || (asnMatch ? asnMatch[1] : null);
+            prefix = prefix || (prefixMatch ? prefixMatch[1] : null);
+          }
+
+          return {
+            ...task,
+            country_id: countryId,
+            asn: asn,
+            prefix: prefix,
+            // 确保其他字段也有默认值
+            status: task.status || 'unknown',
+            error_message: task.error_message || null,
+            created_at: task.created_at || null,
+            completed_at: task.completed_at || null,
+            file_name: task.file_name || null,
+            file_id: task.file_id || null
+          };
+        });
+
+        // 构建返回结果
+        const result = {
+          tasks: tasks,
+          pagination: response.data.pagination || {
+            total: tasks.length,
+            page: 1,
+            pageSize: 10,
+            totalPages: Math.ceil(tasks.length / 10)
+          }
+        };
+        
+        console.log('[databaseStore] 处理后的任务列表:', result);
+        return result;
+        
       } catch (error) {
-        console.error('获取导入任务列表失败:', error);
+        console.error('[databaseStore] 获取导入任务列表失败:', error);
+        console.error('[databaseStore] 错误详情:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status
+        });
+        
+        // 设置错误信息
         this.error = error.response?.data?.message || error.message;
-        throw error;
+        
+        // 返回空的任务列表
+        return {
+          tasks: [],
+          pagination: {
+            total: 0,
+            page: 1,
+            pageSize: 10,
+            totalPages: 0
+          }
+        };
       } finally {
         this.isLoading = false;
       }
@@ -292,6 +315,22 @@ export const useDatabaseStore = defineStore('database', {
         return response.data;
       } catch (error) {
         console.error('取消导入任务失败:', error);
+        this.error = error.response?.data?.message || error.message;
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    async deleteImportTask(taskId) {
+      try {
+        this.isLoading = true;
+        console.log('[databaseStore] 开始删除任务:', taskId);
+        const response = await api.database.deleteImportTask(taskId);
+        console.log('[databaseStore] 删除任务响应:', response);
+        return response.data;
+      } catch (error) {
+        console.error('[databaseStore] 删除任务失败:', error);
         this.error = error.response?.data?.message || error.message;
         throw error;
       } finally {
@@ -362,17 +401,55 @@ export const useDatabaseStore = defineStore('database', {
     //---------------前缀管理相关的Action----------------//
     async getAllPrefixes(page = 1, pageSize = 1000) {
       try {
-        const res = await api.database.getPrefixes({ page, pageSize });
-        this.prefixes = res.data;
-        return res.data;
+        console.log('[Store] 开始获取前缀列表...');
+        const response = await api.database.getPrefixes({ page, pageSize });
+        console.log('[Store] 获取前缀列表响应:', response);
+        
+        if (response.data) {
+          // 详细记录响应数据结构
+          console.log('[Store] 前缀列表响应数据类型:', typeof response.data);
+          console.log('[Store] 前缀列表响应数据结构:', 
+            response.data ? Object.keys(response.data) : '无数据');
+          
+          if (response.data.success && Array.isArray(response.data.data)) {
+            console.log('[Store] 前缀列表数据格式: success.data 格式');
+            console.log('[Store] 前缀数量:', response.data.data.length);
+            console.log('[Store] 第一个前缀示例:', response.data.data[0]);
+            this.prefixes = response.data.data;
+            return this.prefixes;
+          } else if (Array.isArray(response.data)) {
+            console.log('[Store] 前缀列表数据格式: 直接数组格式');
+            console.log('[Store] 前缀数量:', response.data.length);
+            console.log('[Store] 第一个前缀示例:', response.data[0]);
+            this.prefixes = response.data;
+            return this.prefixes;
+          } else {
+            console.warn('[Store] 前缀列表响应格式异常:', response.data);
+            this.prefixes = [];
+            return [];
+          }
+        }
+        return [];
       } catch (e) {
+        console.error('[Store] 获取前缀列表失败:', e);
         this.error = e.message;
         throw e;
       }
     },
+    
     async createPrefix(data) {
       try {
-        await api.database.createPrefix(data);
+        // 预处理数据，确保包含所有必填字段
+        const processedData = {
+          ...data,
+          prefix_length: data.prefix.split('/')[1] || '',
+          version: data.prefix.includes(':') ? '6' : '4',
+          country_id: data.country_id || null,
+          asn: data.asn || null,
+          registry: data.registry || null,
+          active_ipv6_count: data.active_ipv6_count || 0
+        };
+        await api.database.createPrefix(processedData);
         await this.getAllPrefixes();
       } catch (e) {
         this.error = e.message;
@@ -381,7 +458,18 @@ export const useDatabaseStore = defineStore('database', {
     },
     async updatePrefix(id, data) {
       try {
-        await api.database.updatePrefix(id, data);
+        // 预处理数据，确保包含所有必填字段
+        const processedData = {
+          ...data,
+          prefix_length: data.prefix.split('/')[1] || '',
+          version: data.prefix.includes(':') ? '6' : '4',
+          country_id: data.country_id || null,
+          asn: data.asn || null,
+          registry: data.registry || null,
+          active_ipv6_count: data.active_ipv6_count
+        };
+        
+        await api.database.updatePrefix(id, processedData);
         await this.getAllPrefixes();
       } catch (e) {
         this.error = e.message;
@@ -728,8 +816,13 @@ export const useDatabaseStore = defineStore('database', {
     async searchAsns(query) {
       try {
           const response = await api.database.searchAsns(query);
-          if (response.data && response.data.success) {
+          // 处理标准success.data格式
+          if (response.data && response.data.success && Array.isArray(response.data.data)) {
               return response.data.data;
+          }
+          // 处理直接返回数组格式
+          if (Array.isArray(response.data)) {
+              return response.data;
           }
           return [];
       } catch (error) {
@@ -841,6 +934,52 @@ export const useDatabaseStore = defineStore('database', {
           console.error('[Store] 错误响应数据:', error.response.data);
           console.error('[Store] 错误响应状态:', error.response.status);
         }
+        throw error;
+      }
+    },
+    async searchPrefixes(query) {
+      try {
+        const response = await api.database.searchPrefixes(query);
+        console.log('[store.searchPrefixes] 原始响应:', response);
+        if (response.data && response.data.success && Array.isArray(response.data.data)) {
+          console.log('[store.searchPrefixes] 返回success.data数组，数量:', response.data.data.length);
+          return response.data.data;
+        }
+        if (Array.isArray(response.data)) {
+          console.log('[store.searchPrefixes] 返回直接数组，数量:', response.data.length);
+          return response.data;
+        }
+        if (response.data && Array.isArray(response.data.data)) {
+          console.log('[store.searchPrefixes] 返回data数组，数量:', response.data.data.length);
+          return response.data.data;
+        }
+        console.warn('[store.searchPrefixes] 未知响应格式:', response);
+        return [];
+      } catch (error) {
+        console.error('[store.searchPrefixes] 搜索前缀失败:', error);
+        throw error;
+      }
+    },
+    // 添加获取ASN前缀列表的方法
+    async getPrefixesByAsn(asn) {
+      try {
+        console.log(`[Store] 获取ASN ${asn} 的前缀列表...`);
+        const response = await api.database.getPrefixesByAsn(asn);
+        
+        if (response.data) {
+          if (response.data.success && Array.isArray(response.data.data)) {
+            console.log(`[Store] 成功获取ASN ${asn} 的前缀列表，数量:`, response.data.data.length);
+            return response.data.data;
+          } else if (Array.isArray(response.data)) {
+            console.log(`[Store] 成功获取ASN ${asn} 的前缀列表(直接数组格式)，数量:`, response.data.length);
+            return response.data;
+          }
+        }
+        
+        console.warn(`[Store] 获取ASN ${asn} 的前缀列表响应格式不正确:`, response.data);
+        return [];
+      } catch (error) {
+        console.error(`[Store] 获取ASN ${asn} 的前缀列表失败:`, error);
         throw error;
       }
     },

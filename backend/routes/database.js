@@ -90,11 +90,7 @@ router.delete('/protocols/:id', databaseController.deleteProtocol); // 删除协
 router.post('/asn-protocol-stats/batch-update', databaseController.batchUpdateAsnProtocolStats);
 
 
-//---------------文件上传相关API----------------//
-router.post('/files/upload', databaseController.uploadAddressFile);
-router.get('/files', databaseController.getAddressFiles);
-router.delete('/files/:id', databaseController.deleteAddressFile);
-router.get('/files/:id/download', databaseController.downloadAddressFile);
+//---------------文件上传相关API已经单独实现----------------//
 
 
 //---------------地址导入任务相关API----------------//
@@ -102,12 +98,6 @@ router.post('/import-tasks', databaseController.createImportTask);
 router.get('/import-tasks', databaseController.getImportTasks);
 router.get('/import-tasks/:id', databaseController.getImportTaskStatus);
 router.delete('/import-tasks/:id', databaseController.cancelImportTask);
-
-
-
-//---------------地址导入任务相关API----------------//
-
-// 导入IPv6地址
-router.post('/import-addresses', databaseController.importAddresses);
+router.delete('/import-tasks/:id/delete', databaseController.deleteImportTask);
 
 module.exports = router;

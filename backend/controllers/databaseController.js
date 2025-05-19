@@ -705,241 +705,321 @@ exports.deleteAsn = async (req, res) => {
 //---------------前缀管理相关的API----------------//
 exports.getPrefixes = async (req, res) => {
   try {
-    const prefixes = await Prefix.findAll();
-    res.json(prefixes);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.pageSize) || 1000;
+    const offset = (page - 1) * limit;
+    
+    console.log(`[getPrefixes] 请求获取前缀列表: 页码=${page}, 每页数量=${limit}, 偏移量=${offset}`);
+    
+    // 获取总数
+    const [countResult] = await db.query('SELECT COUNT(*) as total FROM ip_prefixes');
+    const total = countResult[0].total;
+    
+    // 获取分页数据
+    const [prefixes] = await db.query(`
+      SELECT 
+        p.prefix_id,
+        p.prefix,
+        p.prefix_length,
+        p.version,
+        p.asn,
+        p.country_id,
+        p.registry,
+        p.is_private,
+        p.active_ipv6_count,
+        a.as_name,
+        a.as_name_zh,
+        c.country_name,
+        c.country_name_zh
+      FROM ip_prefixes p
+      LEFT JOIN asns a ON p.asn = a.asn
+      LEFT JOIN countries c ON p.country_id = c.country_id
+      ORDER BY p.prefix
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+    
+    res.json({
+      success: true,
+      data: prefixes,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('[getPrefixes] 获取前缀列表失败:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '获取前缀列表失败',
+      error: error.message
+    });
   }
 };
 exports.createPrefix = async (req, res) => {
   try {
-    const prefix = await Prefix.create(req.body);
-    res.json(prefix);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const { prefix, prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count } = req.body;
+    
+    // 记录请求参数
+    console.log('创建前缀请求参数:', req.body);
+    
+    // 检查前缀是否已存在
+    const [existing] = await db.query(
+      'SELECT prefix_id FROM ip_prefixes WHERE prefix = ?',
+      [prefix]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: '该前缀已存在'
+      });
+    }
+
+    // 插入新前缀
+    await db.query(
+      `INSERT INTO ip_prefixes (prefix, prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [prefix, prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count || 0]
+    );
+
+    res.json({ success: true, message: '前缀创建成功' });
+  } catch (error) {
+    logger.error('创建前缀失败:', error);
+    res.status(500).json({ success: false, message: '创建前缀失败' });
   }
 };
+
 exports.updatePrefix = async (req, res) => {
   try {
     const { id } = req.params;
-    await Prefix.update(req.body, { where: { prefix: id } });
-    res.json({ message: 'Prefix updated' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const { prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count } = req.body;
+
+    console.log('更新前缀请求参数:', { id, ...req.body });
+
+    // 更新前缀信息
+    await db.query(
+      `UPDATE ip_prefixes 
+       SET prefix_length = ?, version = ?, asn = ?, country_id = ?, registry = ?, is_private = ?, active_ipv6_count = ?
+       WHERE prefix_id = ? OR prefix = ?`,
+      [prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count || 0, id, id]
+    );
+
+    res.json({ success: true, message: '前缀信息更新成功' });
+  } catch (error) {
+    console.error('更新前缀信息失败:', error);
+    res.status(500).json({ success: false, message: '更新前缀信息失败', error: error.message });
   }
 };
+
 exports.deletePrefix = async (req, res) => {
   try {
     const { id } = req.params;
-    await Prefix.destroy({ where: { prefix: id } });
-    res.json({ message: 'Prefix deleted' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+    console.log(`[deletePrefix] 尝试删除前缀ID: ${id}`);
 
-//---------------文件管理相关的API----------------//
-// 上传地址文件
-exports.uploadAddressFile = async (req, res) => {
-  try {
-    upload.single('file')(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({
-          success: false,
-          message: '文件上传失败: ' + err.message
-        });
-      }
+    // 先检查前缀是否存在
+    const [prefixCheck] = await db.query(
+      'SELECT prefix_id, prefix, active_ipv6_count FROM ip_prefixes WHERE prefix_id = ? OR prefix = ?',
+      [id, id]
+    );
 
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: '未找到上传的文件'
-        });
-      }
+    if (prefixCheck.length === 0) {
+      console.log(`[deletePrefix] 前缀不存在: ${id}`);
+      return res.status(404).json({
+        success: false,
+        message: '前缀不存在'
+      });
+    }
 
-      // 保存文件信息到数据库
-      const [result] = await db.query(`
-        INSERT INTO whitelists (user_id, tool_id, file_name, file_path, description)
-        VALUES (?, ?, ?, ?, ?)
-      `, [
-        req.user.id,
-        1, // database tool_id
-        req.file.originalname,
-        req.file.path,
-        req.body.description || null
-      ]);
+    const prefix = prefixCheck[0];
+    console.log(`[deletePrefix] 找到前缀: ${prefix.prefix}, 活跃IPv6地址数量: ${prefix.active_ipv6_count}`);
 
-      res.json({
-        success: true,
-        message: '文件上传成功',
-        data: {
-          id: result.insertId,
-          fileName: req.file.originalname,
-          filePath: req.file.path
+    // 使用active_ipv6_count字段检查是否有关联地址，而不是查询active_addresses表
+    if (prefix.active_ipv6_count > 0) {
+      console.log(`[deletePrefix] 前缀 ${prefix.prefix} 下存在 ${prefix.active_ipv6_count} 个活跃地址，无法删除`);
+      return res.status(400).json({
+        success: false,
+        message: `该前缀下存在${prefix.active_ipv6_count}个活跃地址数据，无法删除`
+      });
+    }
+
+    // 删除前缀
+    const [deleteResult] = await db.query(
+      'DELETE FROM ip_prefixes WHERE prefix_id = ? OR prefix = ?', 
+      [id, id]
+    );
+    
+    console.log(`[deletePrefix] 删除结果: 影响行数=${deleteResult.affectedRows}`);
+    
+    if (deleteResult.affectedRows > 0) {
+      res.json({ 
+        success: true, 
+        message: '前缀删除成功',
+        details: {
+          prefix: prefix.prefix,
+          prefix_id: prefix.prefix_id,
+          affectedRows: deleteResult.affectedRows
         }
       });
-    });
-  } catch (error) {
-    logger.error('文件上传失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '文件上传失败: ' + error.message
-    });
-  }
-};
-
-// 获取地址文件列表
-exports.getAddressFiles = async (req, res) => {
-  try {
-    const [files] = await db.query(`
-      SELECT id, file_name, file_path, description, uploaded_at, username
-      FROM whitelists w
-      JOIN users u ON w.user_id = u.id
-      WHERE w.tool_id = 1 AND w.is_deleted = 0
-      ORDER BY uploaded_at DESC
-    `);
-
-    res.json({
-      success: true,
-      data: files
-    });
-  } catch (error) {
-    logger.error('获取文件列表失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取文件列表失败'
-    });
-  }
-};
-
-// 删除地址文件
-exports.deleteAddressFile = async (req, res) => {
-  try {
-    const fileId = req.params.id;
-    
-    // 检查文件是否存在且属于当前用户
-    const [files] = await db.query(`
-      SELECT file_path 
-      FROM whitelists 
-      WHERE id = ? AND user_id = ? AND tool_id = 1 AND is_deleted = 0
-    `, [fileId, req.user.id]);
-
-    if (files.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '文件不存在或无权删除'
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        message: '前缀删除失败，数据库未返回影响行数' 
       });
     }
-
-    // 软删除文件记录
-    await db.query(`
-      UPDATE whitelists 
-      SET is_deleted = 1 
-      WHERE id = ?
-    `, [fileId]);
-
-    // 尝试删除物理文件
-    try {
-      await fs.unlink(files[0].file_path);
-    } catch (error) {
-      logger.warn('物理文件删除失败:', error);
-      // 继续执行，因为数据库记录已经标记为删除
-    }
-
-    res.json({
-      success: true,
-      message: '文件删除成功'
-    });
   } catch (error) {
-    logger.error('删除文件失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '删除文件失败: ' + error.message
+    console.error('[deletePrefix] 删除前缀失败:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '删除前缀失败', 
+      error: error.message 
     });
   }
 };
 
-// 下载地址文件
-exports.downloadAddressFile = async (req, res) => {
-  try {
-    const fileId = req.params.id;
-    
-    // 获取文件信息
-    const [files] = await db.query(`
-      SELECT file_name, file_path 
-      FROM whitelists 
-      WHERE id = ? AND tool_id = 1 AND is_deleted = 0
-    `, [fileId]);
-
-    if (files.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '文件不存在'
-      });
-    }
-
-    const file = files[0];
-    
-    // 检查文件是否存在
-    try {
-      await fs.access(file.file_path);
-    } catch (error) {
-      return res.status(404).json({
-        success: false,
-        message: '文件不存在或已被删除'
-      });
-    }
-
-    // 设置响应头
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="${file.file_name}"`);
-    
-    // 创建文件流并发送
-    const fileStream = fs.createReadStream(file.file_path);
-    fileStream.pipe(res);
-  } catch (error) {
-    logger.error('下载文件失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '下载文件失败: ' + error.message
-    });
-  }
-};
+// 文件管理相关API已经单独列出实现
 
 //---------------任务创建相关的API----------------//
 // 创建导入任务
 exports.createImportTask = async (req, res) => {
+  // 获取数据库连接
+  const connection = await db.getConnection();
+  
   try {
-    const { countryId, asn, prefix, fileId } = req.body;
-
-    // 创建任务记录
-    const [taskResult] = await db.query(`
-      INSERT INTO tasks (user_id, command, description, task_type, status)
-      VALUES (?, ?, ?, 'database', 'pending')
-    `, [
-      req.user.id,
-      'import-addresses',
-      `导入IPv6地址: ${countryId}, AS${asn}, ${prefix}`
-    ]);
-
-    const taskId = taskResult.insertId;
-
-    // 异步处理导入任务
-    processImportTask(taskId, countryId, asn, prefix, fileId).catch(error => {
-      logger.error('导入任务处理失败:', error);
+    // 将请求体转换为数组形式
+    const tasks = Array.isArray(req.body) ? req.body : [req.body];
+    
+    // 添加参数验证日志
+    console.log('创建批量导入任务参数:', {
+      taskCount: tasks.length,
+      tasks,
+      userId: req.user.id
     });
 
-    res.json({
-      success: true,
-      message: '导入任务已创建',
-      data: { taskId }
-    });
+    // 验证任务数组不为空
+    if (!tasks.length) {
+      console.error('创建导入任务失败: 任务列表为空');
+      return res.status(400).json({
+        success: false,
+        message: '任务列表不能为空'
+      });
+    }
+
+    // 获取数据库工具的ID
+    const [tools] = await connection.query(
+      "SELECT id FROM tools WHERE name = 'database' LIMIT 1"
+    );
+    
+    if (tools.length === 0) {
+      throw new Error('数据库工具未配置');
+    }
+    
+    const databaseToolId = tools[0].id;
+    console.log('数据库工具ID:', databaseToolId);
+
+    // 验证每个任务的必要参数
+    for (const task of tasks) {
+      const { countryId, asn, prefix, fileId } = task;
+      if (!countryId || !asn || !prefix || !fileId) {
+        console.error('创建导入任务失败: 任务缺少必要参数', task);
+        return res.status(400).json({
+          success: false,
+          message: '每个任务都必须包含 countryId, asn, prefix, fileId 参数'
+        });
+      }
+    }
+
+    // 开始事务
+    await connection.beginTransaction();
+
+    try {
+      const createdTasks = [];
+
+      // 处理每个任务
+      for (const task of tasks) {
+        const { countryId, asn, prefix, fileId } = task;
+
+        // 验证文件是否存在
+        const [fileCheck] = await connection.query(`
+          SELECT id, file_path, tool_id, is_deleted
+          FROM whitelists
+          WHERE id = ? AND tool_id = ? AND is_deleted = 0
+        `, [fileId, databaseToolId]);
+
+        if (fileCheck.length === 0) {
+          throw new Error(`文件不存在或不属于数据库工具: ${fileId}`);
+        }
+
+        // 验证文件是否可访问
+        try {
+          await fs.access(fileCheck[0].file_path);
+        } catch (error) {
+          throw new Error(`文件无法访问: ${fileCheck[0].file_path}`);
+        }
+
+        // 创建任务记录
+        const [result] = await connection.query(`
+          INSERT INTO tasks (
+            user_id, 
+            command, 
+            description, 
+            task_type, 
+            status, 
+            output_path
+          ) VALUES (?, ?, ?, ?, 'pending', ?)
+        `, [
+          req.user.id,
+          'import-addresses',
+          `导入地址 - 国家: ${countryId}, ASN: ${asn}, 前缀: ${prefix}`,
+          'database',
+          fileCheck[0].file_path
+        ]);
+
+        const taskId = result.insertId;
+        createdTasks.push(taskId);
+
+        // 启动异步处理
+        processImportTask(taskId, countryId, asn, prefix, fileId)
+          .catch(error => {
+            console.error(`任务 ${taskId} 处理失败:`, error);
+            // 更新任务状态为失败
+            connection.query(`
+              UPDATE tasks 
+              SET status = 'failed', 
+                  error_message = ?,
+                  completed_at = NOW()
+              WHERE id = ?
+            `, [error.message, taskId]).catch(console.error);
+          });
+      }
+
+      // 提交事务
+      await connection.commit();
+
+      res.json({
+        success: true,
+        message: `成功创建 ${createdTasks.length} 个导入任务`,
+        data: {
+          taskIds: createdTasks
+        }
+      });
+
+    } catch (error) {
+      // 回滚事务
+      await connection.rollback();
+      throw error;
+    }
+
   } catch (error) {
-    logger.error('创建导入任务失败:', error);
+    console.error('创建导入任务失败:', error);
     res.status(500).json({
       success: false,
       message: '创建导入任务失败: ' + error.message
     });
+  } finally {
+    // 释放连接
+    connection.release();
   }
 };
 
@@ -974,22 +1054,38 @@ exports.getImportTaskStatus = async (req, res) => {
 
 // 获取导入任务列表
 exports.getImportTasks = async (req, res) => {
+  const connection = await db.getConnection();
   try {
+    console.log('[getImportTasks] 开始获取导入任务列表', {
+      userId: req.user.id,
+      query: req.query
+    });
+
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
 
     // 获取任务总数
-    const [countResult] = await db.query(`
+    console.log('[getImportTasks] 查询任务总数');
+    const [countResult] = await connection.query(`
       SELECT COUNT(*) as total
       FROM tasks
-      WHERE task_type = 'database' AND user_id = ?
+      WHERE task_type = 'database' 
+        AND user_id = ?
+        AND status != 'deleted'
     `, [req.user.id]);
 
-    const total = countResult[0].total;
+    if (!countResult || countResult.length === 0) {
+      console.error('[getImportTasks] 获取任务总数失败');
+      throw new Error('获取任务总数失败');
+    }
 
-    // 获取分页任务列表
-    const [tasks] = await db.query(`
+    const total = countResult[0].total;
+    console.log('[getImportTasks] 任务总数:', total);
+
+    // 获取分页任务列表，包含更多详细信息
+    console.log('[getImportTasks] 查询任务列表', { page, pageSize, offset });
+    const [tasks] = await connection.query(`
       SELECT 
         t.id,
         t.command,
@@ -1000,18 +1096,57 @@ exports.getImportTasks = async (req, res) => {
         t.completed_at,
         t.exit_code,
         t.process_signal,
-        u.username as created_by
+        t.output_path,
+        u.username as created_by,
+        w.file_name,
+        w.id as file_id,
+        CASE 
+          WHEN t.description LIKE '%countryId%' THEN 
+            SUBSTRING_INDEX(SUBSTRING_INDEX(t.description, 'countryId:', -1), ',', 1)
+          ELSE NULL 
+        END as country_id,
+        CASE 
+          WHEN t.description LIKE '%ASN:%' THEN 
+            SUBSTRING_INDEX(SUBSTRING_INDEX(t.description, 'ASN:', -1), ',', 1)
+          ELSE NULL 
+        END as asn,
+        CASE 
+          WHEN t.description LIKE '%前缀:%' THEN 
+            SUBSTRING_INDEX(SUBSTRING_INDEX(t.description, '前缀:', -1), ',', 1)
+          ELSE NULL 
+        END as prefix
       FROM tasks t
       JOIN users u ON t.user_id = u.id
-      WHERE t.task_type = 'database' AND t.user_id = ?
+      LEFT JOIN whitelists w ON w.id = (
+        SELECT id FROM whitelists 
+        WHERE tool_id = (SELECT id FROM tools WHERE name = 'database' LIMIT 1)
+        AND is_deleted = 0
+        AND file_path = t.output_path
+        LIMIT 1
+      )
+      WHERE t.task_type = 'database' 
+        AND t.user_id = ?
+        AND t.status != 'deleted'
       ORDER BY t.created_at DESC
       LIMIT ? OFFSET ?
     `, [req.user.id, pageSize, offset]);
 
-    res.json({
+    // 处理任务数据，清理和格式化字段
+    const formattedTasks = tasks.map(task => ({
+      ...task,
+      country_id: task.country_id ? task.country_id.trim().replace(/['"]/g, '') : null,
+      asn: task.asn ? task.asn.trim().replace(/['"]/g, '') : null,
+      prefix: task.prefix ? task.prefix.trim().replace(/['"]/g, '') : null,
+      file_id: task.file_id || null
+    }));
+
+    console.log('[getImportTasks] 查询到任务数量:', formattedTasks.length);
+
+    // 确保返回的数据结构正确
+    const response = {
       success: true,
       data: {
-        tasks,
+        tasks: formattedTasks || [],
         pagination: {
           total,
           page,
@@ -1019,13 +1154,33 @@ exports.getImportTasks = async (req, res) => {
           totalPages: Math.ceil(total / pageSize)
         }
       }
+    };
+
+    console.log('[getImportTasks] 返回数据:', {
+      taskCount: formattedTasks.length,
+      pagination: response.data.pagination
     });
+
+    res.json(response);
+
   } catch (error) {
-    logger.error('获取导入任务列表失败:', error);
+    console.error('[getImportTasks] 获取导入任务列表失败:', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.id
+    });
+    
     res.status(500).json({
       success: false,
-      message: '获取导入任务列表失败: ' + error.message
+      message: '获取导入任务列表失败: ' + error.message,
+      error: {
+        code: error.code,
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
     });
+  } finally {
+    connection.release();
   }
 };
 
@@ -1036,7 +1191,7 @@ exports.cancelImportTask = async (req, res) => {
 
     // 检查任务是否存在且属于当前用户
     const [tasks] = await db.query(`
-      SELECT id, status, process_id
+      SELECT id, status
       FROM tasks
       WHERE id = ? AND user_id = ? AND task_type = 'database'
     `, [taskId, req.user.id]);
@@ -1056,16 +1211,6 @@ exports.cancelImportTask = async (req, res) => {
         success: false,
         message: '只能取消待处理或运行中的任务'
       });
-    }
-
-    // 如果任务正在运行，尝试终止进程
-    if (task.status === 'running' && task.process_id) {
-      try {
-        process.kill(task.process_id, 'SIGTERM');
-      } catch (error) {
-        logger.warn('终止进程失败:', error);
-        // 继续执行，因为我们要更新任务状态
-      }
     }
 
     // 更新任务状态
@@ -1093,30 +1238,94 @@ exports.cancelImportTask = async (req, res) => {
 
 // 异步处理导入任务
 async function processImportTask(taskId, countryId, asn, prefix, fileId) {
+  console.log('开始处理导入任务:', { taskId, countryId, asn, prefix, fileId });
+  
+  // 获取数据库连接
+  const connection = await db.getConnection();
+  
   try {
+    // 获取数据库工具的ID
+    const [tools] = await connection.query(
+      "SELECT id FROM tools WHERE name = 'database' LIMIT 1"
+    );
+    
+    if (tools.length === 0) {
+      throw new Error('数据库工具未配置');
+    }
+    
+    const databaseToolId = tools[0].id;
+    console.log('数据库工具ID:', databaseToolId);
+
+    // 更新任务状态为运行中
+    await connection.query(`
+      UPDATE tasks 
+      SET status = 'running', 
+          updated_at = NOW() 
+      WHERE id = ?
+    `, [taskId]);
+
     // 获取文件路径
-    const [files] = await db.query(`
-      SELECT file_path
+    console.log('查询文件信息:', { fileId });
+    const [files] = await connection.query(`
+      SELECT id, file_path, tool_id, is_deleted
       FROM whitelists
-      WHERE id = ? AND tool_id = 1 AND is_deleted = 0
-    `, [fileId]);
+      WHERE id = ? AND tool_id = ? AND is_deleted = 0
+    `, [fileId, databaseToolId]);
+
+    console.log('文件查询结果:', files);
 
     if (files.length === 0) {
-      throw new Error('文件不存在');
+      const error = new Error('文件不存在或已被删除');
+      console.error('文件查询失败:', {
+        fileId,
+        error: error.message,
+        query: 'SELECT id, file_path, tool_id, is_deleted FROM whitelists WHERE id = ? AND tool_id = ? AND is_deleted = 0'
+      });
+      
+      // 更新任务状态为失败
+      await connection.query(`
+        UPDATE tasks 
+        SET status = 'failed',
+            error_message = ?,
+            completed_at = NOW()
+        WHERE id = ?
+      `, [error.message, taskId]);
+      
+      throw error;
     }
 
     const filePath = files[0].file_path;
+    console.log('获取到文件路径:', { filePath });
+
+    // 检查文件是否存在
+    try {
+      await fs.access(filePath);
+      console.log('文件存在且可访问');
+    } catch (error) {
+      console.error('文件访问失败:', {
+        filePath,
+        error: error.message
+      });
+      throw new Error(`文件无法访问: ${error.message}`);
+    }
 
     // 读取文件内容
+    console.log('开始读取文件内容');
     const fileContent = await fs.readFile(filePath, 'utf8');
     const addresses = fileContent.split(/\r?\n/)
       .map(line => line.trim())
       .filter(line => line);
 
+    console.log('文件内容处理完成:', {
+      totalLines: addresses.length,
+      firstFewAddresses: addresses.slice(0, 3)
+    });
+
     // 创建临时表并插入地址
-    await db.query('START TRANSACTION');
+    console.log('开始创建临时表');
+    await connection.query('START TRANSACTION');
     
-    await db.query(`
+    await connection.query(`
       CREATE TEMPORARY TABLE temp_addresses (
         address VARCHAR(128) NOT NULL,
         is_processed BOOLEAN DEFAULT FALSE,
@@ -1126,25 +1335,162 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
 
     const insertValues = addresses.map(addr => [addr]);
     if (insertValues.length > 0) {
-      await db.query(`
+      console.log('开始插入地址到临时表:', { count: insertValues.length });
+      await connection.query(`
         INSERT INTO temp_addresses (address) VALUES ?
       `, [insertValues]);
     }
 
-    // 调用存储过程
-    await db.query(`SET @imported = 0, @errors = 0`);
-    await db.query(`
-      CALL batch_import_ipv6_addresses(?, ?, ?, @imported, @errors)
-    `, [countryId, asn, prefix]);
+    // 声明存储过程的输出参数
+    console.log('开始调用存储过程');
+    await connection.query(`
+      SET @p_imported_count = 0,
+          @p_error_count = 0,
+          @p_prefix_id = 0,
+          @p_new_prefix = FALSE,
+          @p_total_addresses = 0,
+          @p_asn_total_addresses = 0,
+          @p_country_total_addresses = 0
+    `);
 
-    await db.query('COMMIT');
+    // 调用存储过程
+    await connection.query(`
+      CALL batch_import_ipv6_addresses(
+        ?, ?, ?, ?,
+        @p_imported_count,
+        @p_error_count,
+        @p_prefix_id,
+        @p_new_prefix,
+        @p_total_addresses,
+        @p_asn_total_addresses,
+        @p_country_total_addresses
+      )
+    `, [countryId, asn, prefix, taskId]);
+
+    // 获取存储过程的输出参数
+    const [result] = await connection.query(`
+      SELECT 
+        @p_imported_count as imported_count,
+        @p_error_count as error_count,
+        @p_prefix_id as prefix_id,
+        @p_new_prefix as new_prefix,
+        @p_total_addresses as total_addresses,
+        @p_asn_total_addresses as asn_total_addresses,
+        @p_country_total_addresses as country_total_addresses
+    `);
+
+    console.log('存储过程执行完成:', result[0]);
+
+    await connection.query('COMMIT');
+
+    // 更新任务状态为完成，包含更详细的结果信息
+    await connection.query(`
+      UPDATE tasks 
+      SET status = 'completed',
+          completed_at = NOW(),
+          output_path = ?
+      WHERE id = ?
+    `, [JSON.stringify({
+      imp: result[0].imported_count,
+      err: result[0].error_count,
+      pid: result[0].prefix_id,
+      np: result[0].new_prefix,
+      tot: result[0].total_addresses,
+      atot: result[0].asn_total_addresses,
+      ctot: result[0].country_total_addresses,
+      cid: countryId,
+      asn: asn,
+      pfx: prefix,
+      fid: fileId,
+      fn: files[0].file_name,
+    }), taskId]);
+
+    console.log('导入任务处理完成:', {
+      taskId,
+      result: result[0]
+    });
+
   } catch (error) {
-    await db.query('ROLLBACK');
+    console.error('导入任务处理失败:', {
+      taskId,
+      error: error.message,
+      stack: error.stack
+    });
+
+    // 更新任务状态为失败
+    await connection.query(`
+      UPDATE tasks 
+      SET status = 'failed',
+          error_message = ?,
+          completed_at = NOW()
+      WHERE id = ?
+    `, [error.message, taskId]);
+
+    await connection.query('ROLLBACK');
     throw error;
   } finally {
-    await db.query('DROP TEMPORARY TABLE IF EXISTS temp_addresses');
+    console.log('清理临时表');
+    await connection.query('DROP TEMPORARY TABLE IF EXISTS temp_addresses');
+    // 释放连接
+    connection.release();
   }
 }
+
+// 删除导入任务
+exports.deleteImportTask = async (req, res) => {
+  const connection = await db.getConnection();
+  try {
+    const taskId = req.params.id;
+    console.log('[deleteImportTask] 开始删除任务:', { taskId, userId: req.user.id });
+
+    // 检查任务是否存在且属于当前用户
+    const [tasks] = await connection.query(`
+      SELECT id, status
+      FROM tasks
+      WHERE id = ? AND user_id = ? AND task_type = 'database'
+    `, [taskId, req.user.id]);
+
+    if (tasks.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '任务不存在或无权删除'
+      });
+    }
+
+    const task = tasks[0];
+
+    // 如果任务正在运行，先尝试取消
+    if (task.status === 'running') {
+      await connection.query(`
+        UPDATE tasks
+        SET 
+          status = 'canceled',
+          completed_at = NOW(),
+          error_message = '任务被删除'
+        WHERE id = ?
+      `, [taskId]);
+    }
+
+    // 删除任务记录
+    await connection.query(`
+      DELETE FROM tasks
+      WHERE id = ? AND user_id = ? AND task_type = 'database'
+    `, [taskId, req.user.id]);
+
+    res.json({
+      success: true,
+      message: '任务已删除'
+    });
+  } catch (error) {
+    console.error('[deleteImportTask] 删除任务失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '删除任务失败: ' + error.message
+    });
+  } finally {
+    connection.release();
+  }
+};
 
 
 //---------------搜索相关的API----------------//
@@ -1363,40 +1709,59 @@ exports.searchAsns = async (req, res) => {
 // 搜索前缀
 exports.searchPrefixes = async (req, res) => {
   try {
-    const query = req.query.query || '';
-    const limit = parseInt(req.query.limit) || 10;
+    const { query } = req.query;
+    const limit = parseInt(req.query.limit) || 20;
     
-    if (!query) {
-      return res.json({
-        success: true,
-        data: []
+    console.log('[searchPrefixes] 收到搜索请求:', { query, limit });
+    if (!query || query.length < 2) {
+      console.log('[searchPrefixes] 搜索词过短:', query);
+      return res.status(400).json({ 
+        success: false, 
+        message: '搜索词至少需要2个字符' 
       });
     }
-    
-    // 搜索前缀
-    const [results] = await db.query(`
-      SELECT prefix_id, prefix, country_id, asn, version, prefix_length
-      FROM ip_prefixes
-      WHERE prefix LIKE ?
-      ORDER BY 
-        CASE 
-          WHEN prefix = ? THEN 0
-          WHEN prefix LIKE ? THEN 1
-          ELSE 2
-        END,
-        prefix
+
+    const searchTerm = `%${query}%`;
+    const sql = `
+      SELECT 
+        p.prefix_id,
+        p.prefix,
+        p.prefix_length,
+        p.version,
+        p.asn,
+        p.country_id,
+        p.registry,
+        p.is_private,
+        p.active_ipv6_count,
+        a.as_name,
+        a.as_name_zh,
+        c.country_name,
+        c.country_name_zh
+      FROM ip_prefixes p
+      LEFT JOIN asns a ON p.asn = a.asn
+      LEFT JOIN countries c ON p.country_id = c.country_id
+      WHERE 
+        p.prefix LIKE ? OR
+        a.as_name LIKE ? OR
+        a.as_name_zh LIKE ? OR
+        c.country_name LIKE ? OR
+        c.country_name_zh LIKE ?
+      ORDER BY p.prefix
       LIMIT ?
-    `, [`%${query}%`, query, `${query}%`, limit]);
-    
-    res.json({
-      success: true,
-      data: results
-    });
+    `;
+    console.log('[searchPrefixes] 执行SQL:', sql);
+    const [prefixes] = await db.query(sql, [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, limit]);
+    console.log(`[searchPrefixes] 查询结果数量: ${prefixes.length}`);
+    if (prefixes.length > 0) {
+      console.log('[searchPrefixes] 首条结果:', prefixes[0]);
+    }
+    res.json({ success: true, data: prefixes });
   } catch (error) {
-    logger.error('搜索前缀失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '搜索前缀失败'
+    console.error('[searchPrefixes] 搜索前缀失败:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '搜索前缀失败',
+      error: error.message
     });
   }
 };
@@ -1753,7 +2118,6 @@ exports.updateVulnerability = async (req, res) => {
   }
 };
 
-
 //删除漏洞定义
 exports.deleteVulnerability = async (req, res) => {
   const { id } = req.params;
@@ -1936,95 +2300,3 @@ exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
   }
 };
 
-//---------------IPv6地址导入相关的API----------------//
-
-/**
- * 导入IPv6地址
- */
-exports.importAddresses = async (req, res) => {
-  try {
-    console.log('接收到导入请求:', JSON.stringify({
-      countryId: req.body.countryId,
-      asn: req.body.asn,
-      prefix: req.body.prefix,
-      addressCount: req.body.addresses ? req.body.addresses.length : 0
-    }));
-    
-    // 验证必要参数
-    if (!req.body.countryId || !req.body.asn || !req.body.prefix || !req.body.addresses || !Array.isArray(req.body.addresses)) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少必要参数或参数格式不正确'
-      });
-    }
-    
-    // 开始事务
-    await db.query('START TRANSACTION');
-    
-    // 创建临时表
-    await db.query(`
-      CREATE TEMPORARY TABLE temp_addresses (
-        address VARCHAR(128) NOT NULL,
-        is_processed BOOLEAN DEFAULT FALSE,
-        PRIMARY KEY (address)
-      )
-    `);
-    
-    // 批量插入地址到临时表
-    const insertValues = req.body.addresses.map(addr => [addr]);
-    if (insertValues.length > 0) {
-      await db.query(`
-        INSERT INTO temp_addresses (address) VALUES ?
-      `, [insertValues]);
-    }
-    
-    // 调用存储过程 - 分两步执行
-    // 1. 首先设置输出变量
-    await db.query(`SET @imported = 0, @errors = 0`);
-    
-    // 2. 调用存储过程
-    await db.query(`
-      CALL batch_import_ipv6_addresses(?, ?, ?, @imported, @errors)
-    `, [req.body.countryId, req.body.asn, req.body.prefix]);
-    
-    // 3. 单独查询输出变量的值
-    const [resultSet] = await db.query(`
-      SELECT @imported as imported_count, @errors as error_count
-    `);
-    
-    // 获取导入结果
-    const result = resultSet[0];
-    
-    // 提交事务
-    await db.query('COMMIT');
-    
-    // 返回结果
-    res.json({
-      success: true,
-      message: `成功导入${result.imported_count}个IPv6地址`,
-      importedCount: result.imported_count,
-      errorCount: result.error_count
-    });
-    
-  } catch (error) {
-    // 回滚事务
-    try {
-      await db.query('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('回滚事务失败:', rollbackError);
-    }
-    
-    logger.error('导入地址过程中发生错误:', error);
-    res.status(500).json({
-      success: false,
-      message: `导入地址失败: ${error.message}`
-    });
-  } finally {
-    // 确保清理临时表
-    try {
-      await db.query('DROP TEMPORARY TABLE IF EXISTS temp_addresses');
-    } catch (cleanupError) {
-      console.error('清理临时表失败:', cleanupError);
-    }
-  }
-};

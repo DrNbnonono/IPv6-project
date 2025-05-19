@@ -73,6 +73,7 @@
           </div>
 
           <!-- IID 类型管理 -->
+          <!--
           <div v-if="activeTab === 'iidtypes'" key="iidtypesTab" class="iidtypes-section">
             <div class="section-header">
               <h3><i class="icon-iid"></i> IID类型管理</h3>
@@ -84,7 +85,8 @@
               :is-loading="isUpdatingIIDTypes"
             />
           </div>
-          
+          -->
+
           <!-- 国家管理 -->
           <div v-if="activeTab === 'country'" key="countryTab" class="country-section">
             <div class="section-header">
@@ -111,6 +113,7 @@
           </div>
 
         <!-- 高级查询 -->
+        <!--
         <div v-if="activeTab === 'query'" class="query-section">
           <div class="section-header">
             <h3><i class="icon-search"></i> 高级查询</h3>
@@ -151,8 +154,11 @@
             </div>
           </div>
         </div>
+        -->
+
         
         <!-- 数据统计 -->
+        <!--
         <div v-if="activeTab === 'stats'" class="stats-section">
           <div class="section-header">
             <h3><i class="icon-chart"></i> 数据统计</h3>
@@ -179,6 +185,8 @@
             </div>
           </div>
         </div>
+        -->
+    
         
         <!-- 使用帮助 -->
         <div v-if="activeTab === 'help'" class="help-section">
@@ -188,43 +196,82 @@
           
           <div class="help-content">
             <div class="help-section">
-              <h4>批量导入IPv6地址</h4>
-              <p>通过上传文件批量导入IPv6地址，支持以下格式：</p>
+              <h4><i class="icon-import"></i> 批量导入IPv6地址</h4>
+              <p>通过上传文件批量导入IPv6地址到数据库，支持以下功能：</p>
               <ul>
-                <li>每行一个IPv6地址</li>
-                <li>CSV格式（地址,前缀,国家,ASN）</li>
-                <li>JSON格式</li>
+                <li>支持上传TXT格式文件，每行一个IPv6地址</li>
+                <li>支持批量导入，可同时导入多个国家/ASN/前缀组合</li>
+                <li>自动关联地址到对应的国家、ASN和前缀</li>
+                <li>实时显示导入任务状态和进度</li>
+                <li>支持取消正在进行的导入任务</li>
               </ul>
-              <p>导入过程会自动更新相关统计信息，并确保数据一致性。</p>
+              <p>导入过程会自动更新相关统计信息，包括国家、ASN和前缀的活跃地址数量。</p>
             </div>
             
             <div class="help-section">
-              <h4>漏洞管理</h4>
+              <h4><i class="icon-security"></i> 漏洞管理</h4>
               <p>管理IPv6地址的漏洞信息，支持以下操作：</p>
               <ul>
-                <li>批量添加漏洞关联</li>
-                <li>批量更新漏洞修复状态</li>
-                <li>查看漏洞统计信息</li>
+                <li>查看和管理已知漏洞信息</li>
+                <li>批量更新地址的漏洞状态</li>
+                <li>按国家、ASN或前缀筛选漏洞信息</li>
+                <li>查看漏洞统计和分布情况</li>
+              </ul>
+              <p class="note">注意：漏洞管理功能需要先导入地址数据才能使用。</p>
+            </div>
+            
+            <div class="help-section">
+              <h4><i class="icon-protocol"></i> 协议支持管理</h4>
+              <p>管理IPv6地址的协议支持状态，支持以下操作：</p>
+              <ul>
+                <li>查看和管理支持的协议列表</li>
+                <li>批量更新地址的协议支持状态</li>
+                <li>按国家、ASN或前缀筛选协议信息</li>
+                <li>查看协议支持统计和分布情况</li>
+              </ul>
+              <p class="note">注意：协议支持管理功能需要先导入地址数据才能使用。</p>
+            </div>
+            
+            <div class="help-section">
+              <h4><i class="icon-prefix"></i> 前缀管理</h4>
+              <p>管理IPv6前缀信息，支持以下操作：</p>
+              <ul>
+                <li>查看和管理IPv6前缀列表</li>
+                <li>添加新的前缀信息</li>
+                <li>更新前缀的国家和ASN关联</li>
+                <li>查看前缀的活跃地址统计</li>
               </ul>
             </div>
             
             <div class="help-section">
-              <h4>协议支持管理</h4>
-              <p>更新IPv6地址的协议支持状态，支持以下操作：</p>
+              <h4><i class="icon-asn"></i> ASN管理</h4>
+              <p>管理自治系统号(ASN)信息，支持以下操作：</p>
               <ul>
-                <li>批量更新协议支持状态</li>
-                <li>按国家或ASN筛选地址</li>
-                <li>查看协议支持统计</li>
+                <li>查看和管理ASN列表</li>
+                <li>添加新的ASN信息</li>
+                <li>更新ASN的国家关联和组织信息</li>
+                <li>查看ASN的IPv6地址统计</li>
               </ul>
             </div>
             
             <div class="help-section">
-              <h4>高级查询</h4>
-              <p>多维度查询IPv6数据，支持以下功能：</p>
+              <h4><i class="icon-database"></i> 国家管理</h4>
+              <p>管理国家信息，支持以下操作：</p>
               <ul>
-                <li>复杂条件组合查询</li>
-                <li>查询结果导出</li>
-                <li>自定义查询字段</li>
+                <li>查看和管理国家列表</li>
+                <li>添加新的国家信息</li>
+                <li>更新国家的中英文名称</li>
+                <li>查看国家的IPv6地址统计</li>
+              </ul>
+            </div>
+            
+            <div class="help-section">
+              <h4>注意事项</h4>
+              <ul>
+                <li>所有数据修改操作都会自动更新相关统计信息</li>
+                <li>导入地址时请确保文件格式正确，每行一个IPv6地址</li>
+                <li>批量操作可能需要一定时间，请耐心等待</li>
+                <li>如遇到问题，可以查看任务状态和错误信息</li>
               </ul>
             </div>
           </div>
@@ -276,12 +323,12 @@ const tabs = [
   { id: 'import', label: '批量导入', icon: 'icon-import' },
   { id: 'vulnerabilities', label: '漏洞管理', icon: 'icon-security' },
   { id: 'protocols', label: '协议支持', icon: 'icon-protocol' },
-  { id: 'iidtypes', label: 'IID类型', icon: 'icon-iid' }, // IID 类型选项卡
+  //{ id: 'iidtypes', label: 'IID类型', icon: 'icon-iid' }, // IID 类型选项卡
   { id: 'country', label: '国家管理', icon: 'icon-database' },
   { id: 'asn', label: 'ASN管理', icon: 'icon-network' },
   { id: 'prefix', label: '前缀管理', icon: 'icon-network' },
-  { id: 'query', label: '高级查询', icon: 'icon-search' },
-  { id: 'stats', label: '数据统计', icon: 'icon-chart' },
+  //{ id: 'query', label: '高级查询', icon: 'icon-search' },
+  //{ id: 'stats', label: '数据统计', icon: 'icon-chart' },
   { id: 'help', label: '使用帮助', icon: 'icon-help', badge: '新' }
 ];
 
@@ -908,11 +955,24 @@ onMounted(async () => {
       margin: 0 0 0.8rem;
       color: #35495e;
       font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      
+      i {
+        font-size: 1.2rem;
+      }
     }
     
     p {
       margin: 0 0 0.8rem;
       color: #4a5568;
+      
+      &.note {
+        color: #e53e3e;
+        font-size: 0.9rem;
+        font-style: italic;
+      }
     }
     
     ul {
@@ -933,8 +993,11 @@ onMounted(async () => {
 .icon-import:before { content: "📥"; }
 .icon-security:before { content: "🔒"; }
 .icon-protocol:before { content: "🔌"; }
-.icon-iid:before { content: "🔑"; } /* 新增 IID 图标 */
+.icon-iid:before { content: "🔑"; }
 .icon-search:before { content: "🔍"; }
 .icon-chart:before { content: "📊"; }
 .icon-download:before { content: "💾"; }
+.icon-network:before { content: "🌐"; }
+.icon-prefix:before { content: "📡"; }
+.icon-asn:before { content: "🏢"; }
 </style>

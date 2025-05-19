@@ -8,6 +8,7 @@ const xmapRouter = require('./routes/xmap');
 const authRouter = require('./routes/auth');
 const docRouter = require('./routes/doc')
 const databaseRoutes = require('./routes/database'); 
+const fileRouter = require('./routes/file'); // 新增文件路由
 dotenv.config();
 
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api/addresses', addressRouter);
 app.use('/api/xmap', xmapRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/database', databaseRoutes);
+app.use('/api/files', fileRouter);
 
 // 更新CORS配置，允许所有来源访问或指定您的域名
 app.use(cors({

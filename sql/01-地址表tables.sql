@@ -1,25 +1,18 @@
---活跃地址表
 CREATE TABLE `active_addresses` (
   `address_id` bigint NOT NULL AUTO_INCREMENT COMMENT '地址ID',
   `address` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'IPv4(15) or IPv6(45)地址',
   `version` enum('4','6') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '4=IPv4, 6=IPv6',
   `prefix_id` bigint DEFAULT NULL COMMENT '所属前缀ID',
-  `first_seen` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次发现时间',
-  `last_seen` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后发现时间',
-  `uptime_percentage` decimal(5,2) DEFAULT '100.00' COMMENT '在线率百分比',
   `iid_type` int DEFAULT NULL COMMENT '接口标识符类型',
-  `is_router` tinyint(1) DEFAULT '0' COMMENT '是否为路由器',
-  `is_dns_server` tinyint(1) DEFAULT '0' COMMENT '是否为DNS服务器',
-  `is_web_server` tinyint(1) DEFAULT '0' COMMENT '是否为Web服务器',
   PRIMARY KEY (`address_id`),
   UNIQUE KEY `uk_address` (`address`) COMMENT '地址唯一约束',
   KEY `idx_prefix` (`prefix_id`) COMMENT '前缀ID索引',
   KEY `idx_version` (`version`) COMMENT 'IP版本索引',
   KEY `idx_iid_type` (`iid_type`) COMMENT 'IID类型索引',
-  KEY `idx_last_seen` (`last_seen`) COMMENT '最后发现时间索引',
   CONSTRAINT `fk_address_prefix` FOREIGN KEY (`prefix_id`) REFERENCES `ip_prefixes` (`prefix_id`),
   CONSTRAINT `fk_address_type` FOREIGN KEY (`iid_type`) REFERENCES `address_types` (`type_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=75083988 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活跃地址表'
+
 
 --前缀表
 CREATE TABLE `ip_prefixes` (

@@ -4,21 +4,7 @@
     <div v-if="globalError" class="error-message global-error">{{ globalError }}</div>
     <div v-if="globalSuccess" class="success-message global-success">{{ globalSuccess }}</div>
 
-    <!-- 搜索和分页控制 -->
-    <div class="search-pagination-controls">
-      <div class="search-box">
-        <input 
-          type="text" 
-          v-model="searchQuery" 
-          placeholder="搜索国家..." 
-          @input="handleSearch"
-          class="search-input"
-        />
-      </div>
-      <div class="pagination-info">
-        共 {{ store.countriesPagination.total }} 个国家
-      </div>
-    </div>
+    
 
     <!-- 国家管理部分 -->
     <section class="country-definitions-section card">
@@ -28,6 +14,26 @@
           <i class="icon-plus"></i> 添加新国家
         </button>
       </h3>
+
+      <!-- 搜索和分页控制 -->
+      <div class="card-search">
+        <div class="search-container">
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="搜索国家..." 
+            @input="handleSearch"
+            class="search-input"
+          />
+          <button class="btn btn-sm btn-primary" @click="loadCountries">
+            <i class="icon-search"></i> 搜索
+          </button>
+          <button class="btn btn-sm btn-secondary" @click="resetSearch" v-if="searchQuery">
+            <i class="icon-close"></i> 重置
+          </button>
+        </div>
+      </div>
+      
       <div class="card-body">
         <div v-if="store.countriesLoading" class="loading-message">加载国家列表中...</div>
         <div v-else>
@@ -188,7 +194,11 @@ const defaultCountry = {
   region: '',
   subregion: ''
 };
-
+const resetSearch = () => {
+  searchQuery.value = '';
+  currentPage.value = 1;
+  loadCountries();
+};
 const loadCountries = async () => {
   console.log('[CountryManagementForm] 开始加载国家列表...');
   definitionsLoading.value = true;
@@ -519,25 +529,30 @@ onMounted(() => {
 .icon-edit:before { content: "✏️"; }
 .icon-delete:before { content: "🗑️"; }
 
-/* 添加新的样式 */
-.search-pagination-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
+.card-search {
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+  background-color: #f9f9f9;
 }
 
-.search-box {
-  flex: 1;
-  max-width: 300px;
+.search-container {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .search-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ced4da;
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
   border-radius: 4px;
-  font-size: 0.9rem;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
 }
 
 .pagination-controls {

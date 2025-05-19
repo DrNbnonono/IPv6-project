@@ -329,23 +329,7 @@ export default {
       return apiClient.delete(`/database/prefixes/${id}`);
     },
 
-    //---------------文件上传相关API----------------//
-    uploadAddressFile(formData) {
-      return apiClient.post('/database/files/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-    },
-    getAddressFiles() {
-      return apiClient.get('/database/files');
-    },
-    deleteAddressFile(fileId) {
-      return apiClient.delete(`/database/files/${fileId}`);
-    },
-    downloadAddressFile(fileId, config = {}) {
-      return apiClient.get(`/database/files/${fileId}/download`, config);
-    },
+    //---------------文件管理相关API已经单独实现----------------//
 
     //---------------地址导入任务相关API----------------//
     createImportTask(data) {
@@ -359,6 +343,9 @@ export default {
     },
     cancelImportTask(taskId) {
       return apiClient.delete(`/database/import-tasks/${taskId}`);
+    },
+    deleteImportTask(taskId) {
+      return apiClient.delete(`/database/import-tasks/${taskId}/delete`);
     },
 
     //---------------协议管理相关API----------------//
@@ -421,6 +408,39 @@ export default {
       console.log(`API: 获取国家列表，参数: page=${page}, limit=${limit}, search=${search}`);
       return apiClient.get(`/database/countries?${urlParams.toString()}`);
     },
+    searchPrefixes(query) {
+      return apiClient.get(`/database/prefixes/search?query=${query}`);
+    },
+    getPrefixesByAsn(asn) {
+      return apiClient.get(`/database/prefixes/by-asn/${asn}`);
+    },
+  },       
 
-  }       
+  files: {
+    uploadFile(formData) {
+      return apiClient.post('/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        onUploadProgress: progressEvent => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          console.log(`上传进度: ${percentCompleted}%`);
+          // 这里可以通过事件总线或其他方式通知组件更新进度
+        }
+      });
+    },
+    getFiles(toolType) {
+      return apiClient.get('/files', { 
+        params: { toolType } 
+      });
+    },
+    deleteFile(fileId) {
+      return apiClient.delete(`/files/${fileId}`);
+    },
+    downloadFile(fileId) {
+      return apiClient.get(`/files/${fileId}/download`, {
+        responseType: 'blob'
+      });
+    }
+  },
 }

@@ -12,6 +12,26 @@
           <i class="icon-plus"></i> 添加新ASN
         </button>
       </h3>
+
+      <!-- 添加搜索框 -->
+      <div class="card-search">
+        <div class="search-container">
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="搜索ASN、名称或组织..." 
+            @input="debouncedSearchAsns"
+            class="search-input"
+          />
+          <button class="btn btn-sm btn-primary" @click="searchAsns">
+            <i class="icon-search"></i> 搜索
+          </button>
+          <button class="btn btn-sm btn-secondary" @click="resetSearch" v-if="searchQuery">
+            <i class="icon-close"></i> 重置
+          </button>
+        </div>
+      </div>
+
       <div class="card-body">
         <div v-if="definitionsLoading" class="loading-message">加载ASN列表中...</div>
         <div v-else>
@@ -123,6 +143,9 @@ const modalSubmitting = ref(false);
 const modalError = ref('');
 const asns = ref([]);
 
+const searchQuery = ref('');
+const searchTimeout = ref(null);
+
 const defaultAsn = {
   asn: '',
   as_name: '',
@@ -137,6 +160,43 @@ const getCountryName = (countryId) => {
   const country = store.countries.find(c => c.country_id === countryId);
   return country ? (country.country_name_zh || country.country_name) : null;
 };
+
+const searchAsns = async () => {
+  console.log('[AsnManagementForm] 开始搜索ASN，关键词:', searchQuery.value);
+  definitionsLoading.value = true;
+  globalError.value = '';
+  
+  try {
+    if (searchQuery.value && searchQuery.value.length >= 2) {
+      const results = await store.searchAsns(searchQuery.value);
+      console.log('[AsnManagementForm] 原始响应数据:', results); // 新增日志
+      asns.value = results;
+      console.log(`[AsnManagementForm] 搜索结果: 找到 ${asns.value.length} 个ASN`);
+    } else {
+      await loadAsns();
+    }
+  } catch (error) {
+    console.error('[AsnManagementForm] 搜索ASN失败:', error);
+    globalError.value = `搜索ASN失败: ${error.message}`;
+  } finally {
+    definitionsLoading.value = false;
+  }
+};
+
+// 添加防抖函数
+const debouncedSearchAsns = () => {
+  clearTimeout(searchTimeout.value);
+  searchTimeout.value = setTimeout(() => {
+    searchAsns();
+  }, 300); // 300ms防抖
+};
+
+// 添加重置搜索的函数
+const resetSearch = () => {
+  searchQuery.value = '';
+  loadAsns();
+};
+
 
 const loadAsns = async () => {
   console.log('[AsnManagementForm] 开始加载ASN列表...');
@@ -232,6 +292,35 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+
+/* 添加搜索框样式 */
+.card-search {
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+  background-color: #f9f9f9;
+}
+
+.search-container {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+
 /* 复用 CountryManagementForm 的样式 */
 .asn-management-form {
   font-family: 'Arial', sans-serif;
