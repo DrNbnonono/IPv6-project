@@ -812,7 +812,7 @@ exports.updatePrefix = async (req, res) => {
     res.status(500).json({ success: false, message: '更新前缀信息失败', error: error.message });
   }
 };
-
+/*
 exports.deletePrefix = async (req, res) => {
   try {
     const { id } = req.params;
@@ -875,6 +875,86 @@ exports.deletePrefix = async (req, res) => {
       message: '删除前缀失败', 
       error: error.message 
     });
+  }
+};
+*/
+exports.deletePrefix = async (req, res) => {
+  let connection;
+  try {
+    const { id } = req.params;
+    console.log(`[deletePrefix] 尝试删除前缀ID: ${id}`);
+
+    // 获取数据库连接
+    connection = await db.getConnection();
+    
+    // 调用存储过程删除前缀及其关联地址
+    await connection.query('SET @deleted_addresses = 0, @prefix_deleted = FALSE, @asn = 0, @country_id = ""');
+    
+    await connection.query(
+      'CALL delete_prefix_with_addresses(?, @deleted_addresses, @prefix_deleted, @asn, @country_id)',
+      [id]
+    );
+    
+    // 获取存储过程的输出参数
+    const [result] = await connection.query(
+      'SELECT @deleted_addresses as deleted_addresses, @prefix_deleted as prefix_deleted, @asn as asn, @country_id as country_id'
+    );
+    
+    const outputResult = result[0];
+    console.log(`[deletePrefix] 存储过程执行结果:`, outputResult);
+    
+    if (outputResult.prefix_deleted) {
+      res.json({
+        success: true,
+        message: '前缀删除成功',
+        details: {
+          prefix_id: id,
+          deleted_addresses: outputResult.deleted_addresses,
+          asn: outputResult.asn,
+          country_id: outputResult.country_id
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '前缀删除失败，数据库未返回影响行数'
+      });
+    }
+  } catch (error) {
+    console.error('[deletePrefix] 删除前缀失败:', error);
+    
+    // 处理特定的数据库错误
+    if (error.code === 'ER_SIGNAL_EXCEPTION') {
+      // 处理存储过程抛出的自定义错误
+      return res.status(400).json({
+        success: false,
+        message: error.sqlMessage || '删除前缀失败'
+      });
+    }
+    
+    // 处理其他数据库错误
+    if (error.code) {
+      return res.status(500).json({
+        success: false,
+        message: '数据库操作失败',
+        error: {
+          code: error.code,
+          message: error.sqlMessage || error.message
+        }
+      });
+    }
+    
+    // 处理其他未知错误
+    res.status(500).json({
+      success: false,
+      message: '删除前缀失败',
+      error: error.message
+    });
+  } finally {
+    // 确保连接被释放
+    if (connection) {
+      connection.release();
+    }
   }
 };
 

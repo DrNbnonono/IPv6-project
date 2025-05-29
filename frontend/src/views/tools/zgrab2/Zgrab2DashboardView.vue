@@ -1,79 +1,93 @@
 <template>
   <div class="zgrab2-dashboard">
-    <div class="dashboard-header">
-      <h2><i class="icon-zgrab2"></i> ZGrab2探测工具</h2>
-      <div class="header-actions">
-        <button @click="goToHelp" class="btn btn-help">
-          <i class="icon-help"></i> 使用帮助
+    <div class="unified-header">
+      <div class="header-main-content">
+        <div class="header-title-subtitle">
+          <h2>
+            <i class="icon-zgrab2"></i> ZGrab2探测工具
+          </h2>
+          <p class="subtitle">高效协议探测与扫描工具</p>
+        </div>
+      </div>
+      <div class="dashboard-tabs-container">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          :class="['tab-button', { active: activeTab === tab.id }]"
+          @click="activeTab = tab.id"
+          :disabled="tab.id === 'details' && !zgrab2Store.currentTask" 
+        >
+          <i :class="tab.icon"></i>
+          <span>{{ tab.label }}</span>
+          <span v-if="tab.badge" class="tab-badge">{{ tab.badge }}</span>
         </button>
       </div>
     </div>
-
-    <div class="dashboard-tabs">
-      <button 
-        v-for="tab in tabs" 
-        :key="tab.id"
-        :class="['tab-button', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
-
+    
     <div class="dashboard-content">
       <div v-if="activeTab === 'config'" class="config-section">
-        <Zgrab2TaskForm @task-created="handleTaskCreated" />
+        <Zgrab2TaskForm 
+          @start-scan="handleStartScan"
+          :is-loading="zgrab2Store.isLoading"
+        />
       </div>
-
+      
       <div v-if="activeTab === 'history'" class="history-section">
-        <div class="section-header">
-          <h3><i class="icon-history"></i> 任务历史</h3>
-          <div class="history-filters">
-            <select v-model="statusFilter" @change="fetchTasks">
-              <option value="">所有状态</option>
-              <option value="pending">待处理</option>
-              <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
-            </select>
-          </div>
+        <div class="history-filters-standalone">
+          <select v-model="filterStatus" @change="handleFilterChange" class="filter-select">
+            <option value="">全部状态</option>
+            <option value="pending">待处理</option>
+            <option value="running">运行中</option>
+            <option value="completed">已完成</option>
+            <option value="failed">失败</option>
+          </select>
+          <button class="btn btn-refresh" @click="refreshTasks">
+            <i class="icon-refresh"></i> 刷新
+          </button>
         </div>
-
-        <div v-if="tasks.length === 0" class="no-tasks">
-          暂无任务记录
+        
+        <div v-if="zgrab2Store.tasks.length === 0 && !zgrab2Store.isLoading" class="empty-state">
+          <i class="icon-empty"></i>
+          <p>暂无任务记录</p>
+          <button class="btn btn-primary" @click="activeTab = 'config'">
+            <i class="icon-plus"></i> 创建新任务
+          </button>
         </div>
-        <div v-else>
-          <table class="task-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>模块</th>
-                <th>目标</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="task in tasks" :key="task.id">
-                <td>{{ task.id }}</td>
-                <td>{{ task.params.module || 'multiple' }}</td>
-                <td>{{ task.params.target }}</td>
-                <td :class="`status-${task.status}`">{{ task.status }}</td>
-                <td>{{ formatDate(task.created_at) }}</td>
-                <td>
-                  <button @click="viewTaskDetails(task.id)" class="btn btn-sm btn-primary">
-                    查看详情
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else-if="zgrab2Store.isLoading" class="loading-state">
+          <p>正在加载任务...</p> 
         </div>
+        <Zgrab2TaskHistory 
+          v-else
+          :tasks="zgrab2Store.tasks"
+          :pagination="zgrab2Store.pagination"
+          @delete-task="handleDeleteTask"
+          @view-log="handleViewLog"
+          @download-result="handleDownloadResult"
+          @view-details="handleViewDetails"
+          @page-change="handlePageChange"
+        />
       </div>
-
-      <div v-if="activeTab === 'details' && currentTask" class="details-section">
-        <Zgrab2TaskDetails :task="currentTask" />
+      
+      <div v-if="activeTab === 'help'" class="help-section">
+        <Zgrab2HelpView />
+      </div>
+      
+      <div v-if="activeTab === 'details'" class="details-section">
+        <div v-if="zgrab2Store.currentTask">
+          <div class="details-header-controls">
+            <button class="btn btn-back" @click="activeTab = 'history'">
+              <i class="icon-arrow-left"></i> 返回任务列表
+            </button>
+          </div>
+          <Zgrab2TaskDetails :task="zgrab2Store.currentTask" />
+        </div>
+        <div v-else class="empty-state">
+            <i class="icon-empty"></i>
+            <p>请先从任务历史中选择一个任务查看详情。</p>
+            <button class="btn btn-primary" @click="activeTab = 'history'">
+              <i class="icon-history"></i> 前往任务历史
+            </button>
+        </div>
       </div>
     </div>
   </div>
@@ -81,133 +95,251 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useZgrab2Store } from '@/stores/zgrab2'
+import { useRouter } from 'vue-router'
 import Zgrab2TaskForm from '@/components/zgrab2/Zgrab2TaskForm.vue'
+import Zgrab2TaskHistory from '@/components/zgrab2/Zgrab2TaskHistory.vue'
 import Zgrab2TaskDetails from '@/components/zgrab2/Zgrab2TaskDetails.vue'
-import { format } from 'date-fns'
+import Zgrab2HelpView from './Zgrab2HelpView.vue'
 
-const router = useRouter()
 const zgrab2Store = useZgrab2Store()
-
+const router = useRouter()
 const activeTab = ref('config')
-const statusFilter = ref('')
-const tasks = ref([])
-const currentTask = ref(null)
+const filterStatus = ref('')
 
 const tabs = [
-  { id: 'config', label: '新建任务' },
-  { id: 'history', label: '任务历史' },
-  { id: 'details', label: '任务详情' }
+  { id: 'config', label: '扫描配置', icon: 'icon-config' },
+  { id: 'history', label: '任务历史', icon: 'icon-history' },
+  { id: 'help', label: '使用帮助', icon: 'icon-help', badge: '新' },
+  { id: 'details', label: '任务详情', icon: 'icon-detail' } 
 ]
 
-const formatDate = (dateString) => {
-  return format(new Date(dateString), 'yyyy-MM-dd HH:mm:ss')
+const refreshTasks = () => {
+  zgrab2Store.fetchTasks(filterStatus.value)
 }
 
-const fetchTasks = async () => {
+const handleStartScan = async (params) => {
   try {
-    const params = {}
-    if (statusFilter.value) {
-      params.status = statusFilter.value
-    }
-    const response = await zgrab2Store.fetchTasks(params)
-    tasks.value = response
-  } catch (err) {
-    console.error('获取任务列表失败:', err)
+    const result = await zgrab2Store.createTask(params)
+    activeTab.value = 'history'
+    filterStatus.value = ''
+    return result
+  } catch (error) {
+    console.error('Scan failed:', error)
+    throw error
   }
 }
 
-const viewTaskDetails = async (taskId) => {
+const handleDeleteTask = async (taskId) => {
   try {
-    const task = await zgrab2Store.fetchTaskDetails(taskId)
-    currentTask.value = task
+    await zgrab2Store.deleteTask(taskId)
+  } catch (error) {
+    console.error('Delete failed:', error)
+  }
+}
+
+const handleViewLog = (taskId) => {
+  zgrab2Store.downloadLog(taskId)
+}
+
+const handleDownloadResult = (taskId) => {
+  zgrab2Store.downloadResult(taskId)
+}
+
+const handleViewDetails = async (taskId) => {
+  try {
+    await zgrab2Store.fetchTaskDetails(taskId)
     activeTab.value = 'details'
-  } catch (err) {
-    console.error('获取任务详情失败:', err)
+  } catch (error) {
+    console.error('Get details failed:', error)
   }
 }
 
-const handleTaskCreated = (taskId) => {
-  viewTaskDetails(taskId)
+const handlePageChange = (newPage) => {
+  zgrab2Store.fetchTasks(filterStatus.value, newPage)
 }
 
-const goToHelp = () => {
-  router.push('/tools/zgrab2/help')
+const handleFilterChange = () => {
+  zgrab2Store.fetchTasks(filterStatus.value)
 }
 
 onMounted(() => {
-  fetchTasks()
+  zgrab2Store.fetchTasks()
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .zgrab2-dashboard {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
 
-.dashboard-header {
+.unified-header {
+  padding: 1rem 1.5rem;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #edf2f7;
+  display: flex;
+  flex-direction: column;
+}
+
+.header-main-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  width: 100%;
 }
 
-.dashboard-tabs {
+.dashboard-tabs-container {
   display: flex;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #ddd;
+  margin-top: 0.8rem; 
+  width: 100%;
+  overflow-x: auto; 
+  .tab-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.details-section .empty-state {
+  margin-top: 2rem;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 3rem 0;
+  color: #718096;
+  font-size: 1rem;
+}
+
+.header-title-subtitle {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    color: #35495e;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    
+    i {
+      font-size: 1.5rem;
+    }
+  }
+  
+  .subtitle {
+    margin: 0;
+    color: #718096;
+    font-size: 0.85rem;
+  }
 }
 
 .tab-button {
-  padding: 10px 20px;
+  padding: 0.7rem 1.2rem;
   background: none;
   border: none;
-  cursor: pointer;
   border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #718096;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  
+  &:hover {
+    color: #4299e1;
+  }
+  
+  &.active {
+    color: #42b983;
+    border-bottom-color: #42b983;
+    font-weight: 500;
+  }
+  
+  .tab-badge {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    font-size: 0.55rem;
+    background-color: #ff4757;
+    color: white;
+    padding: 0.1rem 0.3rem;
+    border-radius: 8px;
+  }
 }
 
-.tab-button.active {
-  border-bottom-color: #2196f3;
-  color: #2196f3;
+.dashboard-content {
+  padding: 1.5rem;
 }
 
-.task-table {
-  width: 100%;
-  border-collapse: collapse;
+.history-filters-standalone {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  .filter-select {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.6rem;
+  }
+  .btn-refresh {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+  }
 }
 
-.task-table th, .task-table td {
-  padding: 10px;
-  border: 1px solid #ddd;
-  text-align: left;
+.details-header-controls {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 1.5rem;
 }
 
-.task-table th {
-  background-color: #f5f5f5;
+.btn-back {
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
 }
 
-.status-pending {
-  color: #ff9800;
-}
-
-.status-running {
-  color: #2196f3;
-}
-
-.status-completed {
-  color: #4caf50;
-}
-
-.status-failed {
-  color: #f44336;
-}
-
-.no-tasks {
+.empty-state {
   text-align: center;
-  padding: 20px;
-  color: #888;
+  padding: 3rem 0;
+  color: #a0aec0;
+  
+  i {
+    font-size: 3rem;
+    opacity: 0.5;
+    margin-bottom: 1rem;
+    display: block;
+  }
+  
+  p {
+    margin: 0 0 1.5rem;
+    font-size: 0.9rem;
+  }
+  .btn-primary {
+    font-size: 0.85rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .unified-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-main-content {
+    flex-grow: 1;
+  }
+  .dashboard-tabs-container {
+    margin-top: 0;
+    margin-left: 1.5rem;
+    width: auto;
+    overflow-x: visible;
+  }
 }
 </style>

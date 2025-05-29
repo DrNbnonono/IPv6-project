@@ -1,38 +1,32 @@
 <template>
   <div class="xmap-dashboard">
-    <div class="dashboard-header">
-      <div class="header-content">
-        <h2>
-          <i class="icon-xmap"></i> XMap探测工具
-        </h2>
-        <div class="header-actions">
-          <button class="btn btn-help" @click="goToHelp">
-            <i class="icon-help"></i> 使用帮助
-          </button>
+    <div class="unified-header">
+      <div class="header-main-content">
+        <div class="header-title-subtitle">
+          <h2>
+            <i class="icon-xmap"></i> XMap探测工具
+          </h2>
+          <p class="subtitle">高效IPv6网络探测与扫描工具</p>
         </div>
+        <!-- Removed header-actions div and the help button -->
       </div>
-      <p class="subtitle">高效IPv6网络探测与扫描工具</p>
-    </div>
-    
-    <div class="dashboard-tabs">
-      <button 
-        v-for="tab in tabs" 
-        :key="tab.id"
-        :class="['tab-button', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
-      >
-        <i :class="tab.icon"></i>
-        <span>{{ tab.label }}</span>
-        <span v-if="tab.badge" class="tab-badge">{{ tab.badge }}</span>
-      </button>
+      <div class="dashboard-tabs-container">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          :class="['tab-button', { active: activeTab === tab.id }]"
+          @click="activeTab = tab.id"
+          :disabled="tab.id === 'details' && !xmapStore.currentTask" 
+        >
+          <i :class="tab.icon"></i>
+          <span>{{ tab.label }}</span>
+          <span v-if="tab.badge" class="tab-badge">{{ tab.badge }}</span>
+        </button>
+      </div>
     </div>
     
     <div class="dashboard-content">
       <div v-if="activeTab === 'config'" class="config-section">
-        <div class="section-header">
-          <h3><i class="icon-config"></i> 扫描配置</h3>
-          <p>配置XMap扫描参数，开始新的探测任务</p>
-        </div>
         <XmapParameterForm 
           @start-scan="handleStartScan"
           :is-loading="xmapStore.isLoading"
@@ -40,30 +34,29 @@
       </div>
       
       <div v-if="activeTab === 'history'" class="history-section">
-        <div class="section-header">
-          <h3><i class="icon-history"></i> 任务历史</h3>
-          <div class="history-filters">
-            <select v-model="filterStatus" @change="handleFilterChange" class="filter-select">
-              <option value="">全部状态</option>
-              <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
-              <option value="canceled">已取消</option>
-            </select>
-            <button class="btn btn-refresh" @click="refreshTasks">
-              <i class="icon-refresh"></i> 刷新
-            </button>
-          </div>
+        <div class="history-filters-standalone">
+          <select v-model="filterStatus" @change="handleFilterChange" class="filter-select">
+            <option value="">全部状态</option>
+            <option value="running">运行中</option>
+            <option value="completed">已完成</option>
+            <option value="failed">失败</option>
+            <option value="canceled">已取消</option>
+          </select>
+          <button class="btn btn-refresh" @click="refreshTasks">
+            <i class="icon-refresh"></i> 刷新
+          </button>
         </div>
         
-        <div v-if="xmapStore.tasks.length === 0" class="empty-state">
+        <div v-if="xmapStore.tasks.length === 0 && !xmapStore.isLoading" class="empty-state">
           <i class="icon-empty"></i>
           <p>暂无任务记录</p>
           <button class="btn btn-primary" @click="activeTab = 'config'">
             <i class="icon-plus"></i> 创建新任务
           </button>
         </div>
-        
+        <div v-else-if="xmapStore.isLoading" class="loading-state">
+          <p>正在加载任务...</p> 
+        </div>
         <XmapTaskHistory 
           v-else
           :tasks="xmapStore.tasks"
@@ -81,15 +74,22 @@
         <XmapHelpView />
       </div>
       
-      <div v-if="activeTab === 'details' && xmapStore.currentTask" class="details-section">
-        <div class="section-header">
-          <button class="btn btn-back" @click="activeTab = 'history'">
-            <i class="icon-arrow-left"></i> 返回任务列表
-          </button>
-          <h3>任务详情 - ID: {{ xmapStore.currentTask.id }}</h3>
+      <div v-if="activeTab === 'details'" class="details-section">
+        <div v-if="xmapStore.currentTask">
+          <div class="details-header-controls">
+            <button class="btn btn-back" @click="activeTab = 'history'">
+              <i class="icon-arrow-left"></i> 返回任务列表
+            </button>
+          </div>
+          <XmapTaskDetails :task="xmapStore.currentTask" />
         </div>
-        
-        <XmapTaskDetails :task="xmapStore.currentTask" />
+        <div v-else class="empty-state">
+            <i class="icon-empty"></i>
+            <p>请先从任务历史中选择一个任务查看详情。</p>
+            <button class="btn btn-primary" @click="activeTab = 'history'">
+              <i class="icon-history"></i> 前往任务历史
+            </button>
+        </div>
       </div>
     </div>
   </div>
@@ -109,12 +109,13 @@ const router = useRouter()
 const activeTab = ref('config')
 const filterStatus = ref('')
 
+// tabs array remains the same, 'details' tab is always included
 const tabs = [
   { id: 'config', label: '扫描配置', icon: 'icon-config' },
   { id: 'history', label: '任务历史', icon: 'icon-history' },
   { id: 'help', label: '使用帮助', icon: 'icon-help', badge: '新' },
-  { id: 'details', label: '任务详情', icon: 'icon-detail', show: false }
-]
+  { id: 'details', label: '任务详情', icon: 'icon-detail' } 
+];
 
 const refreshTasks = () => {
   xmapStore.fetchTasks(filterStatus.value)
@@ -126,11 +127,13 @@ const goToHelp = () => {
 
 const handleStartScan = async (params) => {
   try {
-    await xmapStore.startScan(params)
+    const result = await xmapStore.startScan(params)
     activeTab.value = 'history'
     filterStatus.value = ''
+    return result  // Return the result so we can use it in the form
   } catch (error) {
     console.error('Scan failed:', error)
+    throw error  // Rethrow the error so it can be handled by the form
   }
 }
 
@@ -161,7 +164,7 @@ const handleDownloadResult = (taskId) => {
 const handleViewDetails = async (taskId) => {
   try {
     await xmapStore.getTaskDetails(taskId)
-    tabs[3].show = true
+    // No need to manipulate tabs[3].show, v-for filter handles it
     activeTab.value = 'details'
   } catch (error) {
     console.error('Get details failed:', error)
@@ -190,62 +193,100 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.dashboard-header {
-  padding: 1.5rem 2rem 0;
+.unified-header {
+  padding: 1rem 1.5rem;
   background-color: #f8fafc;
   border-bottom: 1px solid #edf2f7;
-  
-  .header-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  display: flex;
+  flex-direction: column; // Stack main content and tabs vertically first
+}
+
+.header-main-content {
+  display: flex;
+  justify-content: space-between; // This will push title to left, actions to right
+  align-items: center;
+  width: 100%;
+  // Removed header-actions specific margin as it's no longer needed or the div is removed
+}
+
+.dashboard-tabs-container {
+  display: flex;
+  margin-top: 0.8rem; 
+  width: 100%;
+  overflow-x: auto; 
+  .tab-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
-  
+}
+
+.details-section .empty-state {
+  margin-top: 2rem; /* Add some spacing for the empty state in details tab */
+}
+
+.loading-state {
+  text-align: center;
+  padding: 3rem 0;
+  color: #718096;
+  font-size: 1rem;
+}
+
+.header-title-subtitle {
+  display: flex;
+  align-items: baseline; // Align title and subtitle along their baseline
+  gap: 1rem; // Space between title and subtitle
   h2 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.3rem; // Reduced font size
     color: #35495e;
     display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 0.6rem; // Reduced gap
     
     i {
-      font-size: 1.8rem;
+      font-size: 1.5rem; // Reduced icon size
     }
   }
   
   .subtitle {
-    margin: 0.5rem 0 0;
+    margin: 0;
     color: #718096;
-    font-size: 0.95rem;
+    font-size: 0.85rem; // Reduced font size
   }
 }
 
 .header-actions {
   display: flex;
-  gap: 1rem;
+  gap: 0.8rem; // Reduced gap
+  margin-left: auto; // Push help button to the right if title/subtitle take less space
 }
 
-.dashboard-tabs {
+.btn-help {
+  font-size: 0.85rem; // Reduced font size
+  padding: 0.4rem 0.8rem; // Adjust padding
+}
+
+.dashboard-tabs-container {
   display: flex;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 0 2rem;
-  background-color: #f8fafc;
+  margin-top: 0.8rem; // Space between title row and tabs row
+  width: 100%;
+  overflow-x: auto; // Allow horizontal scrolling for tabs if they overflow
 }
 
 .tab-button {
-  padding: 1rem 1.5rem;
+  padding: 0.7rem 1.2rem; // Reduced padding
   background: none;
   border: none;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent; // Slightly thinner border
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: 0.9rem; // Reduced font size
   color: #718096;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem; // Reduced gap
   position: relative;
   transition: all 0.2s ease;
+  white-space: nowrap; // Prevent tab text from wrapping
   
   &:hover {
     color: #4299e1;
@@ -258,58 +299,49 @@ onMounted(() => {
   }
   
   .tab-badge {
+    // Style remains similar, adjust if needed
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    font-size: 0.6rem;
+    top: 0.3rem;
+    right: 0.3rem;
+    font-size: 0.55rem;
     background-color: #ff4757;
     color: white;
-    padding: 0.1rem 0.4rem;
-    border-radius: 10px;
+    padding: 0.1rem 0.3rem;
+    border-radius: 8px;
   }
 }
 
 .dashboard-content {
-  padding: 2rem;
+  padding: 1.5rem; // Slightly reduced padding
 }
 
-.section-header {
-  margin-bottom: 1.5rem;
-  
-  h3 {
-    margin: 0 0 0.5rem;
-    font-size: 1.3rem;
-    color: #35495e;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  p {
-    margin: 0;
-    color: #718096;
-    font-size: 0.95rem;
-  }
-}
+/* Removed .section-header styles as the element is removed or repurposed */
 
-.history-filters {
+.history-filters-standalone {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-bottom: 1.5rem; // Space before the task list or empty state
+  .filter-select {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.6rem;
+  }
+  .btn-refresh {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+  }
 }
 
-.filter-select {
-  padding: 0.6rem 1rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  background-color: white;
-  
-  &:focus {
-    outline: none;
-    border-color: #42b983;
-  }
+.details-header-controls {
+  display: flex;
+  justify-content: flex-start; /* Align button to the left */
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.btn-back {
+  font-size: 0.85rem; // Reduced font size
+  padding: 0.4rem 0.8rem; // Adjust padding
 }
 
 .empty-state {
@@ -326,67 +358,29 @@ onMounted(() => {
   
   p {
     margin: 0 0 1.5rem;
-    font-size: 1.1rem;
+    font-size: 0.9rem; // Reduced font size
+  }
+  .btn-primary {
+    font-size: 0.85rem; // Reduced font size
   }
 }
 
-.btn {
-  padding: 0.7rem 1.2rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
-  
-  &-primary {
-    background-color: #42b983;
-    color: white;
-    
-    &:hover {
-      background-color: #3aa876;
-    }
+// Adjustments for responsiveness if needed
+@media (min-width: 768px) { // Example breakpoint
+  .unified-header {
+    flex-direction: row; // Title/subtitle/actions and tabs on the same row for wider screens
+    align-items: center;
+    justify-content: space-between;
   }
-  
-  &-help {
-    background-color: #edf2f7;
-    color: #4a5568;
-    
-    &:hover {
-      background-color: #e2e8f0;
-    }
+  .header-main-content {
+    flex-grow: 1; // Allow title/subtitle to take available space
   }
-  
-  &-refresh {
-    background-color: #4299e1;
-    color: white;
-    
-    &:hover {
-      background-color: #3182ce;
-    }
-  }
-  
-  &-back {
-    background-color: #edf2f7;
-    color: #4a5568;
-    margin-right: 1rem;
-    
-    &:hover {
-      background-color: #e2e8f0;
-    }
+  .dashboard-tabs-container {
+    margin-top: 0; // No margin when on the same row
+    margin-left: 1.5rem; // Space between main header content and tabs
+    width: auto; // Let it size based on content
+    overflow-x: visible;
   }
 }
 
-/* 图标样式 */
-.icon-xmap:before { content: "📡"; }
-.icon-help:before { content: "❓"; }
-.icon-config:before { content: "⚙️"; }
-.icon-history:before { content: "🕒"; }
-.icon-detail:before { content: "📝"; }
-.icon-refresh:before { content: "🔄"; }
-.icon-empty:before { content: "📭"; }
-.icon-plus:before { content: "➕"; }
-.icon-arrow-left:before { content: "⬅️"; }
 </style>
