@@ -5,6 +5,7 @@ const cors = require('cors');
 const db = require('./database/db');
 const addressRouter = require('./routes/address');
 const xmapRouter = require('./routes/xmap');
+const zgrab2Router = require('./routes/zgrab2');
 const authRouter = require('./routes/auth');
 const docRouter = require('./routes/doc')
 const databaseRoutes = require('./routes/database'); 
@@ -22,6 +23,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // 路由
 app.use('/api/addresses', addressRouter);
 app.use('/api/xmap', xmapRouter);
+app.use('/api/zgrab2', zgrab2Router);
 app.use('/api/auth', authRouter);
 app.use('/api/database', databaseRoutes);
 app.use('/api/files', fileRouter);

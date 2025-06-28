@@ -114,8 +114,12 @@ const tabs = [
   { id: 'details', label: '任务详情', icon: 'icon-detail' } 
 ]
 
-const refreshTasks = () => {
-  zgrab2Store.fetchTasks(filterStatus.value)
+const refreshTasks = async () => {
+  try {
+    await zgrab2Store.fetchTasks(filterStatus.value)
+  } catch (error) {
+    console.error('刷新任务失败:', error)
+  }
 }
 
 const handleStartScan = async (params) => {
@@ -133,17 +137,27 @@ const handleStartScan = async (params) => {
 const handleDeleteTask = async (taskId) => {
   try {
     await zgrab2Store.deleteTask(taskId)
+    // 刷新任务列表
+    await refreshTasks()
   } catch (error) {
     console.error('Delete failed:', error)
   }
 }
 
-const handleViewLog = (taskId) => {
-  zgrab2Store.downloadLog(taskId)
+const handleViewLog = async (taskId) => {
+  try {
+    await zgrab2Store.downloadLog(taskId)
+  } catch (error) {
+    console.error('下载日志失败:', error)
+  }
 }
 
-const handleDownloadResult = (taskId) => {
-  zgrab2Store.downloadResult(taskId)
+const handleDownloadResult = async (taskId) => {
+  try {
+    await zgrab2Store.downloadResult(taskId)
+  } catch (error) {
+    console.error('下载结果失败:', error)
+  }
 }
 
 const handleViewDetails = async (taskId) => {
@@ -155,16 +169,28 @@ const handleViewDetails = async (taskId) => {
   }
 }
 
-const handlePageChange = (newPage) => {
-  zgrab2Store.fetchTasks(filterStatus.value, newPage)
+const handlePageChange = async (newPage) => {
+  try {
+    await zgrab2Store.fetchTasks(filterStatus.value, newPage)
+  } catch (error) {
+    console.error('切换页面失败:', error)
+  }
 }
 
-const handleFilterChange = () => {
-  zgrab2Store.fetchTasks(filterStatus.value)
+const handleFilterChange = async () => {
+  try {
+    await zgrab2Store.fetchTasks(filterStatus.value)
+  } catch (error) {
+    console.error('过滤任务失败:', error)
+  }
 }
 
-onMounted(() => {
-  zgrab2Store.fetchTasks()
+onMounted(async () => {
+  try {
+    await zgrab2Store.fetchTasks()
+  } catch (error) {
+    console.error('初始化ZGrab2任务失败:', error)
+  }
 })
 </script>
 

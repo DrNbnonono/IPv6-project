@@ -87,44 +87,72 @@ const validateXmapParams = (params) => {
 };
 
 // 添加读取文件最后几行的辅助函数
-// 修改读取CSV文件的逻辑
+// 优化读取CSV文件的逻辑，只读取头部和最新的几行
 async function readLastLines(filePath, numLines) {
   return new Promise((resolve, reject) => {
-    const stats = fs.statSync(filePath);
-    if (stats.size === 0) {
-      return resolve('');
-    }
-
-    // 读取文件头部和最后部分
-    const headerSize = 1024; // 假设头部不超过1KB
-    const readSize = Math.min(stats.size, headerSize + 1024 * 10); // 读取头部+最后10KB
-    
-    const stream = fs.createReadStream(filePath, {
-      encoding: 'utf8',
-      start: Math.max(0, stats.size - readSize)
-    });
-    
-    let content = '';
-    stream.on('data', chunk => {
-      content += chunk;
-    });
-    
-    stream.on('end', () => {
-      // 确保获取到完整的头部
-      const headerEnd = content.indexOf('\n');
-      if (headerEnd === -1) {
-        return resolve(content);
+    try {
+      const stats = fs.statSync(filePath);
+      if (stats.size === 0) {
+        return resolve('');
       }
+
+      // 使用更高效的方式读取大文件
+      // 1. 首先读取文件头部获取列名
+      const headerStream = fs.createReadStream(filePath, {
+        encoding: 'utf8',
+        start: 0,
+        end: 1024 // 假设头部不超过1KB
+      });
       
-      const header = content.substring(0, headerEnd);
-      const lines = content.substring(headerEnd + 1).split('\n').filter(line => line.trim());
+      let headerContent = '';
+      headerStream.on('data', chunk => {
+        headerContent += chunk;
+      });
       
-      // 合并头部和最后几行
-      const lastLines = lines.slice(-numLines);
-      resolve(header + '\n' + lastLines.join('\n'));
-    });
-    
-    stream.on('error', reject);
+      headerStream.on('end', () => {
+        // 提取头部行（列名）
+        const headerEnd = headerContent.indexOf('\n');
+        if (headerEnd === -1) {
+          return resolve(headerContent);
+        }
+        
+        const header = headerContent.substring(0, headerEnd);
+        
+        // 2. 然后读取文件末尾的几行
+        // 对于大文件，我们只读取末尾的一小部分
+        const tailSize = Math.min(10 * 1024, stats.size); // 最多读取末尾10KB
+        const tailStream = fs.createReadStream(filePath, {
+          encoding: 'utf8',
+          start: Math.max(0, stats.size - tailSize)
+        });
+        
+        let tailContent = '';
+        tailStream.on('data', chunk => {
+          tailContent += chunk;
+        });
+        
+        tailStream.on('end', () => {
+          // 分割成行并过滤空行
+          const allLines = tailContent.split('\n').filter(line => line.trim());
+          
+          // 只保留最后几行
+          const lastLines = allLines.slice(-numLines);
+          
+          // 合并头部和最后几行
+          resolve(header + '\n' + lastLines.join('\n'));
+        });
+        
+        tailStream.on('error', err => {
+          reject(err);
+        });
+      });
+      
+      headerStream.on('error', err => {
+        reject(err);
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -451,8 +479,8 @@ exports.scan = async (req, res) => {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
 
-    xmapProcess.stdin.write('NKU@ipv6!218\n');
-    xmapProcess.stdin.end();
+    // xmapProcess.stdin.write('NKU@ipv6!218\n');
+    // xmapProcess.stdin.end();
 
     activeProcesses.set(taskId, xmapProcess);
     const errorStream = fs.createWriteStream(errorLogFile);
@@ -557,7 +585,22 @@ exports.cancelTask = async (req, res) => {
 
     if (activeProcesses.has(taskId)) {
       const process = activeProcesses.get(taskId);
+      
+      // 先尝试终止进程
       process.kill('SIGTERM');
+      
+      // 确保子进程也被终止（因为使用sudo启动的进程可能有子进程）
+      try {
+        // 使用系统命令查找并杀死相关的xmap进程
+        const killCommand = spawn('pkill', ['-f', `xmap.*${taskId}`]);
+        
+        killCommand.on('close', (code) => {
+          logger.info(`尝试终止任务 ${taskId} 相关进程，退出码: ${code}`);
+        });
+      } catch (killError) {
+        logger.error(`尝试终止任务 ${taskId} 相关进程失败`, { error: killError.message });
+      }
+      
       activeProcesses.delete(taskId);
     }
 
@@ -717,30 +760,29 @@ exports.getTaskDetails = async (req, res) => {
     // 读取扫描进度
     if (task.log_path && fs.existsSync(task.log_path)) {
       try {
-        const data = await readLastLines(task.log_path, 10);
+        // 只读取最后2行进度数据，提高大文件处理效率
+        const data = await readLastLines(task.log_path, 2);
         const lines = data.trim().split('\n');
         
         if (lines.length > 1) {
           const headers = lines[0].split(',');
           const stats = [];
           
-          // 从后向前处理，确保获取最新数据
-          for (let i = lines.length - 1; i >= 1; i--) {
-            if (lines[i].trim()) {
-              const values = lines[i].split(',');
-              const entry = headers.reduce((obj, header, index) => {
-                obj[header] = values[index]?.trim();
-                return obj;
-              }, {});
-              
-              stats.unshift(entry);
-              if (stats.length >= 10) break; // 最多取10条记录
-            }
+          // 只处理最后一行，这是最新的进度数据
+          const lastLine = lines[lines.length - 1];
+          if (lastLine.trim()) {
+            const values = lastLine.split(',');
+            const entry = headers.reduce((obj, header, index) => {
+              obj[header] = values[index]?.trim();
+              return obj;
+            }, {});
+            
+            stats.push(entry);
           }
           
           if (stats.length > 0) {
             progress = {
-              latest: stats[stats.length - 1],
+              latest: stats[0],
               history: stats
             };
             hasProgressFile = true;
@@ -804,10 +846,10 @@ exports.getTasks = async (req, res) => {
       created_at, completed_at,
       exit_code, process_signal
     FROM tasks 
-    WHERE user_id = ?`;
+    WHERE user_id = ? AND task_type = 'xmap'`;
     
     const params = [userId];
-    let countQuery = 'SELECT COUNT(*) as total FROM tasks WHERE user_id = ?';
+    let countQuery = 'SELECT COUNT(*) as total FROM tasks WHERE user_id = ? AND task_type = \'xmap\'';
 
     if (status && ['pending', 'running', 'completed', 'failed', 'canceled'].includes(status)) {
       query += ' AND status = ?';

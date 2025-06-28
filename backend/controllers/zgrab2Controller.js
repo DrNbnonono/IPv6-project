@@ -37,7 +37,7 @@ const SUPPORTED_MODULES = {
  */
 exports.createTask = async (req, res) => {
   try {
-    const { module, target, port, outputFormat = 'json', additionalParams = {}, whitelistId } = req.body;
+    const { module, target, port, outputFormat = 'json', additionalParams = {}, description } = req.body;
     
     // 验证模块是否有效
     if (!SUPPORTED_MODULES[module]) {
@@ -51,7 +51,7 @@ exports.createTask = async (req, res) => {
     const scanPort = port || SUPPORTED_MODULES[module].defaultPort;
     
     // 生成任务ID和输出文件名
-    const taskId = uuidv4();
+    const taskId = Date.now();
     const outputFile = path.join(ZGRAB2_RESULTS_DIR, `${taskId}.${outputFormat}`);
     const logFile = path.join(ZGRAB2_LOGS_DIR, `${taskId}.log`);
     
@@ -69,16 +69,9 @@ exports.createTask = async (req, res) => {
     // 在数据库中创建任务记录
     const [result] = await db.query(`
       INSERT INTO tasks 
-      (task_type, params, status, created_by, whitelist_id) 
-      VALUES (?, ?, ?, ?, ?)
-    `, ['zgrab2', JSON.stringify({
-      module,
-      port: scanPort,
-      target,
-      command,
-      outputFile,
-      logFile
-    }), 'pending', req.user.id, whitelistId]);
+      (id, user_id, command, description, task_type, status, log_path, output_path) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [taskId, req.user.id, command, description || `ZGrab2 ${module} scan`, 'zgrab2', 'pending', logFile, outputFile]);
 
     // 异步执行zgrab2命令
     exec(command, (error, stdout, stderr) => {
@@ -98,12 +91,12 @@ exports.createTask = async (req, res) => {
             error_message = ?,
             completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [status, errorMessage, result.insertId]);
+      `, [status, errorMessage, taskId]);
     });
 
     res.json({
       success: true,
-      taskId: result.insertId
+      taskId: taskId
     });
   } catch (error) {
     logger.error('创建zgrab2任务失败:', error);
@@ -119,10 +112,10 @@ exports.createTask = async (req, res) => {
  */
 exports.createMultipleTask = async (req, res) => {
   try {
-    const { config, target, whitelistId } = req.body;
+    const { config, target, description } = req.body;
     
     // 生成任务ID和输出文件名
-    const taskId = uuidv4();
+    const taskId = Date.now();
     const outputFile = path.join(ZGRAB2_RESULTS_DIR, `${taskId}.json`);
     const logFile = path.join(ZGRAB2_LOGS_DIR, `${taskId}.log`);
     
@@ -136,16 +129,9 @@ exports.createMultipleTask = async (req, res) => {
     // 在数据库中创建任务记录
     const [result] = await db.query(`
       INSERT INTO tasks 
-      (task_type, params, status, created_by, whitelist_id) 
-      VALUES (?, ?, ?, ?, ?)
-    `, ['zgrab2', JSON.stringify({
-      module: 'multiple',
-      target,
-      command,
-      outputFile,
-      logFile,
-      configFile
-    }), 'pending', req.user.id, whitelistId]);
+      (id, user_id, command, description, task_type, status, log_path, output_path) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [taskId, req.user.id, command, description || 'ZGrab2 multiple scan', 'zgrab2', 'pending', logFile, outputFile]);
 
     // 异步执行zgrab2命令
     exec(command, (error, stdout, stderr) => {
@@ -172,12 +158,12 @@ exports.createMultipleTask = async (req, res) => {
             error_message = ?,
             completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `, [status, errorMessage, result.insertId]);
+      `, [status, errorMessage, taskId]);
     });
 
     res.json({
       success: true,
-      taskId: result.insertId
+      taskId: taskId
     });
   } catch (error) {
     logger.error('创建zgrab2多模块任务失败:', error);
@@ -193,34 +179,30 @@ exports.createMultipleTask = async (req, res) => {
  */
 exports.getTasks = async (req, res) => {
   try {
-    const { page = 1, status, module } = req.query;
+    const { page = 1, status } = req.query;
     const offset = (page - 1) * ITEMS_PER_PAGE;
     
     let query = `
       SELECT 
         id, 
+        command,
+        description,
         task_type,
-        params,
         status,
         created_at,
         completed_at,
         output_path,
-        error_message,
-        whitelist_id
+        log_path,
+        error_message
       FROM tasks
-      WHERE task_type = 'zgrab2'
+      WHERE task_type = 'zgrab2' AND user_id = ?
     `;
     
-    const params = [];
+    const params = [req.user.id];
     
     if (status) {
       query += ' AND status = ?';
       params.push(status);
-    }
-    
-    if (module) {
-      query += ' AND JSON_EXTRACT(params, "$.module") = ?';
-      params.push(module);
     }
     
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -228,23 +210,25 @@ exports.getTasks = async (req, res) => {
     
     const [tasks] = await db.query(query, params);
     
-    // 解析params字段
-    const parsedTasks = tasks.map(task => ({
-      ...task,
-      params: JSON.parse(task.params)
-    }));
+    // 解析命令参数
+    const parsedTasks = tasks.map(task => {
+      const params = parseCommandParams(task.command);
+      return {
+        ...task,
+        params
+      };
+    });
     
     // 获取总数
-    let countQuery = 'SELECT COUNT(*) as total FROM tasks WHERE task_type = \'zgrab2\'';
+    let countQuery = 'SELECT COUNT(*) as total FROM tasks WHERE task_type = \'zgrab2\' AND user_id = ?';
+    const countParams = [req.user.id];
+    
     if (status) {
       countQuery += ' AND status = ?';
-    }
-    if (module) {
-      countQuery += ' AND JSON_EXTRACT(params, "$.module") = ?';
+      countParams.push(status);
     }
     
-    const [[{ total }]] = await db.query(countQuery, 
-      [status, module].filter(Boolean));
+    const [[{ total }]] = await db.query(countQuery, countParams);
     
     res.json({
       success: true,
@@ -266,6 +250,33 @@ exports.getTasks = async (req, res) => {
 };
 
 /**
+ * 解析命令参数
+ */
+function parseCommandParams(command) {
+  const params = {};
+  
+  // 提取模块名
+  const moduleMatch = command.match(/zgrab2\s+(\w+)/);
+  if (moduleMatch) {
+    params.module = moduleMatch[1];
+  }
+  
+  // 提取端口
+  const portMatch = command.match(/--port\s+(\d+)/);
+  if (portMatch) {
+    params.port = portMatch[1];
+  }
+  
+  // 提取目标
+  const targetMatch = command.match(/([^\s]+)$/);
+  if (targetMatch) {
+    params.target = targetMatch[1];
+  }
+  
+  return params;
+}
+
+/**
  * 获取任务详情
  */
 exports.getTaskDetails = async (req, res) => {
@@ -275,17 +286,18 @@ exports.getTaskDetails = async (req, res) => {
     const [[task]] = await db.query(`
       SELECT 
         id,
+        command,
+        description,
         task_type,
-        params,
         status,
         created_at,
         completed_at,
         output_path,
-        error_message,
-        whitelist_id
+        log_path,
+        error_message
       FROM tasks
-      WHERE id = ? AND task_type = 'zgrab2'
-    `, [taskId]);
+      WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
     
     if (!task) {
       return res.status(404).json({
@@ -294,13 +306,13 @@ exports.getTaskDetails = async (req, res) => {
       });
     }
     
-    // 解析params字段
-    const params = JSON.parse(task.params);
+    // 解析命令参数
+    const params = parseCommandParams(task.command);
     
     // 读取结果文件
     let result = null;
-    if (params.outputFile && fs.existsSync(params.outputFile)) {
-      result = fs.readFileSync(params.outputFile, 'utf8');
+    if (task.output_path && fs.existsSync(task.output_path)) {
+      result = fs.readFileSync(task.output_path, 'utf8');
       try {
         result = JSON.parse(result);
       } catch (e) {
@@ -310,8 +322,8 @@ exports.getTaskDetails = async (req, res) => {
     
     // 读取日志文件
     let log = null;
-    if (params.logFile && fs.existsSync(params.logFile)) {
-      log = fs.readFileSync(params.logFile, 'utf8');
+    if (task.log_path && fs.existsSync(task.log_path)) {
+      log = fs.readFileSync(task.log_path, 'utf8');
     }
     
     res.json({
@@ -341,8 +353,8 @@ exports.deleteTask = async (req, res) => {
     
     // 获取任务详情以删除相关文件
     const [[task]] = await db.query(`
-      SELECT params FROM tasks WHERE id = ? AND task_type = 'zgrab2'
-    `, [taskId]);
+      SELECT output_path, log_path FROM tasks WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
     
     if (!task) {
       return res.status(404).json({
@@ -351,18 +363,13 @@ exports.deleteTask = async (req, res) => {
       });
     }
     
-    const params = JSON.parse(task.params);
-    
     // 删除结果文件和日志文件
     try {
-      if (params.outputFile && fs.existsSync(params.outputFile)) {
-        fs.unlinkSync(params.outputFile);
+      if (task.output_path && fs.existsSync(task.output_path)) {
+        fs.unlinkSync(task.output_path);
       }
-      if (params.logFile && fs.existsSync(params.logFile)) {
-        fs.unlinkSync(params.logFile);
-      }
-      if (params.configFile && fs.existsSync(params.configFile)) {
-        fs.unlinkSync(params.configFile);
+      if (task.log_path && fs.existsSync(task.log_path)) {
+        fs.unlinkSync(task.log_path);
       }
     } catch (e) {
       logger.error('删除任务文件失败:', e);
@@ -392,8 +399,8 @@ exports.downloadResult = async (req, res) => {
     const { taskId } = req.params;
     
     const [[task]] = await db.query(`
-      SELECT params FROM tasks WHERE id = ? AND task_type = 'zgrab2'
-    `, [taskId]);
+      SELECT output_path FROM tasks WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
     
     if (!task) {
       return res.status(404).json({
@@ -402,16 +409,14 @@ exports.downloadResult = async (req, res) => {
       });
     }
     
-    const params = JSON.parse(task.params);
-    
-    if (!params.outputFile || !fs.existsSync(params.outputFile)) {
+    if (!task.output_path || !fs.existsSync(task.output_path)) {
       return res.status(404).json({
         success: false,
         message: '结果文件不存在'
       });
     }
     
-    res.download(params.outputFile);
+    res.download(task.output_path);
   } catch (error) {
     logger.error('下载zgrab2结果失败:', error);
     res.status(500).json({
@@ -429,8 +434,8 @@ exports.downloadLog = async (req, res) => {
     const { taskId } = req.params;
     
     const [[task]] = await db.query(`
-      SELECT params FROM tasks WHERE id = ? AND task_type = 'zgrab2'
-    `, [taskId]);
+      SELECT log_path FROM tasks WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
     
     if (!task) {
       return res.status(404).json({
@@ -439,16 +444,14 @@ exports.downloadLog = async (req, res) => {
       });
     }
     
-    const params = JSON.parse(task.params);
-    
-    if (!params.logFile || !fs.existsSync(params.logFile)) {
+    if (!task.log_path || !fs.existsSync(task.log_path)) {
       return res.status(404).json({
         success: false,
         message: '日志文件不存在'
       });
     }
     
-    res.download(params.logFile);
+    res.download(task.log_path);
   } catch (error) {
     logger.error('下载zgrab2日志失败:', error);
     res.status(500).json({
@@ -476,6 +479,90 @@ exports.getSupportedModules = async (req, res) => {
     res.status(500).json({
       success: false,
       message: '获取支持的模块列表失败'
+    });
+  }
+};
+
+/**
+ * 获取任务状态
+ */
+exports.getTaskStatus = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    const [[task]] = await db.query(`
+      SELECT status, created_at, completed_at, error_message
+      FROM tasks
+      WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: '任务不存在'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: task
+    });
+  } catch (error) {
+    logger.error('获取zgrab2任务状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取zgrab2任务状态失败'
+    });
+  }
+};
+
+/**
+ * 获取任务进度
+ */
+exports.getTaskProgress = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    const [[task]] = await db.query(`
+      SELECT status, created_at, completed_at
+      FROM tasks
+      WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
+    `, [taskId, req.user.id]);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: '任务不存在'
+      });
+    }
+    
+    // 计算进度百分比
+    let progress = 0;
+    if (task.status === 'completed') {
+      progress = 100;
+    } else if (task.status === 'running') {
+      // 对于运行中的任务，可以根据时间估算进度
+      const startTime = new Date(task.created_at);
+      const now = new Date();
+      const elapsed = now - startTime;
+      // 假设任务平均运行时间为5分钟
+      progress = Math.min(Math.floor((elapsed / (5 * 60 * 1000)) * 100), 95);
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        status: task.status,
+        progress,
+        created_at: task.created_at,
+        completed_at: task.completed_at
+      }
+    });
+  } catch (error) {
+    logger.error('获取zgrab2任务进度失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '获取zgrab2任务进度失败'
     });
   }
 };

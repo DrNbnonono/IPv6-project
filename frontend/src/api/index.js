@@ -233,6 +233,7 @@ export default {
 
   // 文档相关 API
   docs: {
+    // XMap 文档相关
     getList(lang) {
       return apiClient.get(`/docs/${lang}`)
     },
@@ -241,6 +242,23 @@ export default {
     },
     updateContent(lang, docId, content) {
       return apiClient.put(`/docs/${lang}/${docId}`, { content })
+    },
+    
+    // ZGrab2 文档相关
+    getZgrab2List(lang) {
+      return apiClient.get(`/docs/zgrab2/${lang}`)
+    },
+    getZgrab2Content(lang, docId) {
+      return apiClient.get(`/docs/zgrab2/${lang}/${docId}`)
+    },
+    updateZgrab2Content(lang, docId, content) {
+      return apiClient.put(`/docs/zgrab2/${lang}/${docId}`, { content })
+    },
+    getZgrab2Toc(lang) {
+      return apiClient.get(`/docs/zgrab2/${lang}/toc`)
+    },
+    getZgrab2Modules() {
+      return apiClient.get('/docs/zgrab2/modules')
     }
   },
 

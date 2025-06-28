@@ -17,6 +17,28 @@
           "scanOptions": "Scan Options",
           "networkOptions": "Network Options"
         }
+      },
+      "zgrab2Help": {
+        "title": "ZGrab2 Documentation",
+        "loading": "Loading documentation...",
+        "loadError": "Failed to load document"
+      },
+      "Home": "Home",
+      "Base Flags": "Base Flags",
+      "TLS Flags": "TLS Flags",
+      "Protocols": "Protocols",
+      "Development": "Development",
+      "Performance Tuning": "Performance Tuning",
+      "Adding New Modules": "Adding New Modules",
+      "Scanner Details": "Scanner Details",
+      "Integration Test Details": "Integration Test Details",
+      "Schema Details": "Schema Details",
+      "common": {
+        "save": "Save",
+        "edit": "Edit",
+        "cancel": "Cancel",
+        "saveSuccess": "Saved successfully",
+        "saveFailed": "Save failed"
       }
     },
     "zh": {
@@ -37,6 +59,28 @@
           "scanOptions": "扫描选项",
           "networkOptions": "网络选项"
         }
+      },
+      "zgrab2Help": {
+        "title": "ZGrab2 文档",
+        "loading": "正在加载文档...",
+        "loadError": "加载文档失败"
+      },
+      "Home": "首页",
+      "Base Flags": "基础标志",
+      "TLS Flags": "TLS标志",
+      "Protocols": "协议模块",
+      "Development": "开发指南",
+      "Performance Tuning": "性能调优",
+      "Adding New Modules": "添加新模块",
+      "Scanner Details": "扫描器详情",
+      "Integration Test Details": "集成测试详情",
+      "Schema Details": "架构详情",
+      "common": {
+        "save": "保存",
+        "edit": "编辑",
+        "cancel": "取消",
+        "saveSuccess": "保存成功",
+        "saveFailed": "保存失败"
       }
     }
   }

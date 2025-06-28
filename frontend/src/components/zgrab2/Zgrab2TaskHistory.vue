@@ -5,7 +5,7 @@
         <div class="task-header">
           <div class="task-title">
             <span class="task-id">#{{ task.id }}</span>
-            <span class="task-description">{{ task.params.description || '无描述' }}</span>
+            <span class="task-description">{{ task.description || '无描述' }}</span>
           </div>
           <div class="task-status" :class="task.status">
             {{ getStatusText(task.status) }}
@@ -15,11 +15,15 @@
         <div class="task-info">
           <div class="info-row">
             <span class="info-label">模块:</span>
-            <span class="info-value">{{ task.params.module }}</span>
+            <span class="info-value">{{ task.params?.module || '未知' }}</span>
           </div>
           <div class="info-row">
             <span class="info-label">目标:</span>
-            <span class="info-value">{{ task.params.target }}</span>
+            <span class="info-value">{{ task.params?.target || '未知' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">端口:</span>
+            <span class="info-value">{{ task.params?.port || '默认' }}</span>
           </div>
           <div class="info-row">
             <span class="info-label">创建时间:</span>
@@ -64,20 +68,20 @@
     <!-- 分页控件 -->
     <div v-if="pagination && pagination.totalPages > 1" class="pagination">
       <button 
-        :disabled="pagination.currentPage === 1"
-        @click="$emit('page-change', pagination.currentPage - 1)"
+        :disabled="pagination.page === 1"
+        @click="$emit('page-change', pagination.page - 1)"
         class="btn btn-page"
       >
         <i class="icon-arrow-left"></i> 上一页
       </button>
       
       <span class="page-info">
-        第 {{ pagination.currentPage }} 页，共 {{ pagination.totalPages }} 页
+        第 {{ pagination.page }} 页，共 {{ pagination.totalPages }} 页
       </span>
       
       <button 
-        :disabled="pagination.currentPage === pagination.totalPages"
-        @click="$emit('page-change', pagination.currentPage + 1)"
+        :disabled="pagination.page === pagination.totalPages"
+        @click="$emit('page-change', pagination.page + 1)"
         class="btn btn-page"
       >
         下一页 <i class="icon-arrow-right"></i>
@@ -97,7 +101,7 @@ const props = defineProps({
   pagination: {
     type: Object,
     default: () => ({
-      currentPage: 1,
+      page: 1,
       totalPages: 1
     })
   }

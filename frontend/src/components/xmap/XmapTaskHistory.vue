@@ -38,72 +38,62 @@
               <th>任务ID</th>
               <th>状态</th>
               <th>创建时间</th>
+              <th>执行命令</th>
+              <th>任务描述</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            <template v-for="task in tasks" :key="task.id">
-              <!-- 主任务行 -->
-              <tr @click="toggleTaskExpansion(task.id)" class="task-row">
-                <td>{{ task.id }}</td>
-                <td :class="'status-' + task.status">
-                  <span>{{ getStatusText(task.status) }}</span>
-                  <span v-if="task.error_message" class="error-hint" title="查看错误详情">!</span>
-                </td>
-                <td>{{ formatDate(task.created_at) }}</td>
-                <td class="actions">
-                  <button 
-                    v-if="task.status === 'running'"
-                    @click.stop="$emit('cancel-task', task.id)"
-                    class="btn btn-warning"
-                    title="取消任务"
-                  >
-                    <i class="icon icon-cancel"></i>
-                  </button>
-                  
-                  <button 
-                    v-if="['pending', 'completed', 'failed', 'canceled'].includes(task.status)"
-                    @click.stop="handleDelete(task)"
-                    class="btn btn-danger"
-                    title="删除任务"
-                  >
-                    <i class="icon icon-delete"></i>
-                  </button>
-                  
-                  <button 
-                    v-if="['completed', 'failed', 'canceled'].includes(task.status) && task.output_path"
-                    @click.stop="$emit('download-result', task.id)"
-                    class="btn btn-success"
-                    title="下载结果"
-                  >
-                    <i class="icon icon-download"></i>
-                  </button>
-                  
-                  <button 
-                    @click.stop="$emit('view-details', task.id)"
-                    class="btn btn-info"
-                    title="查看详情"
-                  >
-                    <i class="icon icon-detail"></i>
-                  </button>
-                </td>
-              </tr>
-              
-              <!-- 展开的命令行 -->
-              <tr v-if="expandedTasks.includes(task.id)" class="command-row">
-                <td colspan="4">
-                  <div class="command-container">
-                    <div class="command-line">
-                      <strong>执行命令:</strong> 
-                      <code>{{ task.command }}</code>
-                    </div>
-                    <div v-if="task.description" class="task-description">
-                      <strong>任务描述:</strong> {{ task.description }}
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </template>
+            <tr v-for="task in tasks" :key="task.id" class="task-row">
+              <td>{{ task.id }}</td>
+              <td :class="'status-' + task.status">
+                <span>{{ getStatusText(task.status) }}</span>
+                <span v-if="task.error_message" class="error-hint" title="查看错误详情">!</span>
+              </td>
+              <td>{{ formatDate(task.created_at) }}</td>
+              <td class="command-cell">
+                <code>{{ task.command }}</code>
+              </td>
+              <td class="description-cell">
+                {{ task.description || '无描述' }}
+              </td>
+              <td class="actions">
+                <button 
+                  v-if="task.status === 'running'"
+                  @click="$emit('cancel-task', task.id)"
+                  class="btn btn-warning"
+                  title="取消任务"
+                >
+                  <i class="icon icon-cancel"></i>
+                </button>
+                
+                <button 
+                  v-if="['pending', 'completed', 'failed', 'canceled'].includes(task.status)"
+                  @click="handleDelete(task)"
+                  class="btn btn-danger"
+                  title="删除任务"
+                >
+                  <i class="icon icon-delete"></i>
+                </button>
+                
+                <button 
+                  v-if="['completed', 'failed', 'canceled'].includes(task.status) && task.output_path"
+                  @click="$emit('download-result', task.id)"
+                  class="btn btn-success"
+                  title="下载结果"
+                >
+                  <i class="icon icon-download"></i>
+                </button>
+                
+                <button 
+                  @click="$emit('view-details', task.id)"
+                  class="btn btn-info"
+                  title="查看详情"
+                >
+                  <i class="icon icon-detail"></i>
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -167,17 +157,7 @@ const emit = defineEmits([
   'create-task'
 ])
 
-const expandedTasks = ref([])
 const filterStatus = ref('')
-
-const toggleTaskExpansion = (taskId) => {
-  const index = expandedTasks.value.indexOf(taskId)
-  if (index >= 0) {
-    expandedTasks.value.splice(index, 1)
-  } else {
-    expandedTasks.value.push(taskId)
-  }
-}
 
 const handleDelete = (task) => {
   if (confirm(`确定要删除任务 ${task.id} 吗？此操作将删除任务记录和相关文件，且不可恢复。`)) {
@@ -347,7 +327,6 @@ const formatDate = (dateString) => {
   }
   
   .task-row {
-    cursor: pointer;
     transition: all 0.2s ease;
     
     &:hover {
@@ -355,16 +334,27 @@ const formatDate = (dateString) => {
     }
   }
   
-  .command-row {
-    background-color: #f8fafc;
+  .command-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     
-    td {
-      padding: 0;
+    code {
+      display: inline;
+      padding: 0.2rem 0.4rem;
+      background-color: #edf2f7;
+      border-radius: 3px;
+      font-family: monospace;
     }
-    
-    .command-container {
-      padding: 1rem;
-    }
+  }
+  
+  .description-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #718096;
   }
 }
 
@@ -453,24 +443,6 @@ const formatDate = (dateString) => {
     background-color: #4299e1;
     color: white;
   }
-}
-
-.command-line {
-  margin-bottom: 0.5rem;
-  word-break: break-all;
-  
-  code {
-    display: inline;
-    padding: 0.2rem 0.4rem;
-    background-color: #edf2f7;
-    border-radius: 3px;
-    font-family: monospace;
-  }
-}
-
-.task-description {
-  color: #718096;
-  font-size: 0.95rem;
 }
 
 .pagination {
