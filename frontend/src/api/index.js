@@ -462,8 +462,10 @@ export default {
     getPrefixesByAsn(asn) {
       return apiClient.get(`/database/prefixes/by-asn/${asn}`);
     },
-  },       
-
+  }, 
+  
+  
+  // 文件管理API
   files: {
     uploadFile(formData) {
       return apiClient.post('/files/upload', formData, {

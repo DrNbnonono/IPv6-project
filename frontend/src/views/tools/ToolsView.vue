@@ -37,9 +37,9 @@
           <span class="tool-count">{{ availableTools.length }}个工具</span>
         </div>
         <nav class="tools-nav">
-          <router-link 
-            v-for="tool in availableTools" 
-            :key="tool.path" 
+          <router-link
+            v-for="tool in availableTools"
+            :key="tool.path"
             :to="tool.path"
             class="nav-item"
             active-class="active"
@@ -90,113 +90,7 @@
           <router-view />
         </div>
         
-        <div class="whitelist-management">
-      <div class="section-header">
-        <h3><i class="icon icon-whitelist"></i> 白名单管理</h3>
-        <div class="tool-filter">
-          <select v-model="currentTool" @change="fetchWhitelists" class="filter-select">
-            <option value="">所有工具</option>
-            <option v-for="tool in availableTools" :key="tool" :value="tool">
-              {{ tool }}
-            </option>
-          </select>
-          <button class="btn btn-refresh" @click="fetchWhitelists">
-            <i class="icon icon-refresh"></i> 刷新
-          </button>
-        </div>
-      </div>
-      
-      <!-- 上传区域 -->
-      <div class="upload-section">
-        <div class="upload-card">
-          <h4>上传新白名单</h4>
-          <div class="form-group">
-            <label>选择工具</label>
-            <select v-model="uploadTool" class="form-select">
-              <option v-for="tool in availableTools" 
-                      :key="tool.path" 
-                      :value="tool.name.replace('探测', '').toLowerCase()">
-                {{ tool.name }}
-              </option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>文件描述</label>
-            <input v-model="uploadDescription" 
-                  type="text" 
-                  class="form-input" 
-                  placeholder="请输入文件描述(必填)">
-          </div>
-          <div class="form-group">
-            <label>选择文件 (.txt)</label>
-            <label class="file-upload-btn">
-              <input type="file" @change="handleFileSelect" accept=".txt" ref="fileInput">
-              <span v-if="!selectedFile" class="btn btn-outline">选择文件</span>
-              <span v-else class="file-name">{{ selectedFile.name }}</span>
-            </label>
-          </div>
-          <button class="btn btn-primary" 
-                  @click="handleUpload" 
-                  :disabled="!canUpload">
-            <i class="icon icon-upload"></i> 上传白名单
-          </button>
-        </div>
-      </div>
-      
-      <!-- 白名单列表 -->
-      <div class="whitelist-table">
-        <table>
-          <thead>
-            <tr>
-              <th>工具</th>
-              <th>描述</th>
-              <th>文件名</th>
-              <th>上传时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="file in whitelists.data" :key="file.id">
-              <td>{{ file.tool_name }}</td>
-              <td>{{ file.description || '无描述' }}</td>
-              <td>{{ file.file_name }}</td>
-              <td>{{ formatDate(file.uploaded_at) }}</td>
-              <td>
-                <button class="btn btn-danger" @click="confirmDelete(file.id)">
-                  <i class="icon icon-delete"></i> 删除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        
-        <!-- 分页控件 -->
-        <div v-if="whitelists.pagination.total > 0" class="pagination">
-          <button 
-            @click="changePage(whitelists.pagination.page - 1)"
-            :disabled="whitelists.pagination.page <= 1"
-            class="btn btn-pagination"
-          >
-            上一页
-          </button>
-          <span class="page-info">
-            第 {{ whitelists.pagination.page }} 页 / 共 {{ whitelists.pagination.totalPages }} 页
-          </span>
-          <button 
-            @click="changePage(whitelists.pagination.page + 1)"
-            :disabled="whitelists.pagination.page >= whitelists.pagination.totalPages"
-            class="btn btn-pagination"
-          >
-            下一页
-          </button>
-        </div>
-        
-        <div v-if="whitelists.data.length === 0" class="empty-state">
-          <i class="icon icon-empty"></i>
-          <p>暂无白名单文件</p>
-        </div>
-      </div>
-    </div>
+
 
 
         <footer class="tools-footer">
@@ -227,7 +121,7 @@
 </template>
 
 <script setup>
-  import { ref, onMounted, computed } from 'vue'
+  import { ref, onMounted } from 'vue'
   import { useAuthStore } from '@/stores/auth'
   import { useRouter } from 'vue-router'
   import axios from 'axios'
@@ -243,22 +137,7 @@
   const lastUpdate = ref(new Date().toLocaleDateString())
 
 
-  const currentTool = ref('')
-  const whitelists = ref({
-    data: [],
-    pagination: {
-      page: 1,
-      pageSize: 10,
-      total: 0,
-      totalPages: 1
-    }
-  })
 
-  // 上传相关状态
-  const uploadTool = ref('xmap')
-  const uploadDescription = ref('')
-  const selectedFile = ref(null)
-  const fileInput = ref(null)
   // 跳转到探测平台
   const goToDetectionPlatform = () => {
     router.push('/detection-platform')
@@ -269,6 +148,7 @@
     { path: '/tools/database', name: 'database', icon: 'icon-database'},
     { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
     { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
+    { path: '/tools/files', name: '文件管理', icon: 'icon-files' },
     { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
     { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
   ])
@@ -297,96 +177,7 @@
     }
   }
 
-  // 计算属性
-  const canUpload = computed(() => {
-    return uploadTool.value && selectedFile.value
-  })
 
-  // 获取白名单列表
-  const fetchWhitelists = async () => {
-    try {
-      const response = await axios.get('/api/xmap/whitelists', {
-        params: {
-          tool: currentTool.value,
-          page: whitelists.value.pagination.page,
-          pageSize: whitelists.value.pagination.pageSize
-        }
-      })
-      
-      if (response.data.success) {
-        whitelists.value.data = response.data.data
-        whitelists.value.pagination = response.data.pagination
-      }
-    } catch (error) {
-      console.error('获取白名单列表失败:', error)
-    }
-  }
-
-  // 分页切换
-  const changePage = (newPage) => {
-    if (newPage < 1 || newPage > whitelists.value.pagination.totalPages) return
-    whitelists.value.pagination.page = newPage
-    fetchWhitelists()
-  }
-
-  // 文件选择处理
-  const handleFileSelect = (event) => {
-    selectedFile.value = event.target.files[0]
-  }
-
-  // 上传文件
-  const handleUpload = async () => {
-    if (!canUpload.value) return
-    
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    formData.append('tool', uploadTool.value)
-    formData.append('description', uploadDescription.value)
-    
-    try {
-      const response = await axios.post('/api/xmap/whitelist', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
-      
-      if (response.data.success) {
-        // 上传成功后重置表单并刷新列表
-        uploadDescription.value = ''
-        selectedFile.value = null
-        if (fileInput.value) fileInput.value.value = ''
-        fetchWhitelists()
-      }
-    } catch (error) {
-      console.error('上传失败:', error)
-    }
-  }
-
-  // 删除确认
-  const confirmDelete = (id) => {
-    if (confirm('确定要删除这个白名单文件吗？此操作不可恢复。')) {
-      deleteWhitelist(id)
-    }
-  }
-
-  // 删除文件
-  const deleteWhitelist = async (id) => {
-    try {
-      const response = await axios.delete(`/api/xmap/whitelist/${id}`)
-      if (response.data.success) {
-        fetchWhitelists() // 刷新列表
-      }
-    } catch (error) {
-      console.error('删除失败:', error)
-    }
-  }
-
-  // 格式化日期
-  const formatDate = (dateString) => {
-    if (!dateString) return ''
-    const date = new Date(dateString)
-    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
-  }
 
   // 获取任务统计
   const fetchTaskStats = async () => {
@@ -433,7 +224,6 @@
   onMounted(() => {
     fetchUserInfo()
     fetchTaskStats()
-    fetchWhitelists()
     // 模拟在线用户数变化
     setInterval(() => {
       onlineUsers.value = Math.max(5, Math.floor(Math.random() * 20))
@@ -860,79 +650,7 @@
   }
 }
 
-.whitelist-management {
-  margin-top: 2rem; // 减小外边距
-  padding: 1.5rem; // 减小内边距
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem; // 减小外边距
-  
-  h3 {
-    margin: 0;
-    font-size: 1.2rem; // 略微减小字体
-    color: #35495e;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-}
-
-.tool-filter {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem; // 减小间距
-}
-
-.upload-section {
-  margin-bottom: 1.5rem; // 减小外边距
-}
-
-.upload-card {
-  padding: 1rem; // 减小内边距
-  background-color: #f8fafc;
-  border-radius: 8px;
-  border: 1px dashed #cbd5e0;
-  
-  h4 {
-    margin-top: 0;
-    margin-bottom: 1rem; // 减小外边距
-    color: #4a5568;
-    font-size: 1.1rem; // 略微减小字体
-  }
-}
-
-.form-group {
-  margin-bottom: 1rem; // 减小外边距
-  
-  label {
-    display: block;
-    margin-bottom: 0.4rem; // 减小外边距
-    font-weight: 500;
-    color: #4a5568;
-    font-size: 0.9rem; // 略微减小字体
-  }
-}
-
-.form-select, .form-input {
-  width: 100%;
-  padding: 0.7rem; // 减小内边距
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 0.9rem; // 略微减小字体
-  
-  &:focus {
-    outline: none;
-    border-color: #4299e1;
-    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2); // 调整阴影
-  }
-}
 .btn-primary {
   background-color: #42b983;
   color: white;
@@ -968,76 +686,7 @@
   }
 }
 
-.file-upload-btn {
-  display: block;
-  padding: 0.7rem; // 减小内边距
-  background-color: #f7fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background-color: #edf2f7;
-    border-color: #cbd5e0;
-  }
-  
-  .file-name {
-    color: #4299e1;
-    font-weight: 500;
-  }
-}
 
-
-.whitelist-table {
-  margin-top: 1.5rem; // 减小外边距
-  overflow-x: auto;
-  
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    
-    th, td {
-      padding: 0.8rem; // 减小内边距
-      text-align: left;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    
-    th {
-      background-color: #f8fafc;
-      font-weight: 500;
-      color: #4a5568;
-      font-size: 0.9rem; // 略微减小字体
-    }
-    
-    tr:hover {
-      background-color: #f8fafc;
-    }
-  }
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.8rem; // 减小间距
-  margin-top: 1.5rem; // 减小外边距
-  padding-top: 0.8rem; // 减小内边距
-  border-top: 1px solid #e2e8f0;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 2rem 0; // 减小内边距
-  color: #a0aec0;
-  
-  i {
-    font-size: 1.8rem; // 减小图标大小
-    opacity: 0.5;
-    margin-bottom: 0.8rem; // 减小外边距
-  }
-}
 
 
 
@@ -1063,7 +712,6 @@
 .icon-phone:before { content: "📱"; }
 .icon-team:before { content: "👥"; }
 .icon-time:before { content: "⏱️"; }
-.icon-whitelist:before { content: "📋"; }
 .icon-delete:before { content: "🗑️"; }
 .icon-empty:before { content: "📭"; }
 .icon-database:before { content: "🗄️"; }
@@ -1071,4 +719,5 @@
 .icon-addr6:before { content: "🌐"; } // 添加addr6图标示例
 .icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例
 .icon-upload:before { content: "📤"; } // 添加上传图标示例
+.icon-files:before { content: "📁"; } // 添加文件管理图标
 </style>

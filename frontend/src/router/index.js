@@ -9,6 +9,7 @@ const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue
 const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 const Zgrab2DashboardView = () => import('@/views/tools/zgrab2/Zgrab2DashboardView.vue')
 const Zgrab2HelpView = () => import('@/views/tools/zgrab2/Zgrab2HelpView.vue')
+const FileManagementView = () => import('@/views/tools/files/FileManagementView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 
 const routes = [
@@ -45,6 +46,12 @@ const routes = [
         name: 'zgrab2',
         component: Zgrab2DashboardView,
         meta: { title: 'Zgrab2' }
+      },
+      {
+        path: 'files',
+        name: 'files',
+        component: FileManagementView,
+        meta: { title: '文件管理' }
       },
       {
         path: '/tools/database',

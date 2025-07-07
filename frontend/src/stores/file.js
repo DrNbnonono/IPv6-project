@@ -10,21 +10,12 @@ export const useFileStore = defineStore('file', {
   }),
   
   actions: {
-    async uploadFile(formData, onProgress) {
+    async uploadFile(formData) {
       try {
         this.isLoading = true;
         this.uploadProgress = 0;
-        
-        // 创建自定义配置以跟踪上传进度
-        const config = {
-          onUploadProgress: progressEvent => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            this.uploadProgress = percentCompleted;
-            if (onProgress) onProgress(percentCompleted);
-          }
-        };
-        
-        const response = await api.files.uploadFile(formData, config);
+
+        const response = await api.files.uploadFile(formData);
         console.log('文件上传成功:', response);
         return response;
       } catch (error) {
@@ -74,6 +65,20 @@ export const useFileStore = defineStore('file', {
         return response;
       } catch (error) {
         console.error('下载文件失败:', error);
+        this.error = error.response?.data?.message || error.message;
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    async getFileContent(fileId) {
+      try {
+        this.isLoading = true;
+        const response = await api.files.getFileContent(fileId);
+        return response;
+      } catch (error) {
+        console.error('获取文件内容失败:', error);
         this.error = error.response?.data?.message || error.message;
         throw error;
       } finally {
