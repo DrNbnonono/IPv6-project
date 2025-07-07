@@ -35,28 +35,34 @@ apiClient.interceptors.request.use(config => {
   return Promise.reject(error)
 })
 
-// 响应拦截器 - 处理未授权错误
+// 响应拦截器 - 处理未授权错误和统一响应格式
 apiClient.interceptors.response.use(response => {
   console.log('[Axios] 响应成功:', response.config.url)
+  console.log('[Axios] 响应类型:', response.config.responseType)
+
+  // 对于blob响应，返回完整的response对象
+  if (response.config.responseType === 'blob') {
+    console.log('[Axios] Blob响应，返回完整response')
+    return response
+  }
+
+  console.log('[Axios] 响应数据:', response.data)
   return response.data
-}, error => {
+}, async error => {
   if (error.response?.status === 401) {
-    const authStore = useAuthStore()
-    authStore.logout()
-    window.location.href = '/login'
+    if (!error.config._retry) {
+      error.config._retry = true
+      const authStore = useAuthStore()
+      await authStore.refreshToken()
+      return apiClient(error.config)
+    } else {
+      const authStore = useAuthStore()
+      authStore.logout()
+      window.location.href = '/login'
+    }
   }
   return Promise.reject(error)
 })
-
-// src/api/index.js
-apiClient.interceptors.response.use(response => response, async error => {
-    if (error.response?.status === 401 && !error.config._retry) {
-      error.config._retry = true
-      await authStore.refreshToken()
-      return apiClient(error.config)
-    }
-    return Promise.reject(error)
-  })
 
 export default {
   // 认证相关 API
@@ -106,39 +112,63 @@ export default {
     
   },
 
-  //zgrab2相关的API，后面一定会修改,等我无聊了
+  // Zgrab2相关API
   zgrab2: {
+    // 获取支持的模块列表
+    getSupportedModules() {
+      return apiClient.get('/zgrab2/modules');
+    },
+
+    // 文件管理功能已移至统一的 /files 接口
+
+    // 创建扫描任务
     createTask(params) {
       return apiClient.post('/zgrab2', params);
     },
+
+    // 取消任务
+    cancelTask(taskId) {
+      return apiClient.post(`/zgrab2/cancel/${taskId}`);
+    },
+
+    // 获取任务列表
     getTasks(params) {
-      return apiClient.get('/zgrab2', { params });
+      return apiClient.get('/zgrab2/tasks', { params });
     },
+
+    // 获取任务详情
     getTaskDetails(taskId) {
-      return apiClient.get(`/zgrab2/${taskId}`);
+      return apiClient.get(`/zgrab2/task/${taskId}`);
     },
+
+    // 获取任务状态
+    getTaskStatus(taskId) {
+      return apiClient.get(`/zgrab2/task/${taskId}/status`);
+    },
+
+    // 获取任务进度
+    getTaskProgress(taskId) {
+      return apiClient.get(`/zgrab2/task/${taskId}/progress`);
+    },
+
+    // 下载结果文件
+    downloadResult(taskId) {
+      return apiClient.get(`/zgrab2/result/${taskId}`, {
+        responseType: 'blob'
+      });
+    },
+
+    // 获取日志内容（在线预览）
+    getLogContent(taskId) {
+      return apiClient.get(`/zgrab2/log/${taskId}`);
+    },
+
+    // 删除任务
     deleteTask(taskId) {
       return apiClient.delete(`/zgrab2/${taskId}`);
     },
-    downloadResult(taskId) {
-      return apiClient.get(`/zgrab2/${taskId}/result`, {
-        responseType: 'blob'
-      });
-    },
-    downloadLog(taskId) {
-      return apiClient.get(`/zgrab2/${taskId}/log`, {
-        responseType: 'blob'
-      });
-    },
-    getSupportedModules() {
-      return apiClient.get('/zgrab2/supported-modules');
-    },
-    getTaskStatus(taskId) {
-      return apiClient.get(`/zgrab2/${taskId}/status`);
-    },
-    getTaskProgress(taskId) {
-      return apiClient.get(`/zgrab2/${taskId}/progress`);
-    },
+
+    // 文件管理功能已移至统一的 /files 接口
   },
   
   // 探测平台相关 API
@@ -447,9 +477,13 @@ export default {
         }
       });
     },
-    getFiles(toolType) {
-      return apiClient.get('/files', { 
-        params: { toolType } 
+    getFiles(toolType, fileType) {
+      const params = { toolType };
+      if (fileType) {
+        params.fileType = fileType;
+      }
+      return apiClient.get('/files', {
+        params
       });
     },
     deleteFile(fileId) {
@@ -459,6 +493,9 @@ export default {
       return apiClient.get(`/files/${fileId}/download`, {
         responseType: 'blob'
       });
+    },
+    getFileContent(fileId) {
+      return apiClient.get(`/files/${fileId}/content`);
     }
   },
 }

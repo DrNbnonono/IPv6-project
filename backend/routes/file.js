@@ -18,4 +18,7 @@ router.delete('/:id', fileController.deleteFile);
 // 下载文件
 router.get('/:id/download', fileController.downloadFile);
 
+// 获取文件内容
+router.get('/:id/content', fileController.getFileContent);
+
 module.exports = router;

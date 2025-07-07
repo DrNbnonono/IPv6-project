@@ -36,15 +36,22 @@
         </div>
 
         <div class="task-actions">
-          <button 
+          <button
+            v-if="task.status === 'running'"
+            @click="$emit('cancel-task', task.id)"
+            class="btn btn-warning btn-sm"
+          >
+            <i class="icon-stop"></i> 取消任务
+          </button>
+          <button
             v-if="task.status === 'completed'"
-            @click="$emit('download-result', task.id)" 
+            @click="$emit('download-result', task.id)"
             class="btn btn-primary btn-sm"
           >
             <i class="icon-download"></i> 下载结果
           </button>
-          <button 
-            @click="$emit('view-log', task.id)" 
+          <button
+            @click="$emit('view-log', task.id)"
             class="btn btn-secondary btn-sm"
           >
             <i class="icon-file"></i> 查看日志
@@ -112,7 +119,8 @@ const getStatusText = (status) => {
     'pending': '待处理',
     'running': '运行中',
     'completed': '已完成',
-    'failed': '失败'
+    'failed': '失败',
+    'cancelled': '已取消'
   }
   return statusMap[status] || status
 }
@@ -315,6 +323,7 @@ const formatDate = (dateString) => {
 .icon-file:before { content: "📄"; }
 .icon-detail:before { content: "👁️"; }
 .icon-trash:before { content: "🗑️"; }
+.icon-stop:before { content: "⏹️"; }
 .icon-arrow-left:before { content: "←"; }
 .icon-arrow-right:before { content: "→"; }
 

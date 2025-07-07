@@ -136,3 +136,13 @@ config.local.json
 # Package lock files (optional - you might want to keep these)
 # package-lock.json
 # */package-lock.json 
+
+
+xmap_result/
+xmap_log/
+IPv6_addresses/
+zgrab2_logs/
+zgrab2_config/
+zgrab2_input/
+zgrab2_results/
+01-address/

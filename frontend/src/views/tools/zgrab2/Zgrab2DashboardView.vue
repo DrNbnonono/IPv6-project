@@ -26,8 +26,8 @@
     
     <div class="dashboard-content">
       <div v-if="activeTab === 'config'" class="config-section">
-        <Zgrab2TaskForm 
-          @start-scan="handleStartScan"
+        <Zgrab2TaskForm
+          @task-created="handleTaskCreated"
           :is-loading="zgrab2Store.isLoading"
         />
       </div>
@@ -40,6 +40,7 @@
             <option value="running">运行中</option>
             <option value="completed">已完成</option>
             <option value="failed">失败</option>
+            <option value="cancelled">已取消</option>
           </select>
           <button class="btn btn-refresh" @click="refreshTasks">
             <i class="icon-refresh"></i> 刷新
@@ -56,10 +57,11 @@
         <div v-else-if="zgrab2Store.isLoading" class="loading-state">
           <p>正在加载任务...</p> 
         </div>
-        <Zgrab2TaskHistory 
+        <Zgrab2TaskHistory
           v-else
           :tasks="zgrab2Store.tasks"
           :pagination="zgrab2Store.pagination"
+          @cancel-task="handleCancelTask"
           @delete-task="handleDeleteTask"
           @view-log="handleViewLog"
           @download-result="handleDownloadResult"
@@ -122,15 +124,21 @@ const refreshTasks = async () => {
   }
 }
 
-const handleStartScan = async (params) => {
+const handleTaskCreated = async (taskId) => {
+  // 切换到历史记录标签页
+  activeTab.value = 'history'
+  filterStatus.value = ''
+  // 刷新任务列表
+  await refreshTasks()
+}
+
+const handleCancelTask = async (taskId) => {
   try {
-    const result = await zgrab2Store.createTask(params)
-    activeTab.value = 'history'
-    filterStatus.value = ''
-    return result
+    await zgrab2Store.cancelTask(taskId)
+    // 刷新任务列表
+    await refreshTasks()
   } catch (error) {
-    console.error('Scan failed:', error)
-    throw error
+    console.error('取消任务失败:', error)
   }
 }
 
@@ -146,9 +154,18 @@ const handleDeleteTask = async (taskId) => {
 
 const handleViewLog = async (taskId) => {
   try {
-    await zgrab2Store.downloadLog(taskId)
+    console.log('查看日志，taskId:', taskId)
+    const logData = await zgrab2Store.getLogContent(taskId)
+
+    // 显示日志内容（可以用弹窗或者其他方式）
+    if (logData && logData.content) {
+      alert(`日志内容:\n\n${logData.content}`)
+    } else {
+      alert('日志内容为空')
+    }
   } catch (error) {
-    console.error('下载日志失败:', error)
+    console.error('获取日志失败:', error)
+    alert('获取日志失败: ' + (error.message || '未知错误'))
   }
 }
 

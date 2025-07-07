@@ -63,3 +63,12 @@ endpoint="/"
 //向"http://暴露服务设备地址:服务端口"发送GET请求，zgrab2抓回来的全部结果均放到shuffled_http.txt中
 cat server_${tag}_${timestamp}_ip_3210_shuffled.txt | zgrab2 multiple -c zgrab2-${tag}-running.ini -o server_${tag}_${timestamp}_ip_3210_shuffled_http.txt
 
+现在需要将zgrab2控制相关的功能，集成在前端。后端的API虽然已经有一些，但是并不正确
+你可以使用从testaddress.txt这个文件，来测试zgrab2的使用。理解其使用后，参考xmap的后端的集成方式，将zgrab2的功能集成在前端。要求如下
+1. zgrab2的地址文件最后会通过操作，位于/home/ipv6/IPv6-project/zgrab2_inputs目录下
+2. zgrab2的输出文件位于/home/ipv6/IPv6-project/zgrab2_results目录下
+3. zgrab2的输出文件格式为jsonl，即每行一个json对象
+4. zgrab2的输出文件名格式为${taskId}.jsonl，taskId为任务的唯一标识，参考xmap的集成方式
+5. zgrab2的配置文件格式为.ini，配置文件内容如上所示，可以由用户自定义，也可以重新生成.ini文件，某一用户生成的.ini文件同一放置在/home/ipv6/IPv6-project/zgrab2_configs/${userId}目录下，注意上述文件均使用相对路径
+注意后端已经拥有文件上传的API，在fileController.js中，你可以参考该API，上传地址文件，配置文件等，前端需要参考file的上传下载接口，来实现文件的上传和下载.不需要自行实现，只需要稍微进行修改。
+除了zgrab2相关的文件，其余文件内容一定不要修改，数据库的建表语言已给出。
