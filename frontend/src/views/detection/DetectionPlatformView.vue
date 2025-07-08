@@ -504,7 +504,7 @@ const loadData = async () => {
         if (!country.last_updated) return latest
         const updateTime = new Date(country.last_updated)
         return updateTime > latest ? updateTime : latest
-      }, new Date(0))
+      }, new Date())
       
       lastDataUpdate.value = latestUpdate.toLocaleString()
     }

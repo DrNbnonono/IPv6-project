@@ -1,0 +1,83 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "张三",
+      "email": "zhangsan@example.com",
+      "age": 25,
+      "active": true,
+      "profile": {
+        "avatar": "https://example.com/avatar1.jpg",
+        "bio": "软件工程师",
+        "location": {
+          "country": "中国",
+          "city": "北京",
+          "coordinates": {
+            "lat": 39.9042,
+            "lng": 116.4074
+          }
+        }
+      },
+      "skills": ["JavaScript", "Python", "Vue.js"],
+      "projects": [
+        {
+          "name": "项目A",
+          "status": "completed",
+          "score": 95.5
+        },
+        {
+          "name": "项目B",
+          "status": "in_progress",
+          "score": null
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "李四",
+      "email": "lisi@example.com",
+      "age": 30,
+      "active": false,
+      "profile": {
+        "avatar": "https://example.com/avatar2.jpg",
+        "bio": "产品经理",
+        "location": {
+          "country": "中国",
+          "city": "上海",
+          "coordinates": {
+            "lat": 31.2304,
+            "lng": 121.4737
+          }
+        }
+      },
+      "skills": ["Product Management", "Data Analysis"],
+      "projects": [
+        {
+          "name": "项目C",
+          "status": "completed",
+          "score": 88.0
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "total_users": 2,
+    "last_updated": "2024-01-15T10:30:00Z",
+    "version": "1.0.0",
+    "settings": {
+      "pagination": {
+        "page_size": 10,
+        "max_pages": 100
+      },
+      "features": {
+        "search_enabled": true,
+        "export_enabled": true,
+        "notifications": {
+          "email": true,
+          "sms": false,
+          "push": true
+        }
+      }
+    }
+  }
+}

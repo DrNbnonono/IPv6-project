@@ -104,6 +104,15 @@ exports.uploadFile = [
             filePrefix = 'zgrab2_input_';
           }
           break;
+        case 'jsonanalysis':
+          if (fileType === 'result') {
+            targetDir = '/home/ipv6/IPv6-project/jsonanalysis';
+            filePrefix = 'json_result_';
+          } else {
+            targetDir = '/home/ipv6/IPv6-project/jsonanalysis';
+            filePrefix = 'json_upload_';
+          }
+          break;
         default:
           targetDir = '/home/ipv6/IPv6-project/uploads';
           filePrefix = 'file-';
@@ -231,48 +240,129 @@ exports.uploadFile = [
 // 获取文件列表
 exports.getFiles = async (req, res) => {
   try {
+    const userId = req.user.id;
     const toolType = req.query.toolType;
-    const fileType = req.query.fileType; // 新增文件类型参数
+    const fileType = req.query.fileType;
+    const listType = req.query.listType || 'upload'; // 'upload' 或 'task'
 
-    console.log('获取文件列表请求参数:', { toolType, fileType });
+    console.log('获取文件列表请求参数:', { userId, toolType, fileType, listType });
 
-    let query = `
-      SELECT w.id, w.file_name, w.file_path, w.description, w.uploaded_at,
-             u.username, t.name as tool_name
-      FROM whitelists w
-      JOIN users u ON w.user_id = u.id
-      JOIN tools t ON w.tool_id = t.id
-      WHERE w.is_deleted = 0
-    `;
+    let files = [];
 
-    const params = [];
+    if (listType === 'upload') {
+      // 获取上传的文件列表
+      let query = `
+        SELECT
+          w.id,
+          w.file_name,
+          w.file_path,
+          w.description,
+          w.uploaded_at,
+          t.name as tool_name,
+          'upload' as source_type
+        FROM whitelists w
+        JOIN tools t ON w.tool_id = t.id
+        WHERE w.user_id = ? AND w.is_deleted = 0
+      `;
 
-    // 如果指定了工具类型，则按工具类型筛选
-    if (toolType) {
-      query += ` AND t.name = ?`;
-      params.push(toolType);
-    }
+      const params = [userId];
 
-    // 如果指定了文件类型，则按文件类型筛选
-    if (fileType && toolType === 'zgrab2') {
-      if (fileType === 'config') {
-        // 配置文件：文件名包含 'config' 或以 .ini 结尾
-        query += ` AND (w.file_name LIKE '%config%' OR w.file_name LIKE '%.ini')`;
-      } else if (fileType === 'input') {
-        // 输入文件：文件名不包含 'config' 且不以 .ini 结尾
-        query += ` AND w.file_name NOT LIKE '%config%' AND w.file_name NOT LIKE '%.ini'`;
+      if (toolType) {
+        query += ' AND t.name = ?';
+        params.push(toolType);
       }
+
+      // 如果指定了文件类型，则按文件类型筛选
+      if (fileType && toolType === 'zgrab2') {
+        if (fileType === 'config') {
+          query += ` AND (w.file_name LIKE '%config%' OR w.file_name LIKE '%.ini')`;
+        } else if (fileType === 'input') {
+          query += ` AND w.file_name NOT LIKE '%config%' AND w.file_name NOT LIKE '%.ini'`;
+        }
+      }
+
+      query += ' ORDER BY w.uploaded_at DESC';
+
+      console.log('执行上传文件查询:', query, params);
+      const [uploadFiles] = await db.query(query, params);
+      files = uploadFiles;
+
+    } else if (listType === 'task') {
+      // 获取任务结果文件列表
+      let query = `
+        SELECT
+          t.id,
+          CONCAT(t.description, ' (任务ID: ', t.id, ')') as file_name,
+          t.output_path as file_path,
+          t.log_path,
+          t.description,
+          t.created_at as uploaded_at,
+          t.completed_at,
+          t.task_type as tool_name,
+          t.status,
+          'task' as source_type
+        FROM tasks t
+        WHERE t.user_id = ?
+      `;
+
+      const params = [userId];
+
+      if (toolType) {
+        query += ' AND t.task_type = ?';
+        params.push(toolType);
+      }
+
+      query += ' ORDER BY t.created_at DESC';
+
+      console.log('执行任务文件查询:', query, params);
+      const [taskFiles] = await db.query(query, params);
+      files = taskFiles;
     }
 
-    query += ` ORDER BY w.uploaded_at DESC`;
-
-    console.log('执行查询:', query, params);
-    const [files] = await db.query(query, params);
     console.log(`查询到 ${files.length} 个文件`);
+
+    // 处理文件信息，添加文件大小等
+    const processedFiles = files.map(file => {
+      let fileSize = null;
+      let logFileSize = null;
+
+      try {
+        if (file.file_path && fs.existsSync(file.file_path)) {
+          const stats = fs.statSync(file.file_path);
+          fileSize = stats.size;
+        }
+
+        // 对于任务文件，也获取日志文件大小
+        if (file.log_path && fs.existsSync(file.log_path)) {
+          const logStats = fs.statSync(file.log_path);
+          logFileSize = logStats.size;
+        }
+      } catch (error) {
+        console.error('获取文件大小失败:', error);
+      }
+
+      // 根据工具类型和文件路径推断文件类型
+      let inferredFileType = null;
+      if (file.tool_name === 'zgrab2' && listType === 'upload') {
+        if (file.file_path && (file.file_path.includes('zgrab2_configs') || file.file_name.endsWith('.ini'))) {
+          inferredFileType = 'config';
+        } else if (file.file_path && (file.file_path.includes('zgrab2_inputs') || file.file_name.endsWith('.txt'))) {
+          inferredFileType = 'input';
+        }
+      }
+
+      return {
+        ...file,
+        tool_type: file.tool_name,
+        file_type: inferredFileType,
+        file_size: fileSize,
+        log_file_size: logFileSize
+      };
+    });
 
     res.json({
       success: true,
-      data: files
+      data: processedFiles
     });
   } catch (error) {
     logger.error('获取文件列表失败:', error);
@@ -339,40 +429,89 @@ exports.deleteFile = async (req, res) => {
 exports.downloadFile = async (req, res) => {
   try {
     const fileId = req.params.id;
-    
-    // 获取文件信息
-    const [files] = await db.query(`
-      SELECT file_name, file_path 
-      FROM whitelists 
-      WHERE id = ? AND is_deleted = 0
-    `, [fileId]);
+    const userId = req.user.id;
+    const fileType = req.query.fileType || 'result'; // 'result' 或 'log'
 
-    if (files.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '文件不存在'
-      });
+    console.log('下载文件请求:', { fileId, userId, fileType });
+
+    let file = null;
+    let filePath = null;
+    let fileName = null;
+
+    // 首先尝试从上传文件表查找
+    const [uploadFiles] = await db.query(`
+      SELECT w.file_name, w.file_path
+      FROM whitelists w
+      WHERE w.id = ? AND w.user_id = ? AND w.is_deleted = 0
+    `, [fileId, userId]);
+
+    if (uploadFiles.length > 0) {
+      file = uploadFiles[0];
+      filePath = file.file_path;
+      fileName = file.file_name;
+    } else {
+      // 如果不是上传文件，尝试从任务表查找
+      const [taskFiles] = await db.query(`
+        SELECT t.id, t.description, t.output_path, t.log_path, t.task_type
+        FROM tasks t
+        WHERE t.id = ? AND t.user_id = ?
+      `, [fileId, userId]);
+
+      if (taskFiles.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: '文件不存在或无权访问'
+        });
+      }
+
+      const task = taskFiles[0];
+
+      if (fileType === 'log') {
+        filePath = task.log_path;
+        fileName = `${task.task_type}_task_${task.id}_log.txt`;
+      } else {
+        filePath = task.output_path;
+        // 根据任务类型确定文件扩展名
+        let extension = '.txt';
+        if (task.task_type === 'zgrab2') {
+          extension = '.jsonl';
+        } else if (task.task_type === 'xmap') {
+          extension = '.json';
+        }
+        fileName = `${task.task_type}_task_${task.id}_result${extension}`;
+      }
     }
 
-    const file = files[0];
-    
     // 检查文件是否存在
-    if (!fs.existsSync(file.file_path)) {
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
         message: '文件不存在或已被删除'
       });
     }
 
+    console.log('准备下载文件:', { filePath, fileName });
+
+    // 根据文件扩展名设置Content-Type
+    let contentType = 'text/plain';
+    if (fileName.endsWith('.json') || fileName.endsWith('.jsonl')) {
+      contentType = 'application/json';
+    } else if (fileName.endsWith('.ini')) {
+      contentType = 'text/plain';
+    }
+
     // 设置响应头
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="${file.file_name}"`);
-    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
     // 创建文件流并发送
-    const fileStream = fs.createReadStream(file.file_path);
+    const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
+
+    console.log('文件下载开始:', fileName);
   } catch (error) {
     logger.error('下载文件失败:', error);
+    console.error('下载文件详细错误:', error);
     res.status(500).json({
       success: false,
       message: '下载文件失败: ' + error.message
@@ -385,43 +524,84 @@ exports.getFileContent = async (req, res) => {
   try {
     const fileId = req.params.id;
     const userId = req.user.id;
+    const fileType = req.query.fileType || 'result'; // 'result' 或 'log'
 
-    // 获取文件信息，验证用户权限
-    const [files] = await db.query(`
+    console.log('获取文件内容请求:', { fileId, userId, fileType });
+
+    let filePath = null;
+    let fileName = null;
+
+    // 首先尝试从上传文件表查找
+    const [uploadFiles] = await db.query(`
       SELECT file_name, file_path
       FROM whitelists
       WHERE id = ? AND user_id = ? AND is_deleted = 0
     `, [fileId, userId]);
 
-    if (files.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '文件不存在或无权访问'
-      });
+    if (uploadFiles.length > 0) {
+      const file = uploadFiles[0];
+      filePath = file.file_path;
+      fileName = file.file_name;
+    } else {
+      // 如果不是上传文件，尝试从任务表查找
+      const [taskFiles] = await db.query(`
+        SELECT t.id, t.description, t.output_path, t.log_path, t.task_type
+        FROM tasks t
+        WHERE t.id = ? AND t.user_id = ?
+      `, [fileId, userId]);
+
+      if (taskFiles.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: '文件不存在或无权访问'
+        });
+      }
+
+      const task = taskFiles[0];
+
+      if (fileType === 'log') {
+        filePath = task.log_path;
+        fileName = `${task.task_type}_task_${task.id}_log.txt`;
+      } else {
+        filePath = task.output_path;
+        fileName = `${task.task_type}_task_${task.id}_result`;
+      }
     }
 
-    const file = files[0];
-
     // 检查文件是否存在
-    if (!fs.existsSync(file.file_path)) {
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
         message: '文件不存在或已被删除'
       });
     }
 
-    // 读取文件内容
-    const content = fs.readFileSync(file.file_path, 'utf8');
+    console.log('准备读取文件内容:', { filePath, fileName });
+
+    // 读取文件内容，限制大小以避免内存问题
+    const stats = fs.statSync(filePath);
+    const maxSize = 10 * 1024 * 1024; // 10MB限制
+
+    if (stats.size > maxSize) {
+      return res.status(413).json({
+        success: false,
+        message: '文件过大，无法在线预览，请下载查看'
+      });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf8');
 
     res.json({
       success: true,
       data: {
-        fileName: file.file_name,
-        content: content
+        fileName: fileName,
+        content: content,
+        fileSize: stats.size
       }
     });
   } catch (error) {
     logger.error('获取文件内容失败:', error);
+    console.error('获取文件内容详细错误:', error);
     res.status(500).json({
       success: false,
       message: '获取文件内容失败: ' + error.message

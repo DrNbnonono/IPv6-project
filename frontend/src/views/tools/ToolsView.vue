@@ -149,6 +149,7 @@
     { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
     { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
     { path: '/tools/files', name: '文件管理', icon: 'icon-files' },
+    { path: '/tools/jsonanalysis', name: 'JSON分析', icon: 'icon-json', badge: '新' },
     { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
     { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
   ])
@@ -720,4 +721,5 @@
 .icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例
 .icon-upload:before { content: "📤"; } // 添加上传图标示例
 .icon-files:before { content: "📁"; } // 添加文件管理图标
+.icon-json:before { content: "📊"; } // JSON分析图标
 </style>

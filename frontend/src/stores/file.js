@@ -27,10 +27,10 @@ export const useFileStore = defineStore('file', {
       }
     },
     
-    async getFiles(toolType) {
+    async getFiles(toolType, fileType, listType) {
       try {
         this.isLoading = true;
-        const response = await api.files.getFiles(toolType);
+        const response = await api.files.getFiles(toolType, fileType, listType);
         this.files = response.data || [];
         return response;
       } catch (error) {
@@ -58,10 +58,10 @@ export const useFileStore = defineStore('file', {
       }
     },
     
-    async downloadFile(fileId) {
+    async downloadFile(fileId, fileType) {
       try {
         this.isLoading = true;
-        const response = await api.files.downloadFile(fileId);
+        const response = await api.files.downloadFile(fileId, fileType);
         return response;
       } catch (error) {
         console.error('下载文件失败:', error);

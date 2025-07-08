@@ -146,3 +146,5 @@ zgrab2_config/
 zgrab2_input/
 zgrab2_results/
 01-address/
+jsonanalysis/
+*.env

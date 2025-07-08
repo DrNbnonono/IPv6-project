@@ -456,13 +456,13 @@ exports.scan = async (req, res) => {
     
     args.push('-u', logFile, '-o', resultFile, '-q', '-O', 'json' , '-f', `*`);
 
-
+    /*
     if (ipv6){
-      args.push('-S', 'fd00:a516:7c1b:17cd:6d81:2137:bd2a:2c5b');
+      args.push('-S', '2001:250:200:10:20c:29ff:fe88:8a32');
     }
     else if (ipv4){
       args.push('-S', '192.168.1.1', '-G', '00:00:5e:00:01:08');
-    }
+    }*/
 
     await db.query(
       'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path,  task_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

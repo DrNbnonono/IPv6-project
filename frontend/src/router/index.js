@@ -10,6 +10,9 @@ const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 const Zgrab2DashboardView = () => import('@/views/tools/zgrab2/Zgrab2DashboardView.vue')
 const Zgrab2HelpView = () => import('@/views/tools/zgrab2/Zgrab2HelpView.vue')
 const FileManagementView = () => import('@/views/tools/files/FileManagementView.vue')
+const JsonAnalysisDashboardView = () => import('@/views/tools/jsonanalysis/JsonAnalysisDashboardView.vue')
+const Addr6DashboardView = () => import('@/views/tools/addr6/Addr6DashboardView.vue')
+const NmapDashboardView = () => import('@/views/tools/nmap/NmapDashboardView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 
 const routes = [
@@ -52,6 +55,24 @@ const routes = [
         name: 'files',
         component: FileManagementView,
         meta: { title: '文件管理' }
+      },
+      {
+        path: 'jsonanalysis',
+        name: 'jsonanalysis',
+        component: JsonAnalysisDashboardView,
+        meta: { title: 'JSON分析' }
+      },
+      {
+        path: 'addr6',
+        name: 'addr6',
+        component: Addr6DashboardView,
+        meta: { title: 'Addr6地址生成' }
+      },
+      {
+        path: 'nmap',
+        name: 'nmap',
+        component: NmapDashboardView,
+        meta: { title: 'Nmap网络扫描' }
       },
       {
         path: '/tools/database',

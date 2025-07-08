@@ -240,8 +240,28 @@
 
       <!-- 文件列表 -->
       <div class="files-section">
+        <div class="list-tabs">
+          <button
+            class="tab-button"
+            :class="{ active: listType === 'upload' }"
+            @click="switchListType('upload')"
+          >
+            <i class="icon-upload"></i> 上传文件列表
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: listType === 'task' }"
+            @click="switchListType('task')"
+          >
+            <i class="icon-task"></i> 任务结果列表
+          </button>
+        </div>
+
         <div class="section-header">
-          <h3><i class="icon-list"></i> 文件列表</h3>
+          <h3>
+            <i class="icon-list"></i>
+            {{ listType === 'upload' ? '上传文件列表' : '任务结果列表' }}
+          </h3>
           <div class="file-stats">
             <span class="stat-item">
               总计: {{ files.length }} 个文件
@@ -254,11 +274,14 @@
             <thead>
               <tr>
                 <th>工具</th>
-                <th>类型</th>
+                <th v-if="listType === 'upload'">类型</th>
+                <th v-if="listType === 'task'">状态</th>
                 <th>文件名</th>
                 <th>描述</th>
                 <th>大小</th>
-                <th>上传时间</th>
+                <th v-if="listType === 'upload'">上传时间</th>
+                <th v-if="listType === 'task'">创建时间</th>
+                <th v-if="listType === 'task'">完成时间</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -269,11 +292,16 @@
                     {{ getToolLabel(file.tool_type) }}
                   </span>
                 </td>
-                <td>
+                <td v-if="listType === 'upload'">
                   <span class="file-type-badge" v-if="file.file_type">
                     {{ getFileTypeLabel(file.file_type) }}
                   </span>
                   <span v-else>-</span>
+                </td>
+                <td v-if="listType === 'task'">
+                  <span class="status-badge" :class="`status-${file.status}`">
+                    {{ getStatusLabel(file.status) }}
+                  </span>
                 </td>
                 <td class="file-name">
                   <i class="icon-file"></i>
@@ -283,33 +311,86 @@
                   {{ file.description || '无描述' }}
                 </td>
                 <td class="file-size">
-                  {{ formatFileSize(file.file_size) }}
+                  <div v-if="listType === 'task'">
+                    <div v-if="file.file_size">
+                      结果: {{ formatFileSize(file.file_size) }}
+                    </div>
+                    <div v-if="file.log_file_size">
+                      日志: {{ formatFileSize(file.log_file_size) }}
+                    </div>
+                    <div v-if="!file.file_size && !file.log_file_size">-</div>
+                  </div>
+                  <div v-else>
+                    {{ formatFileSize(file.file_size) }}
+                  </div>
                 </td>
-                <td class="upload-time">
+                <td v-if="listType === 'upload'" class="upload-time">
                   {{ formatDate(file.uploaded_at) }}
                 </td>
+                <td v-if="listType === 'task'" class="upload-time">
+                  {{ formatDate(file.uploaded_at) }}
+                </td>
+                <td v-if="listType === 'task'" class="complete-time">
+                  {{ formatDate(file.completed_at) }}
+                </td>
                 <td class="file-actions">
-                  <button 
-                    class="btn btn-sm btn-info" 
-                    @click="viewFileContent(file)"
-                    title="查看内容"
-                  >
-                    <i class="icon-view"></i>
-                  </button>
-                  <button 
-                    class="btn btn-sm btn-success" 
-                    @click="downloadFile(file)"
-                    title="下载文件"
-                  >
-                    <i class="icon-download"></i>
-                  </button>
-                  <button 
-                    class="btn btn-sm btn-danger" 
-                    @click="confirmDelete(file)"
-                    title="删除文件"
-                  >
-                    <i class="icon-delete"></i>
-                  </button>
+                  <template v-if="listType === 'upload'">
+                    <button
+                      class="btn btn-sm btn-info"
+                      @click="viewFileContent(file)"
+                      title="查看内容"
+                    >
+                      <i class="icon-view"></i>
+                    </button>
+                    <button
+                      class="btn btn-sm btn-success"
+                      @click="downloadFile(file)"
+                      title="下载文件"
+                    >
+                      <i class="icon-download"></i>
+                    </button>
+                    <button
+                      class="btn btn-sm btn-danger"
+                      @click="confirmDelete(file)"
+                      title="删除文件"
+                    >
+                      <i class="icon-delete"></i>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button
+                      class="btn btn-sm btn-info"
+                      @click="viewFileContent(file, 'result')"
+                      title="查看结果"
+                      v-if="file.file_path"
+                    >
+                      <i class="icon-view"></i> 结果
+                    </button>
+                    <button
+                      class="btn btn-sm btn-info"
+                      @click="viewFileContent(file, 'log')"
+                      title="查看日志"
+                      v-if="file.log_path"
+                    >
+                      <i class="icon-view"></i> 日志
+                    </button>
+                    <button
+                      class="btn btn-sm btn-success"
+                      @click="downloadFile(file, 'result')"
+                      title="下载结果"
+                      v-if="file.file_path"
+                    >
+                      <i class="icon-download"></i> 结果
+                    </button>
+                    <button
+                      class="btn btn-sm btn-success"
+                      @click="downloadFile(file, 'log')"
+                      title="下载日志"
+                      v-if="file.log_path"
+                    >
+                      <i class="icon-download"></i> 日志
+                    </button>
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -355,6 +436,7 @@ const fileStore = useFileStore()
 // 响应式数据
 const selectedTool = ref('')
 const selectedFileType = ref('')
+const listType = ref('upload') // 'upload' 或 'task'
 const files = ref([])
 const isLoading = ref(false)
 const isUploading = ref(false)
@@ -424,7 +506,7 @@ const handleToolChange = () => {
 const fetchFiles = async () => {
   try {
     isLoading.value = true
-    const response = await fileStore.getFiles(selectedTool.value, selectedFileType.value)
+    const response = await fileStore.getFiles(selectedTool.value, selectedFileType.value, listType.value)
     if (response && response.success) {
       files.value = response.data || []
     }
@@ -433,6 +515,14 @@ const fetchFiles = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const switchListType = (newListType) => {
+  listType.value = newListType
+  // 切换列表类型时重置筛选条件
+  selectedTool.value = ''
+  selectedFileType.value = ''
+  fetchFiles()
 }
 
 const handleFileSelect = (event) => {
@@ -667,16 +757,34 @@ const formatDate = (dateString) => {
 }
 
 const getEmptyMessage = () => {
-  if (selectedTool.value) {
-    return `暂无 ${getToolLabel(selectedTool.value)} 的文件`
+  if (listType.value === 'task') {
+    if (selectedTool.value) {
+      return `暂无 ${getToolLabel(selectedTool.value)} 的任务结果`
+    }
+    return '暂无任务结果文件'
+  } else {
+    if (selectedTool.value) {
+      return `暂无 ${getToolLabel(selectedTool.value)} 的上传文件`
+    }
+    return '请选择工具查看对应的文件，或上传新文件'
   }
-  return '请选择工具查看对应的文件，或上传新文件'
 }
 
-const viewFileContent = async (file) => {
+const getStatusLabel = (status) => {
+  const statusMap = {
+    'pending': '等待中',
+    'running': '运行中',
+    'completed': '已完成',
+    'failed': '失败',
+    'cancelled': '已取消'
+  }
+  return statusMap[status] || status
+}
+
+const viewFileContent = async (file, fileType = 'result') => {
   try {
     currentFile.value = file
-    const response = await api.files.getFileContent(file.id)
+    const response = await api.files.getFileContent(file.id, fileType)
     if (response && response.success) {
       fileContent.value = response.data.content
       showContentModal.value = true
@@ -692,9 +800,9 @@ const closeContentModal = () => {
   fileContent.value = ''
 }
 
-const downloadFile = async (file) => {
+const downloadFile = async (file, fileType = 'result') => {
   try {
-    const response = await fileStore.downloadFile(file.id)
+    const response = await fileStore.downloadFile(file.id, fileType)
 
     // 检查响应是否为blob
     let blob
@@ -704,11 +812,19 @@ const downloadFile = async (file) => {
       blob = new Blob([response.data])
     }
 
+    // 生成下载文件名
+    let fileName = file.file_name
+    if (listType.value === 'task') {
+      const extension = fileType === 'log' ? '.txt' :
+                       file.tool_type === 'zgrab2' ? '.jsonl' : '.json'
+      fileName = `${file.tool_type}_task_${file.id}_${fileType}${extension}`
+    }
+
     // 创建下载链接
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = file.file_name
+    link.download = fileName
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()
@@ -1047,6 +1163,38 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.list-tabs {
+  display: flex;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+
+  .tab-button {
+    flex: 1;
+    padding: 1rem 1.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    color: #64748b;
+    border-bottom: 3px solid transparent;
+
+    &:hover {
+      background: #e2e8f0;
+    }
+
+    &.active {
+      background: white;
+      color: #4299e1;
+      border-bottom-color: #4299e1;
+    }
+  }
+}
+
 .section-header {
   padding: 1.5rem;
   border-bottom: 1px solid #e2e8f0;
@@ -1126,6 +1274,38 @@ onMounted(() => {
     font-size: 0.8rem;
     background-color: #f0f4f8;
     color: #4a5568;
+  }
+
+  .status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+
+    &.status-pending {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    &.status-running {
+      background-color: #dbeafe;
+      color: #1e40af;
+    }
+
+    &.status-completed {
+      background-color: #d1fae5;
+      color: #065f46;
+    }
+
+    &.status-failed {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+
+    &.status-cancelled {
+      background-color: #f3f4f6;
+      color: #6b7280;
+    }
   }
   
   .file-name {
@@ -1341,4 +1521,5 @@ onMounted(() => {
 .icon-close:before { content: "✖️"; }
 .icon-reset:before { content: "🔄"; }
 .icon-empty:before { content: "📭"; }
+.icon-task:before { content: "⚙️"; }
 </style>

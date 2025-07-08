@@ -479,11 +479,11 @@ export default {
         }
       });
     },
-    getFiles(toolType, fileType) {
-      const params = { toolType };
-      if (fileType) {
-        params.fileType = fileType;
-      }
+    getFiles(toolType, fileType, listType) {
+      const params = {};
+      if (toolType) params.toolType = toolType;
+      if (fileType) params.fileType = fileType;
+      if (listType) params.listType = listType;
       return apiClient.get('/files', {
         params
       });
@@ -491,13 +491,78 @@ export default {
     deleteFile(fileId) {
       return apiClient.delete(`/files/${fileId}`);
     },
-    downloadFile(fileId) {
+    downloadFile(fileId, fileType) {
+      const params = {};
+      if (fileType) params.fileType = fileType;
       return apiClient.get(`/files/${fileId}/download`, {
+        params,
         responseType: 'blob'
       });
     },
-    getFileContent(fileId) {
-      return apiClient.get(`/files/${fileId}/content`);
+    getFileContent(fileId, fileType) {
+      const params = {};
+      if (fileType) params.fileType = fileType;
+      return apiClient.get(`/files/${fileId}/content`, {
+        params
+      });
     }
   },
+
+  // JSON分析相关API
+  jsonanalysis: {
+    // 解析JSON文件
+    parseFile(fileId) {
+      return apiClient.get(`/jsonanalysis/parse/${fileId}`);
+    },
+
+    // 解析JSON文本
+    parseText(data) {
+      return apiClient.post('/jsonanalysis/parse-text', data);
+    },
+
+    // 获取会话数据
+    getSessionData(sessionId) {
+      return apiClient.get(`/jsonanalysis/session/${sessionId}`);
+    },
+
+    // 基于会话的字段提取
+    extractFieldsFromSession(data) {
+      return apiClient.post('/jsonanalysis/extract-fields-session', data);
+    },
+
+    // 基于会话的搜索过滤
+    searchFilterFromSession(data) {
+      return apiClient.post('/jsonanalysis/search-filter-session', data);
+    },
+
+    // 通用数据过滤
+    filterFromSession(data) {
+      return apiClient.post('/jsonanalysis/filter-session', data);
+    },
+
+    // 专门针对zgrab2结果的提取
+    extractZgrab2Results(data) {
+      return apiClient.post('/jsonanalysis/extract-zgrab2', data);
+    },
+
+    // 专门针对xmap结果的提取
+    extractXmapResults(data) {
+      return apiClient.post('/jsonanalysis/extract-xmap', data);
+    },
+
+    // 提取字段（兼容旧版本）
+    extractFields(data) {
+      return apiClient.post('/jsonanalysis/extract-fields', data);
+    },
+
+    // 搜索和过滤（兼容旧版本）
+    searchFilter(data) {
+      return apiClient.post('/jsonanalysis/search-filter', data);
+    },
+
+    // 保存处理后的JSON
+    save(data) {
+      return apiClient.post('/jsonanalysis/save', data);
+    }
+  }
 }

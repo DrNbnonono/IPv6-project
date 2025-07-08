@@ -8,8 +8,9 @@ const xmapRouter = require('./routes/xmap');
 const zgrab2Router = require('./routes/zgrab2');
 const authRouter = require('./routes/auth');
 const docRouter = require('./routes/doc')
-const databaseRoutes = require('./routes/database'); 
+const databaseRoutes = require('./routes/database');
 const fileRouter = require('./routes/file'); // 新增文件路由
+const jsonanalysisRouter = require('./routes/jsonanalysis'); // JSON分析路由
 dotenv.config();
 
 const app = express();
@@ -17,8 +18,9 @@ const PORT = process.env.PORT || 3000;
 
 // 中间件
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// 增加请求体大小限制，支持大型JSON文件处理
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
 // 路由
 app.use('/api/addresses', addressRouter);
@@ -27,6 +29,7 @@ app.use('/api/zgrab2', zgrab2Router);
 app.use('/api/auth', authRouter);
 app.use('/api/database', databaseRoutes);
 app.use('/api/files', fileRouter);
+app.use('/api/jsonanalysis', jsonanalysisRouter);
 
 // 更新CORS配置，允许所有来源访问或指定您的域名
 app.use(cors({
