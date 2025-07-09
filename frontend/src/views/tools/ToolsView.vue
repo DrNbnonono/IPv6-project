@@ -148,6 +148,7 @@
     { path: '/tools/database', name: 'database', icon: 'icon-database'},
     { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
     { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
+    { path: '/tools/workflows', name: '工作流管理', icon: 'icon-workflow', badge: '新' },
     { path: '/tools/files', name: '文件管理', icon: 'icon-files' },
     { path: '/tools/jsonanalysis', name: 'JSON分析', icon: 'icon-json', badge: '新' },
     { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
@@ -722,4 +723,28 @@
 .icon-upload:before { content: "📤"; } // 添加上传图标示例
 .icon-files:before { content: "📁"; } // 添加文件管理图标
 .icon-json:before { content: "📊"; } // JSON分析图标
+.icon-workflow:before { content: "🔗"; } // 工作流图标
+.icon-node:before { content: "⚪"; } // 节点图标
+.icon-template:before { content: "📋"; } // 模板图标
+.icon-play:before { content: "▶️"; } // 播放图标
+.icon-pause:before { content: "⏸️"; } // 暂停图标
+.icon-stop:before { content: "⏹️"; } // 停止图标
+.icon-history:before { content: "📜"; } // 历史图标
+.icon-edit:before { content: "✏️"; } // 编辑图标
+.icon-eye:before { content: "👁️"; } // 查看图标
+.icon-plus:before { content: "➕"; } // 加号图标
+.icon-close:before { content: "❌"; } // 关闭图标
+.icon-arrow-left:before { content: "⬅️"; } // 左箭头图标
+.icon-arrow-right:before { content: "➡️"; } // 右箭头图标
+.icon-save:before { content: "💾"; } // 保存图标
+.icon-check:before { content: "✔️"; } // 检查图标
+.icon-warning:before { content: "⚠️"; } // 警告图标
+.icon-filter:before { content: "🔽"; } // 过滤图标
+.icon-download:before { content: "⬇️"; } // 下载图标
+.icon-file:before { content: "📄"; } // 文件图标
+.icon-list:before { content: "📝"; } // 列表图标
+.icon-all:before { content: "🌟"; } // 全部图标
+.icon-chart:before { content: "📈"; } // 图表图标
+.icon-robot:before { content: "🤖"; } // 机器人图标
+.icon-shield:before { content: "🛡️"; } // 盾牌图标
 </style>

@@ -13,6 +13,7 @@ const FileManagementView = () => import('@/views/tools/files/FileManagementView.
 const JsonAnalysisDashboardView = () => import('@/views/tools/jsonanalysis/JsonAnalysisDashboardView.vue')
 const Addr6DashboardView = () => import('@/views/tools/addr6/Addr6DashboardView.vue')
 const NmapDashboardView = () => import('@/views/tools/nmap/NmapDashboardView.vue')
+const WorkflowDashboardView = () => import('@/views/tools/workflows/WorkflowDashboardView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 
 const routes = [
@@ -73,6 +74,12 @@ const routes = [
         name: 'nmap',
         component: NmapDashboardView,
         meta: { title: 'Nmap网络扫描' }
+      },
+      {
+        path: 'workflows',
+        name: 'workflows',
+        component: WorkflowDashboardView,
+        meta: { title: '工作流管理' }
       },
       {
         path: '/tools/database',

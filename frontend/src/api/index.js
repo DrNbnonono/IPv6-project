@@ -564,5 +564,73 @@ export default {
     save(data) {
       return apiClient.post('/jsonanalysis/save', data);
     }
+  },
+
+  // 工作流相关API
+  workflows: {
+    // 获取工作流列表
+    getWorkflows(params = {}) {
+      return apiClient.get('/workflows', { params });
+    },
+
+    // 创建工作流
+    createWorkflow(data) {
+      return apiClient.post('/workflows', data);
+    },
+
+    // 获取工作流详情
+    getWorkflowById(id) {
+      return apiClient.get(`/workflows/${id}`);
+    },
+
+    // 更新工作流
+    updateWorkflow(id, data) {
+      return apiClient.put(`/workflows/${id}`, data);
+    },
+
+    // 删除工作流
+    deleteWorkflow(id) {
+      return apiClient.delete(`/workflows/${id}`);
+    },
+
+    // 执行工作流
+    executeWorkflow(id, data) {
+      return apiClient.post(`/workflows/${id}/execute`, data);
+    },
+
+    // 获取执行历史
+    getExecutions(id, params = {}) {
+      return apiClient.get(`/workflows/${id}/executions`, { params });
+    },
+
+    // 获取执行详情
+    getExecutionDetails(executionId) {
+      return apiClient.get(`/workflows/executions/${executionId}`);
+    },
+
+    // 取消执行
+    cancelExecution(executionId) {
+      return apiClient.post(`/workflows/executions/${executionId}/cancel`);
+    },
+
+    // 暂停执行
+    pauseExecution(executionId) {
+      return apiClient.post(`/workflows/executions/${executionId}/pause`);
+    },
+
+    // 恢复执行
+    resumeExecution(executionId) {
+      return apiClient.post(`/workflows/executions/${executionId}/resume`);
+    },
+
+    // 获取节点类型
+    getNodeTypes() {
+      return apiClient.get('/workflows/node-types');
+    },
+
+    // 获取工作流模板
+    getTemplates() {
+      return apiClient.get('/workflows/templates');
+    }
   }
 }
