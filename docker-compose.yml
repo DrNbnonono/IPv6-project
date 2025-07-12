@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # XMap服务 (使用官方镜像)
+  xmap:
+    image: liii/xmap
+    container_name: ipv6-xmap
+    restart: unless-stopped
+    volumes:
+      - ./data/xmap_result:/data/results
+      - ./data/xmap_log:/data/logs
+      - ./data/whitelists:/data/whitelists
+    # 使用host网络模式，确保XMap能够进行网络扫描
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    # 保持容器运行
+    command: ["tail", "-f", "/dev/null"]
+
+  # 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: ipv6-backend
+    user: root
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      JWT_SECRET: ${JWT_SECRET}
+      PROJECT_ROOT: ${PROJECT_ROOT}
+      XMAP_CONTAINER: ipv6-xmap
+    networks:
+      - ipv6-network
+    volumes:
+      # 数据持久化目录
+      - ./data/uploads:/app/uploads
+      - ./data/xmap_result:/app/xmap_result
+      - ./data/xmap_log:/app/xmap_log
+      - ./data/zgrab2_results:/app/zgrab2_results
+      - ./data/zgrab2_logs:/app/zgrab2_logs
+      - ./data/zgrab2_inputs:/app/zgrab2_inputs
+      - ./data/zgrab2_configs:/app/zgrab2_configs
+      - ./data/whitelists:/app/whitelists
+      - ./data/jsonanalysis:/app/jsonanalysis
+      - ./data/temp_files:/app/temp_files
+      - ./data/backend_logs:/app/backend_logs
+      # ZGrab2二进制文件
+      - ./tools/zgrab2:/usr/local/bin/zgrab2:ro
+      # Docker socket for XMap container communication
+      - /var/run/docker.sock:/var/run/docker.sock
+    # ZGrab2需要网络权限
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  # 前端服务
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: ipv6-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - ipv6-network
+    environment:
+      - NODE_ENV=development
+
+
+
+networks:
+  ipv6-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
