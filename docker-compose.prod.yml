@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   frontend:
-    image: your-registry/ipv6-frontend:latest
+    image: drnonono/ipv6-frontend:latest
     ports:
       - "80:80"
     environment:
@@ -12,7 +12,7 @@ services:
       - ipv6-network
 
   backend:
-    image: your-registry/ipv6-backend:latest
+    image: drnonono/ipv6-backend:latest
     ports:
       - "3000:3000"
     environment:
