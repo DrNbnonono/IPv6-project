@@ -1,67 +1,102 @@
 version: '3.8'
 
 services:
-  frontend:
-    image: drnonono/ipv6-frontend:latest
-    ports:
-      - "80:80"
-    environment:
-      - VITE_API_BASE_URL=http://your-domain:3000/api
-    restart: unless-stopped
-    networks:
-      - ipv6-network
-
-  backend:
-    image: drnonono/ipv6-backend:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_NAME=ipv6_project
-      - DB_USER=ipv6_user
-      - DB_PASSWORD=${MYSQL_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-    depends_on:
-      - mysql
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - xmap_results:/app/xmap_result
-      - xmap_logs:/app/xmap_log
-    networks:
-      - ipv6-network
-
+  # XMap服务 (使用官方镜像)
   xmap:
-    image: teamzmap/xmap:latest
+    image: liii/xmap
     container_name: ipv6-xmap
+    restart: unless-stopped
     volumes:
       - xmap_results:/data/results
       - xmap_logs:/data/logs
-    restart: unless-stopped
-    networks:
-      - ipv6-network
+      - whitelists_data:/data/whitelists
+    # 使用host网络模式，确保XMap能够进行网络扫描
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    # 保持容器运行
+    command: ["tail", "-f", "/dev/null"]
 
-  mysql:
-    image: mysql:8.0
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=ipv6_project
-      - MYSQL_USER=ipv6_user
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  # 后端服务
+  backend:
+    image: limerencellll/observ6:backend_v0.1
+    container_name: ipv6-backend
+    user: root
     restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      JWT_SECRET: ${JWT_SECRET}
+      PROJECT_ROOT: ${PROJECT_ROOT}
+      XMAP_CONTAINER: ipv6-xmap
+      HOST_IPV6_ADDRESS: ${HOST_IPV6_ADDRESS}
+      HOST_GATEWAY_MAC: ${HOST_GATEWAY_MAC}
+      ZGRAB2_PATH: ${ZGRAB2_PATH}  # 添加这一行
     networks:
       - ipv6-network
+    volumes:
+      # 数据持久化目录
+      - uploads_data:/app/uploads
+      - xmap_results:/app/xmap_result
+      - xmap_logs:/app/xmap_log
+      - zgrab2_results:/app/zgrab2_results
+      - zgrab2_logs:/app/zgrab2_logs
+      - zgrab2_inputs:/app/zgrab2_inputs
+      - zgrab2_configs:/app/zgrab2_configs
+      - whitelists_data:/app/whitelists
+      - jsonanalysis_data:/app/jsonanalysis
+      - temp_files_data:/app/temp_files
+      - backend_logs:/app/backend_logs
+      # ZGrab2二进制文件
+      - ./tools/zgrab2:/usr/local/bin/zgrab2:ro
+      # Docker socket for XMap container communication
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    # ZGrab2需要网络权限
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  # 前端服务
+  frontend:
+    image: limerencellll/observ6:frontend_v0.1
+    container_name: ipv6-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - ipv6-network
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://localhost:3000/api
 
 volumes:
-  mysql_data:
+  uploads_data:
   xmap_results:
   xmap_logs:
+  zgrab2_results:
+  zgrab2_logs:
+  zgrab2_inputs:
+  zgrab2_configs:
+  whitelists_data:
+  jsonanalysis_data:
+  temp_files_data:
+  backend_logs:
 
 networks:
   ipv6-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
