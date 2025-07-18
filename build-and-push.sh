@@ -2,21 +2,27 @@
 
 # IPv6项目镜像构建和推送脚本
 # 使用方法: ./build-and-push.sh [registry] [tag]
-# 示例: ./build-and-push.sh myregistry.com/myuser latest
+# 示例: ./build-and-push.sh limerencellll/observ6 frontend_v0.1
 
 set -e
 
 # 默认配置
-DEFAULT_REGISTRY="your-registry"
-DEFAULT_TAG="latest"
+DEFAULT_REGISTRY="limerencellll/observ6"
+DEFAULT_FRONTEND_TAG="frontend_v0.1"
+DEFAULT_BACKEND_TAG="backend_v0.1"
 
 # 获取参数
 REGISTRY=${1:-$DEFAULT_REGISTRY}
-TAG=${2:-$DEFAULT_TAG}
+FRONTEND_TAG=${2:-$DEFAULT_FRONTEND_TAG}
+BACKEND_TAG=${3:-$DEFAULT_BACKEND_TAG}
 
 # 镜像名称
-FRONTEND_IMAGE="${REGISTRY}/ipv6-frontend:${TAG}"
-BACKEND_IMAGE="${REGISTRY}/ipv6-backend:${TAG}"
+FRONTEND_IMAGE="${REGISTRY}:${FRONTEND_TAG}"
+BACKEND_IMAGE="${REGISTRY}:${BACKEND_TAG}"
+
+# 临时镜像名称（用于构建）
+TEMP_FRONTEND_IMAGE="ipv6-frontend-temp"
+TEMP_BACKEND_IMAGE="ipv6-backend-temp"
 
 echo "🚀 开始构建IPv6项目Docker镜像"
 echo "📦 前端镜像: ${FRONTEND_IMAGE}"
@@ -31,9 +37,18 @@ fi
 
 # 构建前端镜像
 echo "🔨 构建前端镜像..."
-docker build -f Dockerfile.frontend -t ${FRONTEND_IMAGE} .
+docker build -f docker/Dockerfile.frontend -t ${TEMP_FRONTEND_IMAGE} .
 if [ $? -eq 0 ]; then
     echo "✅ 前端镜像构建成功"
+    
+    # 获取前端镜像ID
+    FRONTEND_IMAGE_ID=$(docker images --format "{{.ID}}" ${TEMP_FRONTEND_IMAGE}:latest)
+    echo "📋 前端镜像ID: ${FRONTEND_IMAGE_ID}"
+    
+    # 重新tag前端镜像
+    echo "🏷️  为前端镜像添加正确的tag..."
+    docker tag ${FRONTEND_IMAGE_ID} ${FRONTEND_IMAGE}
+    echo "✅ 前端镜像tag添加成功: ${FRONTEND_IMAGE}"
 else
     echo "❌ 前端镜像构建失败"
     exit 1
@@ -41,9 +56,18 @@ fi
 
 # 构建后端镜像
 echo "🔨 构建后端镜像..."
-docker build -f Dockerfile.backend -t ${BACKEND_IMAGE} .
+docker build -f docker/Dockerfile.backend -t ${TEMP_BACKEND_IMAGE} .
 if [ $? -eq 0 ]; then
     echo "✅ 后端镜像构建成功"
+    
+    # 获取后端镜像ID
+    BACKEND_IMAGE_ID=$(docker images --format "{{.ID}}" ${TEMP_BACKEND_IMAGE}:latest)
+    echo "📋 后端镜像ID: ${BACKEND_IMAGE_ID}"
+    
+    # 重新tag后端镜像
+    echo "🏷️  为后端镜像添加正确的tag..."
+    docker tag ${BACKEND_IMAGE_ID} ${BACKEND_IMAGE}
+    echo "✅ 后端镜像tag添加成功: ${BACKEND_IMAGE}"
 else
     echo "❌ 后端镜像构建失败"
     exit 1
@@ -51,7 +75,11 @@ fi
 
 echo ""
 echo "📋 镜像构建完成，镜像列表:"
-docker images | grep -E "(ipv6-frontend|ipv6-backend)" | head -2
+docker images | grep -E "(${REGISTRY}|${TEMP_FRONTEND_IMAGE}|${TEMP_BACKEND_IMAGE})" | head -4
+
+# 清理临时镜像
+echo "🧹 清理临时镜像..."
+docker rmi ${TEMP_FRONTEND_IMAGE}:latest ${TEMP_BACKEND_IMAGE}:latest 2>/dev/null || true
 
 # 询问是否推送
 read -p "🤔 是否推送镜像到仓库? (y/N): " -n 1 -r
@@ -93,6 +121,11 @@ fi
 
 echo ""
 echo "🔧 有用的命令:"
-echo "   查看镜像: docker images | grep ipv6"
+echo "   查看镜像: docker images | grep ${REGISTRY}"
 echo "   删除镜像: docker rmi ${FRONTEND_IMAGE} ${BACKEND_IMAGE}"
 echo "   运行容器: docker-compose up -d"
+echo ""
+echo "📝 使用示例:"
+echo "   默认构建: ./build-and-push.sh"
+echo "   自定义仓库: ./build-and-push.sh limerencellll/observ6 frontend_v0.2 backend_v0.2"
+echo "   只改tag: ./build-and-push.sh limerencellll/observ6 frontend_v1.0 backend_v1.0"
