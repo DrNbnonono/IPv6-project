@@ -39,6 +39,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PROJECT_ROOT: ${PROJECT_ROOT}
       XMAP_CONTAINER: ipv6-xmap
+      HOST_IPV6_ADDRESS: ${HOST_IPV6_ADDRESS}
+      HOST_GATEWAY_MAC: ${HOST_GATEWAY_MAC}
+      ZGRAB2_PATH: ${ZGRAB2_PATH}  # 添加这一行
     networks:
       - ipv6-network
     volumes:
@@ -79,8 +82,6 @@ services:
       - ipv6-network
     environment:
       - NODE_ENV=development
-
-
 
 networks:
   ipv6-network:
