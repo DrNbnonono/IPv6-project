@@ -224,45 +224,41 @@ FLUSH PRIVILEGES;
         fi
 
         log_info "使用SQL文件: $sql_file"
+        log_info "预期创建24张表..."
 
-        # 使用sudo mysql执行SQL文件
-        if sudo mysql < "$sql_file" &> /dev/null; then
-            log_success "数据库表创建完成"
+        # 创建临时日志文件
+        local temp_log="/tmp/mysql_import_$(date +%Y%m%d_%H%M%S).log"
+        
+        # 使用sudo mysql执行SQL文件，显示详细输出
+        log_info "开始执行SQL导入..."
+        if sudo mysql -D"$DB_NAME" --force < "$sql_file" 2>&1 | tee "$temp_log"; then
+            # 验证表创建结果
+            table_count_after_result=$(get_mysql_result "SHOW TABLES;" "$DB_NAME")
+            table_count_after=$(echo "$table_count_after_result" | wc -l)
+            actual_tables=$((table_count_after-1))
+            
+            if [ "$actual_tables" -ge 24 ]; then
+                log_success "数据库表创建完成，成功创建 $actual_tables 张表"
+            else
+                log_warning "数据库表创建不完整，只创建了 $actual_tables 张表，预期24张表"
+                log_info "请检查日志文件: $temp_log"
+                log_info "已创建的表："
+                echo "$table_count_after_result"
+            fi
         else
             log_error "数据库表创建失败"
+            log_info "错误日志保存在: $temp_log"
             log_info "请检查SQL文件格式和权限"
             exit 1
         fi
     else
-        log_success "数据库表已存在"
-    fi
-
-    # 检查默认用户是否存在
-    user_count_result=$(get_mysql_result "SELECT COUNT(*) FROM users WHERE phone='13011122222';" "$DB_NAME")
-    user_count=$(echo "$user_count_result" | tail -n 1)
-
-    if [ "$user_count" -eq 0 ]; then
-        log_info "创建默认管理员用户..."
-        if execute_mysql "INSERT INTO users (phone, password_hash, role) VALUES ('13011122222', 'admin', 'admin');" "$DB_NAME"; then
-            log_success "默认用户创建完成"
+        actual_tables=$((table_count-1))
+        if [ "$actual_tables" -ge 24 ]; then
+            log_success "数据库表已存在，共 $actual_tables 张表"
         else
-            log_error "默认用户创建失败"
-            exit 1
+            log_warning "数据库表不完整，只有 $actual_tables 张表，预期24张表"
+            log_info "建议重新执行数据库初始化"
         fi
-    else
-        log_success "默认用户已存在"
-    fi
-
-    # 最后验证linux_db用户可以正常连接
-    log_info "验证数据库用户连接..."
-    if mysql -hlocalhost -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
-        log_success "数据库用户连接验证成功 (localhost)"
-    elif mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
-        log_success "数据库用户连接验证成功 (网络)"
-    else
-        log_error "数据库用户连接验证失败"
-        log_info "请检查用户权限设置"
-        exit 1
     fi
 }
 
@@ -972,6 +968,13 @@ EOF
 deploy_from_remote() {
     log_info "从远程仓库部署..."
 
+    # 执行与本地部署相同的基础检查
+    check_docker
+    check_mysql
+    setup_database
+    create_directories
+    prepare_zgrab2
+
     # 检查是否存在生产环境配置，如果不存在则创建默认配置
     if [ ! -f "docker-compose.prod.yml" ]; then
         log_info "创建默认生产环境配置..."
@@ -979,24 +982,39 @@ deploy_from_remote() {
     fi
 
     # 停止现有服务
-    docker-compose down 2>/dev/null || true
+    docker-compose -f docker-compose.prod.yml down 2>/dev/null || true
 
     # 拉取最新镜像
     log_info "拉取最新镜像..."
     docker-compose -f docker-compose.prod.yml pull backend frontend
+    
+    # 单独拉取xmap镜像（如果需要）
+    docker pull liii/xmap 2>/dev/null || log_warning "XMap镜像拉取失败，将使用本地镜像"
 
-    # 启动服务
-    log_info "启动服务..."
-    docker-compose -f docker-compose.prod.yml up -d
+    # 分步启动服务以确保稳定性
+    log_info "启动后端和xmap服务..."
+    docker-compose -f docker-compose.prod.yml up -d backend xmap
+
+    # 等待后端启动
+    log_info "等待后端服务启动..."
+    sleep 10
+
+    # 启动前端
+    log_info "启动前端服务..."
+    docker-compose -f docker-compose.prod.yml up -d frontend
 
     # 等待服务启动
     log_info "等待服务启动..."
-    sleep 10
+    sleep 15
+
+    # 检查和修复前端问题
+    check_frontend_issues_prod
 
     # 检查服务状态
     check_services_health
 
     log_success "从远程仓库部署完成"
+    show_deployment_info_prod
 }
 
 # 创建默认生产环境配置（使用drnonono的镜像）
@@ -1093,7 +1111,39 @@ EOF
     log_success "默认生产环境配置已创建: docker-compose.prod.yml"
 }
 
-# 检查服务健康状态
+# 检查和修复前端问题（生产环境版本）
+check_frontend_issues_prod() {
+    log_info "检查前端常见问题..."
+
+    # 检查前端容器是否在重启循环
+    local frontend_status=$(docker inspect ipv6-frontend --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
+
+    if [ "$frontend_status" = "restarting" ]; then
+        log_warning "检测到前端容器在重启循环中"
+        log_info "这通常是由于vite或esbuild权限问题导致的"
+
+        # 停止前端容器
+        docker stop ipv6-frontend 2>/dev/null || true
+
+        # 重新拉取前端镜像
+        log_info "重新拉取前端镜像..."
+        docker-compose -f docker-compose.prod.yml pull frontend
+
+        # 重新启动前端
+        log_info "重新启动前端服务..."
+        docker-compose -f docker-compose.prod.yml up -d frontend
+
+        log_success "前端问题修复尝试完成"
+    elif [ "$frontend_status" = "exited" ]; then
+        log_warning "前端容器已退出，查看日志..."
+        docker logs ipv6-frontend --tail 10
+
+        log_info "尝试重新启动前端..."
+        docker-compose -f docker-compose.prod.yml up -d frontend
+    fi
+}
+
+# 检查服务健康状态（更新版本）
 check_services_health() {
     log_info "检查服务健康状态..."
 
@@ -1107,25 +1157,69 @@ check_services_health() {
 
     # 等待后端启动
     local backend_ready=false
-    for i in {1..30}; do
+    local backend_attempts=0
+    local backend_max_attempts=30
+    
+    while [ $backend_attempts -lt $backend_max_attempts ]; do
         if curl -f http://localhost:3000/api/test > /dev/null 2>&1; then
             backend_ready=true
             break
+        else
+            backend_attempts=$((backend_attempts + 1))
+            if [ $backend_attempts -lt $backend_max_attempts ]; then
+                log_info "后端服务尚未就绪，等待中... ($backend_attempts/$backend_max_attempts)"
+                sleep 2
+            fi
         fi
-        sleep 2
     done
 
     if [ "$backend_ready" = true ]; then
         log_success "后端API正常 (http://localhost:3000)"
     else
         log_warning "后端API异常，请检查日志: docker logs ipv6-backend"
+        log_info "查看后端日志："
+        docker logs ipv6-backend --tail 20
     fi
 
-    # 检查前端
-    if curl -f http://localhost:5173 > /dev/null 2>&1; then
+    # 检查前端（保持5173端口）
+    local frontend_attempts=0
+    local frontend_max_attempts=6
+    local frontend_ready=false
+
+    while [ $frontend_attempts -lt $frontend_max_attempts ]; do
+        if curl -f http://localhost:5173 > /dev/null 2>&1; then
+            frontend_ready=true
+            break
+        else
+            frontend_attempts=$((frontend_attempts + 1))
+            if [ $frontend_attempts -lt $frontend_max_attempts ]; then
+                log_info "前端服务尚未就绪，等待中... ($frontend_attempts/$frontend_max_attempts)"
+                sleep 5
+            fi
+        fi
+    done
+
+    if [ "$frontend_ready" = true ]; then
         log_success "前端服务正常 (http://localhost:5173)"
     else
         log_warning "前端服务异常，请检查日志: docker logs ipv6-frontend"
+        log_info "查看前端日志："
+        docker logs ipv6-frontend --tail 20
+    fi
+
+    # 检查XMap容器
+    if docker ps --format "{{.Names}}" | grep -q "ipv6-xmap"; then
+        log_success "XMap容器正常运行"
+    else
+        log_warning "XMap容器异常，请检查日志: docker logs ipv6-xmap"
+        log_info "查看XMap日志："
+        docker logs ipv6-xmap --tail 10
+    fi
+
+    # 运行详细的API测试
+    if [ -f "./test-api.sh" ]; then
+        log_info "运行API连接测试..."
+        ./test-api.sh all
     fi
 
     echo ""
@@ -1136,6 +1230,47 @@ check_services_health() {
     log_info "默认登录账号："
     echo "  手机号: 13011122222"
     echo "  密码: admin"
+}
+
+# 显示生产环境部署信息
+show_deployment_info_prod() {
+    echo ""
+    echo "🎉 IPv6项目远程部署完成！"
+    echo "========================"
+    echo ""
+    echo "📱 访问地址:"
+    echo "  前端界面: http://localhost:5173"
+    echo "  后端API:  http://localhost:3000"
+    echo "  API测试:  http://localhost:3000/api/test"
+    echo "  健康检查: http://localhost:3000/api/health"
+    echo "  数据库:   localhost:3306"
+    echo ""
+    echo "📊 默认登录信息:"
+    echo "  手机号: 13011122222"
+    echo "  密码: admin"
+    echo "  角色: 管理员"
+    echo ""
+    echo "🔧 管理命令:"
+    echo "  查看所有日志: docker-compose -f docker-compose.prod.yml logs -f"
+    echo "  查看后端日志: docker logs ipv6-backend -f"
+    echo "  查看前端日志: docker logs ipv6-frontend -f"
+    echo "  停止所有服务: docker-compose -f docker-compose.prod.yml down"
+    echo "  重启所有服务: docker-compose -f docker-compose.prod.yml restart"
+    echo "  重启单个服务: docker-compose -f docker-compose.prod.yml restart [backend|frontend|xmap]"
+    echo "  查看容器状态: docker-compose -f docker-compose.prod.yml ps"
+    echo ""
+    echo "🔍 故障排除:"
+    echo "  如果前端无法访问，检查: docker logs ipv6-frontend"
+    echo "  如果后端API异常，检查: docker logs ipv6-backend"
+    echo "  如果数据库连接失败，检查MySQL服务状态"
+    echo "  重新部署: ./deploy.sh deploy-remote"
+    echo ""
+    echo "💡 提示:"
+    echo "  - 生产环境使用预构建的Docker镜像"
+    echo "  - 前端运行在5173端口，后端运行在3000端口"
+    echo "  - 数据库已配置支持Docker网络访问"
+    echo "  - XMap服务已配置网络扫描权限"
+    echo ""
 }
 
 # 命令行参数处理
