@@ -183,27 +183,6 @@ setup_database() {
         log_success "数据库已存在"
     fi
 
-    # 创建或更新linux_db用户权限
-    log_info "设置数据库用户权限..."
-
-    # 创建用户和授权的SQL命令
-    local user_sql="
-CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
-CREATE USER IF NOT EXISTS '$DB_USER'@'172.25.%' IDENTIFIED BY '$DB_PASSWORD';
-CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'172.25.%';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
-FLUSH PRIVILEGES;
-"
-
-    if execute_mysql "$user_sql"; then
-        log_success "数据库用户权限设置完成"
-    else
-        log_error "数据库用户权限设置失败"
-        exit 1
-    fi
-
     # 检查表是否存在
     table_count_result=$(get_mysql_result "SHOW TABLES;" "$DB_NAME")
     table_count=$(echo "$table_count_result" | wc -l)
