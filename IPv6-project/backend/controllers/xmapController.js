@@ -94,6 +94,22 @@ const activeProcesses = new Map();
 // 获取宿主机的全局IPv6地址
 const getHostIPv6Address = async () => {
   try {
+    // 优先使用环境变量中的配置
+    if (process.env.HOST_IPV6_ADDRESS) {
+      logger.info(`使用环境变量配置的IPv6地址: ${process.env.HOST_IPV6_ADDRESS}`);
+      return process.env.HOST_IPV6_ADDRESS;
+    }
+
+    // 检查是否在Docker容器中
+    const isInDocker = process.env.DOCKER_ENV === 'true' || fs.existsSync('/.dockerenv');
+    
+    if (isInDocker) {
+      logger.warn('检测到Docker环境，但未配置HOST_IPV6_ADDRESS环境变量');
+      logger.warn('建议在.env文件中配置HOST_IPV6_ADDRESS');
+      // 在Docker环境中，使用默认地址
+      return '2001:250:200:10:20c:29ff:fe88:8a32';
+    }
+
     // 方法1：使用ifconfig获取全局IPv6地址
     const { stdout } = await execAsync('ifconfig | grep "inet6.*global" | head -1 | awk \'{print $2}\'');
     const ipv6 = stdout.trim();
@@ -128,6 +144,21 @@ const getHostIPv6Address = async () => {
 // 获取默认网关的MAC地址
 const getGatewayMacAddress = async () => {
   try {
+    // 优先使用环境变量中的配置
+    if (process.env.HOST_GATEWAY_MAC) {
+      logger.info(`使用环境变量配置的网关MAC地址: ${process.env.HOST_GATEWAY_MAC}`);
+      return process.env.HOST_GATEWAY_MAC;
+    }
+
+    // 检查是否在Docker容器中
+    const isInDocker = process.env.DOCKER_ENV === 'true' || fs.existsSync('/.dockerenv');
+    
+    if (isInDocker) {
+      logger.warn('检测到Docker环境，但未配置HOST_GATEWAY_MAC环境变量');
+      logger.warn('建议在.env文件中配置HOST_GATEWAY_MAC，或让xmap自动检测');
+      return null; // 让xmap自动检测
+    }
+
     // 方法1：通过ip route和arp获取网关MAC地址
     const { stdout: routeOutput } = await execAsync('ip route | grep default | head -1');
     const routeMatch = routeOutput.match(/via\s+([^\s]+)/);
@@ -642,7 +673,7 @@ exports.scan = async (req, res) => {
     }
 
     // 添加输出文件参数
-    args.push('-u', xmapLogFile, '-o', xmapResultFile, '-q', '-O', 'json');
+    args.push('-u', xmapLogFile, '-o', xmapResultFile, '-q', '-O', 'json','-i','eth0');
 
     // 最后添加目标地址
     if (targetaddress) {
@@ -1312,7 +1343,7 @@ exports.testScan = async (req, res) => {
       console.log(`获取网关MAC地址失败，使用默认值: ${defaultMac}, 错误: ${macError.message}`);
     }
 
-    args.push('-u', xmapLogFile, '-o', xmapResultFile, '-q', '-O', 'json', target);
+    args.push('-u', xmapLogFile, '-o', xmapResultFile, '-q', '-O', 'json', target,'-i','eth0');
 
     const containerName = process.env.XMAP_CONTAINER || 'ipv6-xmap';
     const fullCommand = `docker exec ${containerName} xmap ${args.join(' ')}`;
