@@ -53,15 +53,79 @@
 
 ## 🚀 快速开始
 
-### 方法一：超快速部署（推荐新用户）
+### 前置条件
+
+#### 1. 安装Docker和Docker Compose
 
 ```bash
-# 1. 下载项目
-git clone <your-repo-url>
-cd IPv6-project-docker
+# 安装 Docker
+# Ubuntu/Debian
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+newgrp docker  # 或重新打开终端
 
-# 2. 一键部署
-./deploy.sh quick
+# Windows(docker desktop)
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo usermod -aG docker $USER
+newgrp docker  # 或重新打开终端
+
+# 安装 Docker Compose
+sudo apt update && sudo apt install -y docker-compose
+```
+
+#### 2. 安装MySQL
+
+```bash
+# 安装 MySQL
+sudo apt install -y mysql-server
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# 设置 root 密码（交互式操作）
+sudo mysql_secure_installation # 一直回车即可
+```
+
+#### 3.克隆项目并配置环境变量
+
+```bash
+# 克隆项目（替换为实际仓库URL）
+git clone -b docker-main https://github.com/DrNbnonono/IPv6-project.git # 直接克隆对应分支
+cd IPv6-project
+wsl --shutdown # 仅Windows
+wsl # 仅Windows
+
+# 配置环境变量
+vim .env 
+
+#----------------------------------------.env关键配置---------------------------------------------------
+# 重要：根据您的环境调整DB_HOST
+# - Linux Docker: 172.25.0.1 (网关IP)
+# - Docker Desktop (Windows/Mac): host.docker.internal
+# - 本地开发: localhost
+# - 自定义网络: 使用网关IP或宿主机IP
+DB_HOST=host.docker.internal
+DB_USER=linux_db
+DB_PASSWORD=StrongPassword123!  # 与MySQL设置一致
+
+# 根据ip -6 addr show | grep "inet6.*global" | head -1 | awk '{print $2}' | cut -d'/' -f1结果调整
+HOST_IPV6_ADDRESS=xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
+# 根据ip neigh结果调整
+# 输出类似{IPv6_addr} dev eth0 lladdr {MAC_addr} router REACHABLE
+HOST_GATEWAY_MAC=xx:xx:xx:xx:xx:xx
+
+JWT_SECRET=H+sVGeiZkW9ImgHEAbBvaUG/7XyjUmHXq1oLWPLaTyvk1yBoEcb64gDVOhFVcVd1 # 请用命令openssl rand -base64 48重新随机生成一个安全的随机字符串
+#----------------------------------------.env关键配置---------------------------------------------------
+```
+
+### 一键部署
+
+```bash
+# 赋予脚本执行权限
+chmod +x deploy.sh
+
+# 快速部署
+./deploy.sh deploy-remote
 ```
 
 就这么简单！🎉 系统会自动：
@@ -69,46 +133,6 @@ cd IPv6-project-docker
 - 从Docker Hub拉取镜像
 - 启动所有服务
 - 进行健康检查
-
-### 方法二：自定义部署
-
-1. **配置环境变量**
-```bash
-cp .env.example .env
-# 编辑.env文件，修改数据库密码等配置
-```
-
-2. **部署服务**
-```bash
-./deploy.sh deploy-remote
-```
-
-### 前置条件
-
-#### 1. 安装Docker
-```bash
-# Ubuntu/Debian
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# 重新登录或运行
-newgrp docker
-```
-
-#### 2. 安装MySQL
-```bash
-sudo apt update
-sudo apt install mysql-server
-sudo mysql_secure_installation
-
-# 创建数据库用户
-sudo mysql -u root -p
-CREATE USER 'linux_db'@'localhost' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON *.* TO 'linux_db'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
 
 ### 访问应用
 
