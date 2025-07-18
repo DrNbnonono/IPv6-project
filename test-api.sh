@@ -110,15 +110,15 @@ test_database() {
         return 1
     fi
     
-    if mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
+    if mysql -h"127.0.0.1" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
         log_success "数据库连接正常"
         
         # 检查表数量
-        local table_count=$(mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SHOW TABLES;" | wc -l)
+        local table_count=$(mysql -h"127.0.0.1" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SHOW TABLES;" | wc -l)
         log_info "数据库表数量: $((table_count - 1))"
         
         # 检查用户表
-        local user_count=$(mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT COUNT(*) FROM users;" | tail -n 1)
+        local user_count=$(mysql -h"127.0.0.1" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT COUNT(*) FROM users;" | tail -n 1)
         log_info "用户数量: $user_count"
     else
         log_error "数据库连接失败"
@@ -186,7 +186,7 @@ generate_report() {
     
     if [ -f ".env" ]; then
         source .env
-        if mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
+        if mysql -h"127.0.0.1" -u"$DB_USER" -p"$DB_PASSWORD" -D"$DB_NAME" -e "SELECT 1;" &> /dev/null; then
             database_ok=true
         fi
     fi
