@@ -124,8 +124,11 @@ JWT_SECRET=H+sVGeiZkW9ImgHEAbBvaUG/7XyjUmHXq1oLWPLaTyvk1yBoEcb64gDVOhFVcVd1 # �
 # 赋予脚本执行权限
 chmod +x deploy.sh
 
+# 去除.env的\r字符
+sed -i 's/\r//' .env 
+
 # 快速部署
-./deploy.sh deploy-remote
+sudo bash ./deploy.sh deploy-remote
 ```
 
 就这么简单！🎉 系统会自动：
