@@ -1,11 +1,11 @@
 # 后端Dockerfile
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # 设置非交互模式
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 安装基础依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --fix-missing \
     curl \
     wget \
     ca-certificates \
@@ -19,11 +19,11 @@ RUN apt-get update && apt-get install -y \
 
 # 安装Docker CLI (使用Ubuntu仓库版本)
 RUN apt-get update \
-    && apt-get install -y docker.io \
+    && apt-get install -y --fix-missing docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装Node.js (使用Ubuntu默认版本，稳定可靠)
-RUN apt-get update && apt-get install -y nodejs npm
+# 安装Node.js (使用NodeSource官方仓库获取最新LTS版本)
+RUN apt-get update && apt-get install -y --fix-missing nodejs npm
 
 # 验证Node.js版本
 RUN node --version && npm --version
