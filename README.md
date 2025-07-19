@@ -122,12 +122,14 @@ JWT_SECRET=H+sVGeiZkW9ImgHEAbBvaUG/7XyjUmHXq1oLWPLaTyvk1yBoEcb64gDVOhFVcVd1 # �
 
 ```bash
 # 赋予脚本执行权限
+sudo su
 chmod +x *.sh
 sudo apt-get install dos2unix
 dos2unix *.sh
+dos2unix .env
 
 # 快速部署
-sudo bash ./deploy.sh deploy-remote
+./deploy.sh deploy-remote
 ```
 
 就这么简单！🎉 系统会自动：
