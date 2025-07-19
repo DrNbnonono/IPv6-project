@@ -106,7 +106,7 @@ vim .env
 # - 自定义网络: 使用网关IP或宿主机IP
 DB_HOST=host.docker.internal
 DB_USER=linux_db
-DB_PASSWORD=StrongPassword123!  # 与MySQL设置一致
+DB_PASSWORD=root  # 与MySQL设置一致
 
 # 根据ip -6 addr show | grep "inet6.*global" | head -1 | awk '{print $2}' | cut -d'/' -f1结果调整
 HOST_IPV6_ADDRESS=xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
@@ -122,10 +122,9 @@ JWT_SECRET=H+sVGeiZkW9ImgHEAbBvaUG/7XyjUmHXq1oLWPLaTyvk1yBoEcb64gDVOhFVcVd1 # �
 
 ```bash
 # 赋予脚本执行权限
-chmod +x deploy.sh
-
-# 去除.env的\r字符
-sed -i 's/\r//' .env 
+chmod +x *.sh
+sudo apt-get install dos2unix
+dos2unix *.sh
 
 # 快速部署
 sudo bash ./deploy.sh deploy-remote
