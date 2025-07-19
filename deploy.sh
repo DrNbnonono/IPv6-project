@@ -203,7 +203,7 @@ setup_database() {
         fi
 
         log_info "使用SQL文件: $sql_file"
-        log_info "预期创建24张表..."
+        log_info "预期创建32张表..."
 
         # 创建临时日志文件
         local temp_log="/tmp/mysql_import_$(date +%Y%m%d_%H%M%S).log"
