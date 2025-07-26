@@ -255,7 +255,10 @@ docker pull hello-world
 sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json <<-'EOF'
 {
-  "registry-mirrors": ["https://mirror.ccs.tencentyun.com"]
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.1panel.live/"
+  ]
 }
 EOF
 sudo systemctl restart docker
@@ -271,8 +274,28 @@ sudo systemctl restart mysql
 
 # 测试连接
 mysql -u linux_db -p -e "SELECT 1;"
-```
 
+# 如果依旧失败，可能是端口错误，检查端口
+sudo netstat -tulnp | grep 3306
+
+# 或使用 ss 命令
+sudo ss -tulnp | grep mysql
+
+#如果发现其他服务（如旧的 MySQL 实例、Docker 容器或其他应用）占用了 `3306`，先终止它们
+sudo systemctl stop mysql  # 如果 MySQL 已部分安装但未正确启动
+sudo apt purge mysql-server mysql-client mysql-common
+sudo rm -rf /etc/mysql /var/lib/mysql
+sudo apt update
+sudo apt install mysql-server
+
+#如果仍冲突：修改 MySQL 默认端口
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+#在 `[mysqld]` 部分添加或修改：
+port = 3307  # 改为其他未被占用的端口
+
+#然后重启 MySQL：
+sudo systemctl restart mysql
+```
 ### 环境变量配置
 
 如需自定义配置，编辑 `.env` 文件：
