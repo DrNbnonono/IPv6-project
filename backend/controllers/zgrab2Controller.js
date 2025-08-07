@@ -76,6 +76,8 @@ exports.createTask = async (req, res) => {
     module,
     port,
     inputFile,
+    inputFilePath, // 工作流传递的完整文件路径
+    fileId, // 工作流传递的文件ID
     configFile,
     description,
     additionalParams = {}
@@ -154,29 +156,53 @@ exports.createTask = async (req, res) => {
     const toolId = tools[0].id;
     console.log('获取到工具ID:', toolId);
 
-    // 查找输入文件路径
-    console.log('查找输入文件路径...', { userId, toolId, inputFile });
-    const [inputFileRecords] = await db.query(
-      'SELECT file_path FROM whitelists WHERE user_id = ? AND tool_id = ? AND file_name = ? AND is_deleted = 0',
-      [userId, toolId, inputFile]
-    );
+    // 查找输入文件路径 - 支持工作流传递的文件
+    console.log('查找输入文件路径...', { userId, toolId, inputFile, fileId, inputFilePath });
 
-    console.log('输入文件查询结果:', inputFileRecords);
+    let inputFilePathResolved;
 
-    if (inputFileRecords.length === 0) {
-      console.log('错误: 输入文件不存在');
-      return res.status(400).json({
-        success: false,
-        message: '输入文件不存在'
-      });
+    // 如果工作流传递了完整的文件路径，直接使用
+    if (inputFilePath && fs.existsSync(inputFilePath)) {
+      inputFilePathResolved = inputFilePath;
+      console.log('使用工作流传递的文件路径:', inputFilePathResolved);
+    } else if (fileId) {
+      // 如果有文件ID，通过ID查询
+      const [fileRecords] = await db.query(
+        'SELECT file_path FROM whitelists WHERE id = ? AND user_id = ? AND is_deleted = 0',
+        [fileId, userId]
+      );
+
+      if (fileRecords.length > 0) {
+        inputFilePathResolved = fileRecords[0].file_path;
+        console.log('通过文件ID查询到路径:', inputFilePathResolved);
+      }
     }
 
-    const inputFilePath = inputFileRecords[0].file_path;
-    console.log('输入文件路径:', inputFilePath);
+    // 如果还没找到，尝试通过文件名查询
+    if (!inputFilePathResolved) {
+      const [inputFileRecords] = await db.query(
+        'SELECT file_path FROM whitelists WHERE user_id = ? AND file_name = ? AND is_deleted = 0',
+        [userId, inputFile]
+      );
+
+      console.log('通过文件名查询结果:', inputFileRecords);
+
+      if (inputFileRecords.length === 0) {
+        console.log('错误: 输入文件不存在');
+        return res.status(400).json({
+          success: false,
+          message: '输入文件不存在'
+        });
+      }
+
+      inputFilePathResolved = inputFileRecords[0].file_path;
+    }
+
+    console.log('最终输入文件路径:', inputFilePathResolved);
 
     // 检查输入文件是否存在
-    if (!fs.existsSync(inputFilePath)) {
-      console.log('错误: 输入文件物理路径不存在:', inputFilePath);
+    if (!fs.existsSync(inputFilePathResolved)) {
+      console.log('错误: 输入文件物理路径不存在:', inputFilePathResolved);
       return res.status(400).json({
         success: false,
         message: '输入文件不存在'
@@ -216,7 +242,7 @@ exports.createTask = async (req, res) => {
         });
       }
 
-      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 multiple -c ${configFilePath} -f ${inputFilePath} -o ${outputFile} -l ${logFile}`;
+      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 multiple -c ${configFilePath} -f ${inputFilePathResolved} -o ${outputFile} -l ${logFile}`;
       console.log('配置文件模式命令:', command);
     } else {
       console.log('使用单模块模式');
@@ -224,7 +250,7 @@ exports.createTask = async (req, res) => {
       const scanPort = port || SUPPORTED_MODULES[module].defaultPort;
       console.log('扫描端口:', scanPort);
 
-      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 ${module} --port ${scanPort} -f ${inputFilePath} -o ${outputFile} -l ${logFile}`;
+      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 ${module} --port ${scanPort} -f ${inputFilePathResolved} -o ${outputFile} -l ${logFile}`;
 
       // 添加额外参数
       Object.entries(additionalParams).forEach(([key, value]) => {

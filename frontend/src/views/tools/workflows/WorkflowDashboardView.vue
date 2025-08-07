@@ -104,6 +104,9 @@
               <button @click.stop="editWorkflow(workflow)" class="action-btn">
                 <i class="icon-edit"></i> 编辑
               </button>
+              <button @click.stop="editDescription(workflow)" class="action-btn">
+                <i class="icon-description"></i> 描述
+              </button>
               <button @click.stop="executeWorkflow(workflow)" class="action-btn" :disabled="workflow.status !== 'active'">
                 <i class="icon-play"></i> 执行
               </button>
@@ -234,6 +237,47 @@
         </div>
       </div>
     </div>
+
+    <!-- 编辑描述对话框 -->
+    <div v-if="showEditDescriptionDialog" class="modal-overlay" @click="showEditDescriptionDialog = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>编辑工作流描述</h3>
+          <button @click="showEditDescriptionDialog = false" class="modal-close">
+            <i class="icon-close"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form @submit.prevent="confirmEditDescription">
+            <div class="form-group">
+              <label for="workflow-name">工作流名称</label>
+              <input
+                id="workflow-name"
+                v-model="editDescriptionForm.name"
+                type="text"
+                required
+                class="form-input"
+                placeholder="输入工作流名称"
+              />
+            </div>
+            <div class="form-group">
+              <label for="workflow-description">描述</label>
+              <textarea
+                id="workflow-description"
+                v-model="editDescriptionForm.description"
+                class="form-textarea"
+                rows="4"
+                placeholder="输入工作流描述（可选）"
+              ></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button @click="showEditDescriptionDialog = false" class="btn btn-secondary">取消</button>
+          <button @click="confirmEditDescription" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -255,9 +299,16 @@ const searchQuery = ref('')
 const currentWorkflowId = ref(null)
 const showTemplateDialog = ref(false)
 const showExecuteDialog = ref(false)
+const showEditDescriptionDialog = ref(false)
 const selectedWorkflowForExecution = ref(null)
+const selectedWorkflowForEdit = ref(null)
 
 const executionForm = ref({
+  name: '',
+  description: ''
+})
+
+const editDescriptionForm = ref({
   name: '',
   description: ''
 })
@@ -317,6 +368,27 @@ const openWorkflow = (workflow) => {
 const editWorkflow = (workflow) => {
   currentWorkflowId.value = workflow.id
   activeTab.value = 'editor'
+}
+
+const editDescription = (workflow) => {
+  selectedWorkflowForEdit.value = workflow
+  editDescriptionForm.value.name = workflow.name
+  editDescriptionForm.value.description = workflow.description || ''
+  showEditDescriptionDialog.value = true
+}
+
+const confirmEditDescription = async () => {
+  try {
+    await workflowStore.updateWorkflow(selectedWorkflowForEdit.value.id, {
+      name: editDescriptionForm.value.name,
+      description: editDescriptionForm.value.description
+    })
+    showEditDescriptionDialog.value = false
+    await refreshWorkflows()
+  } catch (error) {
+    console.error('更新工作流描述失败:', error)
+    alert(`更新失败: ${error.message || error}`)
+  }
 }
 
 const executeWorkflow = (workflow) => {
@@ -988,4 +1060,8 @@ onMounted(async () => {
   min-height: 80px;
   resize: vertical;
 }
+
+/* 图标样式 */
+.icon-description:before { content: "📝"; }
+.icon-close:before { content: "✕"; }
 </style>

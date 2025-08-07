@@ -918,6 +918,13 @@ const renderMainChart = () => {
     const asnData = regions.map(region => regionData[region].asnCount);
     const prefixData = regions.map(region => regionData[region].ipv6Prefixes);
     const addressData = regions.map(region => regionData[region].activeIpv6);
+
+    // 添加调试信息
+    console.log('图表数据调试:');
+    console.log('regions:', regions);
+    console.log('asnData:', asnData);
+    console.log('prefixData:', prefixData);
+    console.log('addressData:', addressData);
     
     option = {
       title: {
@@ -973,11 +980,12 @@ const renderMainChart = () => {
           },
           axisLabel: {
             formatter: '{value}'
-          }
+          },
+          min: 0
         },
         {
           type: 'value',
-          name: '数量',
+          name: 'IPv6前缀数/活跃地址数',
           position: 'right',
           axisLine: {
             show: true,
@@ -986,8 +994,16 @@ const renderMainChart = () => {
             }
           },
           axisLabel: {
-            formatter: '{value}'
-          }
+            formatter: function(value) {
+              if (value >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+              } else if (value >= 1000) {
+                return (value / 1000).toFixed(1) + 'K';
+              }
+              return value;
+            }
+          },
+          min: 0
         }
       ],
       series: [
@@ -997,7 +1013,8 @@ const renderMainChart = () => {
           data: asnData,
           itemStyle: {
             color: '#5470C6'
-          }
+          },
+          barGap: '20%'
         },
         {
           name: 'IPv6前缀数',
@@ -1006,6 +1023,14 @@ const renderMainChart = () => {
           data: prefixData,
           itemStyle: {
             color: '#91CC75'
+          },
+          barGap: '20%',
+          label: {
+            show: false,
+            position: 'top',
+            formatter: function(params) {
+              return formatNumber(params.value);
+            }
           }
         },
         {
@@ -1314,21 +1339,36 @@ const renderIIDChart = () => {
         }
       ],
       yAxis: [
-        { 
-          gridIndex: 0, 
+        {
+          gridIndex: 0,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为ASN数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalAsns * 1.5, 10);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#5470C6' } }
         },
-        { 
-          gridIndex: 1, 
+        {
+          gridIndex: 1,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为前缀数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalPrefixes * 1.5, 10);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#91CC75' } }
         },
-        { 
-          gridIndex: 2, 
+        {
+          gridIndex: 2,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为IPv6地址数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalAddresses * 1.5, 100);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#EE6666' } }
         }
@@ -1538,21 +1578,36 @@ const renderIIDChart = () => {
         }
       ],
       yAxis: [
-        { 
-          gridIndex: 0, 
+        {
+          gridIndex: 0,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为ASN数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalAsns * 1.5, 10);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#5470C6' } }
         },
-        { 
-          gridIndex: 1, 
+        {
+          gridIndex: 1,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为前缀数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalPrefixes * 1.5, 10);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#91CC75' } }
         },
-        { 
-          gridIndex: 2, 
+        {
+          gridIndex: 2,
           type: 'value',
+          min: 0,
+          max: function(value) {
+            // 为IPv6地址数量设置合适的最大值，确保柱状图可见
+            return Math.max(value.max * 1.2, totalAddresses * 1.5, 100);
+          },
           axisLabel: { formatter: value => formatNumber(value) },
           axisLine: { lineStyle: { color: '#EE6666' } }
         }

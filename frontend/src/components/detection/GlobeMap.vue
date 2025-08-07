@@ -97,15 +97,29 @@
         <span class="control-icon">🏷️</span>
       </button>
 
-      <button v-if="!isZoomedIn" @click="toggleParticleSystem" title="切换粒子效果">
-        <span class="control-icon">🔄</span>
+      <button v-if="!isZoomedIn" @click="toggleCountryColors" :class="{ active: countryColorsEnabled }" title="根据IPv6地址数量显示国家颜色">
+        <span class="control-icon">🎨</span>
+      </button>
+
+      <button v-if="!isZoomedIn" @click="toggleParticleSystem" :title="`当前粒子效果: ${particleSystemType === 'none' ? '无' : particleSystemType === 'matrix' ? '矩阵' : '探测'}`">
+        <span class="control-icon">{{ particleSystemType === 'none' ? '🚫' : particleSystemType === 'matrix' ? '🔢' : '�' }}</span>
       </button>
       <button v-if="isZoomedIn" @click="resetCamera" title="返回全球视图" class="return-button">
         <span class="control-icon">↩</span>
       </button>
     </div>
+    <!-- 颜色图例 -->
+    <div v-if="countryColorsEnabled && !isZoomedIn" class="color-legend">
+      <h4>IPv6地址数量</h4>
+      <div class="legend-gradient"></div>
+      <div class="legend-labels">
+        <span>少</span>
+        <span>多</span>
+      </div>
+    </div>
+
     <!-- 地球 -->
-    
+
     <div v-if="isLoading" class="loading-overlay">
       <div class="loading-spinner"></div>
       <p>加载中...</p>
@@ -128,6 +142,7 @@ import earthBump from '@/assets/images/8k_earth_normal_map_1.jpg'
 import earthSpecular from '@/assets/images/8k_earth_specular_map.jpg'
 import spaceBackground from '@/assets/images/background.jpg'
 import countriesGeoData from '@/assets/data/countries.geo.json'
+import earcut from 'earcut'
 import axios from 'axios'
 
 const props = defineProps({
@@ -173,8 +188,9 @@ const tooltipStyle = computed(() => {
 })
 const countryLabels = ref([]);  // 存储国家标签对象
 const labelVisibility = ref(true);  // 控制标签显示/隐藏
+const countryColorsEnabled = ref(true);  // 控制国家颜色标记功能，默认开启
 
-const particleSystemType = ref('matrix'); // 'matrix' 或 'detection'
+const particleSystemType = ref('none'); // 'none', 'matrix' 或 'detection'
 
 
 // Three.js 核心变量
@@ -186,6 +202,7 @@ let animationId = null
 let frameCount = 0
 let lastFpsUpdate = 0
 let directionalLight
+let countryColorMeshes = [] // 存储国家颜色网格
 let bordersGroup = null
 let hoveredBorder = null
 let raycaster = new THREE.Raycaster()
@@ -395,9 +412,10 @@ const createParticleSystem = () => {
   
   if (particleSystemType.value === 'matrix') {
     createMatrixParticleSystem();
-  } else {
+  } else if (particleSystemType.value === 'detection') {
     createDetectionParticleSystem();
   }
+  // 如果是 'none'，则不创建任何粒子系统
 }
 
 // 创建黑客帝国风格粒子系统
@@ -710,13 +728,21 @@ const updateParticleConnections = () => {
 const updateParticleSystem = (time) => {
   if (particleSystemType.value === 'matrix') {
     updateMatrixParticleSystem(time);
-  } else {
+  } else if (particleSystemType.value === 'detection') {
     updateDetectionParticleSystem(time);
   }
+  // 如果是 'none'，则不更新任何粒子系统
 }
 
 const toggleParticleSystem = () => {
-  particleSystemType.value = particleSystemType.value === 'matrix' ? 'detection' : 'matrix';
+  // 在三种状态之间循环：none -> matrix -> detection -> none
+  if (particleSystemType.value === 'none') {
+    particleSystemType.value = 'matrix';
+  } else if (particleSystemType.value === 'matrix') {
+    particleSystemType.value = 'detection';
+  } else {
+    particleSystemType.value = 'none';
+  }
   createParticleSystem();
 }
 
@@ -789,6 +815,7 @@ const createGlobe = () => {
     globe.castShadow = true
     globe.receiveShadow = true
     globe.userData = { isClickable: true } // 确保地球对象可点击
+    globe.renderOrder = 0 // 设置地球的渲染顺序为0，确保国家板块在其之上
     scene.add(globe)
     
     // 地球创建成功后，尝试加载国家边界
@@ -799,7 +826,9 @@ const createGlobe = () => {
       loadCountryCenters().then(() => {
         // 初始化标签
         createCountryLabels()
-        console.log('国家标签初始化完成')
+        // 初始化国家颜色标记
+        createCountryColors()
+        console.log('国家标签和颜色标记初始化完成')
       }).catch(error => {
         console.error('加载国家中心坐标失败:', error)
         debugInfo.value.lastError = `加载国家中心坐标失败: ${error.message}`
@@ -1038,6 +1067,458 @@ const toggleLabels = () => {
   });
 };
 
+// 切换国家颜色标记功能
+const toggleCountryColors = () => {
+  countryColorsEnabled.value = !countryColorsEnabled.value;
+  updateCountryColors();
+};
+
+// 根据IPv6地址数量获取颜色 - 改进版本，使用对数缩放和更明显的颜色过渡
+const getCountryColor = (ipv6Count, maxCount) => {
+  if (!ipv6Count || ipv6Count === 0) {
+    return new THREE.Color(0x1a1a1a); // 深灰色表示无数据
+  }
+
+  // 使用对数缩放来处理数据的巨大差异
+  const logValue = Math.log10(ipv6Count + 1);
+  const logMax = Math.log10(maxCount + 1);
+  const intensity = Math.min(logValue / logMax, 1);
+
+  // 使用更明显的颜色过渡：深蓝 -> 蓝 -> 青 -> 绿 -> 黄 -> 橙 -> 红
+  if (intensity < 0.15) {
+    // 深蓝到蓝色 (240° to 220°)
+    const hue = 0.67 - intensity * 0.05; // 240° to 220°
+    const saturation = 0.9 + intensity * 0.1; // 90% to 100%
+    const lightness = 0.2 + intensity * 0.3; // 20% to 50%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  } else if (intensity < 0.3) {
+    // 蓝色到青色 (220° to 180°)
+    const localIntensity = (intensity - 0.15) / 0.15;
+    const hue = 0.61 - localIntensity * 0.11; // 220° to 180°
+    const saturation = 1.0;
+    const lightness = 0.4 + localIntensity * 0.2; // 40% to 60%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  } else if (intensity < 0.5) {
+    // 青色到绿色 (180° to 120°)
+    const localIntensity = (intensity - 0.3) / 0.2;
+    const hue = 0.5 - localIntensity * 0.17; // 180° to 120°
+    const saturation = 1.0;
+    const lightness = 0.5 + localIntensity * 0.1; // 50% to 60%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  } else if (intensity < 0.7) {
+    // 绿色到黄色 (120° to 60°)
+    const localIntensity = (intensity - 0.5) / 0.2;
+    const hue = 0.33 - localIntensity * 0.17; // 120° to 60°
+    const saturation = 1.0;
+    const lightness = 0.5 + localIntensity * 0.15; // 50% to 65%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  } else if (intensity < 0.85) {
+    // 黄色到橙色 (60° to 30°)
+    const localIntensity = (intensity - 0.7) / 0.15;
+    const hue = 0.17 - localIntensity * 0.08; // 60° to 30°
+    const saturation = 1.0;
+    const lightness = 0.6 + localIntensity * 0.1; // 60% to 70%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  } else {
+    // 橙色到红色 (30° to 0°)
+    const localIntensity = (intensity - 0.85) / 0.15;
+    const hue = 0.08 - localIntensity * 0.08; // 30° to 0°
+    const saturation = 1.0;
+    const lightness = 0.65 + localIntensity * 0.15; // 65% to 80%
+    return new THREE.Color().setHSL(hue, saturation, lightness);
+  }
+};
+
+// 创建国家颜色网格 - 改进版本，支持多边形填充
+const createCountryColors = () => {
+  if (!scene || !props.countries || props.countries.length === 0) {
+    return;
+  }
+
+  // 清除现有的颜色网格
+  countryColorMeshes.forEach(mesh => {
+    if (mesh.parent) {
+      mesh.parent.remove(mesh);
+    } else {
+      scene.remove(mesh);
+    }
+    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.material) mesh.material.dispose();
+  });
+  countryColorMeshes = [];
+
+  // 清除国家板块组
+  const countryGroup = scene.getObjectByName('countryGroup');
+  if (countryGroup) {
+    scene.remove(countryGroup);
+  }
+
+  // 找到最大IPv6地址数量用于归一化
+  const maxIpv6Count = Math.max(...props.countries.map(c => c.total_active_ipv6 || 0));
+
+  // 创建国家ID映射
+  const countryMap = props.countries.reduce((map, country) => {
+    map[country.country_id] = country;
+    if (country.iso3_code) map[country.iso3_code] = country;
+    return map;
+  }, {});
+
+  // 处理GeoJSON数据中的每个国家特征
+  if (countriesGeoData && countriesGeoData.features) {
+    countriesGeoData.features.forEach(feature => {
+      const country = countryMap[feature.id];
+      if (!country) return;
+
+      const color = getCountryColor(country.total_active_ipv6, maxIpv6Count);
+
+      // 创建国家多边形填充
+      createCountryPolygonFill(feature, color, country);
+    });
+  }
+
+  // 如果没有GeoJSON数据，回退到圆形标记
+  if (!countriesGeoData || !countriesGeoData.features) {
+    createFallbackCountryMarkers(maxIpv6Count);
+  }
+
+  // 应用当前的颜色显示状态
+  updateCountryColors();
+};
+
+// 检测多边形是否跨越180度经线
+const crossesDateLine = (vertices2D) => {
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+
+  vertices2D.forEach(([lng, lat]) => {
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  });
+
+  // 如果经度跨度超过180度，可能跨越了日期变更线
+  return (maxLng - minLng) > 180;
+};
+
+// 修复跨越日期变更线的多边形
+const fixDateLineCrossing = (vertices2D) => {
+  if (!crossesDateLine(vertices2D)) {
+    return vertices2D;
+  }
+
+  // 将负经度转换为正经度（-180到0变成180到360）
+  return vertices2D.map(([lng, lat]) => {
+    const fixedLng = lng < 0 ? lng + 360 : lng;
+    return [fixedLng, lat];
+  });
+};
+
+// 改进的扇形三角化 - 作为Earcut的后备方案
+const createFanTriangulation = (vertices2D) => {
+  if (vertices2D.length < 3) return { indices: [], centroid: null };
+
+  const indices = [];
+  const vertexCount = vertices2D.length;
+
+  // 找到多边形的重心作为扇形中心
+  let centroidX = 0, centroidY = 0;
+  vertices2D.forEach(([x, y]) => {
+    centroidX += x;
+    centroidY += y;
+  });
+  centroidX /= vertexCount;
+  centroidY /= vertexCount;
+
+  // 检查重心是否在多边形内部
+  const centroidInside = isPointInPolygon([centroidX, centroidY], vertices2D);
+
+  if (centroidInside) {
+    // 如果重心在内部，使用重心作为扇形中心
+    // 注意：这里需要将重心添加到顶点数组的末尾
+    for (let i = 0; i < vertexCount; i++) {
+      const nextI = (i + 1) % vertexCount;
+      indices.push(vertexCount, i, nextI); // 重心索引是vertexCount
+    }
+    return { indices, centroid: [centroidX, centroidY] };
+  } else {
+    // 如果重心不在内部，使用简单的扇形三角化
+    for (let i = 1; i < vertexCount - 1; i++) {
+      indices.push(0, i, i + 1);
+    }
+    return { indices, centroid: null };
+  }
+};
+
+// 检查点是否在多边形内部（射线法）
+const isPointInPolygon = (point, polygon) => {
+  const [x, y] = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+};
+
+// 使用Earcut进行专业的多边形三角化
+const triangulatePolygon = (vertices2D) => {
+  if (vertices2D.length < 3) return [];
+
+  // 修复跨越日期变更线的问题
+  const fixedVertices = fixDateLineCrossing(vertices2D);
+
+  // 将2D顶点数组转换为Earcut需要的格式 [x1, y1, x2, y2, ...]
+  const flatVertices = [];
+  fixedVertices.forEach(([x, y]) => {
+    flatVertices.push(x, y);
+  });
+
+  try {
+    // 使用Earcut进行三角化
+    const triangles = earcut(flatVertices);
+    return { indices: triangles, centroid: null };
+  } catch (error) {
+    console.warn('Earcut三角化失败，使用后备方案:', error);
+    return createFanTriangulation(fixedVertices);
+  }
+};
+
+// 创建国家多边形填充 - 使用改进的三角化算法
+const createCountryPolygonFill = (feature, color, country) => {
+  try {
+    const geometry = feature.geometry;
+    if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) {
+      return;
+    }
+
+    const coordinates = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+
+    coordinates.forEach((polygonCoords, polygonIndex) => {
+      // 处理外环和内环（孔洞）
+      if (!polygonCoords || polygonCoords.length === 0) return;
+
+      const outerRing = polygonCoords[0];
+      if (!outerRing || outerRing.length < 3) return;
+
+      // 将经纬度坐标转换为3D坐标和2D坐标
+      const vertices3D = [];
+      const vertices2D = [];
+
+      // 处理外环 - 修复跨越180度经线的问题
+      outerRing.forEach(([lng, lat]) => {
+        // 处理跨越180度经线的情况
+        let normalizedLng = lng;
+        if (lng < -180) normalizedLng = lng + 360;
+        if (lng > 180) normalizedLng = lng - 360;
+
+        // 3D坐标用于渲染
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (normalizedLng + 180) * (Math.PI / 180);
+        const radius = 1.004; // 提高高度，确保板块可见，但仍低于边界
+
+        const x = -Math.sin(phi) * Math.cos(theta) * radius;
+        const y = Math.cos(phi) * radius;
+        const z = Math.sin(phi) * Math.sin(theta) * radius;
+
+        vertices3D.push(x, y, z);
+
+        // 2D坐标用于三角化 - 使用标准化的经度
+        vertices2D.push([normalizedLng, lat]);
+      });
+
+      // 准备Earcut的数据格式
+      const flatVertices = [];
+      const holeIndices = [];
+
+      // 添加外环顶点
+      vertices2D.forEach(([lng, lat]) => {
+        flatVertices.push(lng, lat);
+      });
+
+      // 处理内环（孔洞）- 如果有的话
+      for (let i = 1; i < polygonCoords.length; i++) {
+        const hole = polygonCoords[i];
+        if (hole && hole.length >= 3) {
+          holeIndices.push(flatVertices.length / 2); // 记录孔洞开始的索引
+
+          hole.forEach(([lng, lat]) => {
+            // 处理跨越180度经线的情况
+            let normalizedLng = lng;
+            if (lng < -180) normalizedLng = lng + 360;
+            if (lng > 180) normalizedLng = lng - 360;
+
+            flatVertices.push(normalizedLng, lat);
+
+            // 同时添加3D坐标
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (normalizedLng + 180) * (Math.PI / 180);
+            const radius = 1.004; // 与外环保持一致的高度
+
+            const x = -Math.sin(phi) * Math.cos(theta) * radius;
+            const y = Math.cos(phi) * radius;
+            const z = Math.sin(phi) * Math.sin(theta) * radius;
+
+            vertices3D.push(x, y, z);
+          });
+        }
+      }
+
+      // 使用Earcut进行三角化，添加更多调试信息
+      let indices;
+      try {
+        indices = earcut(flatVertices, holeIndices.length > 0 ? holeIndices : null);
+
+        // 验证三角化结果
+        if (indices.length === 0) {
+          console.warn(`Earcut返回空结果 ${country.country_id}, 顶点数: ${flatVertices.length / 2}`);
+          throw new Error('Empty triangulation result');
+        }
+
+        // 检查三角形数量是否合理
+        const triangleCount = indices.length / 3;
+        const vertexCount = flatVertices.length / 2;
+        if (triangleCount < vertexCount - 2) {
+          console.warn(`三角形数量异常 ${country.country_id}: ${triangleCount} triangles for ${vertexCount} vertices`);
+        }
+
+      } catch (error) {
+        console.warn(`Earcut三角化失败 ${country.country_id}:`, error);
+        // 后备方案：使用改进的扇形三角化
+        const fanResult = createFanTriangulation(vertices2D);
+        indices = fanResult.indices;
+
+        // 如果使用了重心，需要添加重心顶点到3D顶点数组
+        if (fanResult.centroid) {
+          const [centroidLng, centroidLat] = fanResult.centroid;
+          // 处理跨越日期变更线的重心坐标
+          let normalizedCentroidLng = centroidLng;
+          if (centroidLng < -180) normalizedCentroidLng = centroidLng + 360;
+          if (centroidLng > 180) normalizedCentroidLng = centroidLng - 360;
+
+          const phi = (90 - centroidLat) * (Math.PI / 180);
+          const theta = (normalizedCentroidLng + 180) * (Math.PI / 180);
+          const radius = 1.004;
+
+          const x = -Math.sin(phi) * Math.cos(theta) * radius;
+          const y = Math.cos(phi) * radius;
+          const z = Math.sin(phi) * Math.sin(theta) * radius;
+
+          vertices3D.push(x, y, z);
+        }
+      }
+
+      if (indices.length === 0) {
+        console.warn(`所有三角化方法都失败: ${country.country_id}`);
+        return;
+      }
+
+      // 创建几何体
+      const polygonGeometry = new THREE.BufferGeometry();
+      polygonGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices3D, 3));
+      polygonGeometry.setIndex(indices);
+      polygonGeometry.computeVertexNormals();
+
+      // 优化的材质配置 - 确保完整填充显示，但不阻挡边界点击
+      const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.5, // 适中的透明度，确保边界可见
+        side: THREE.DoubleSide, // 双面渲染，确保所有角度都能看到
+        depthWrite: false, // 禁用深度写入，避免透明物体的深度冲突
+        depthTest: false, // 禁用深度测试，确保板块始终可见
+        blending: THREE.NormalBlending,
+        alphaTest: 0.01,
+        polygonOffset: true, // 启用多边形偏移
+        polygonOffsetFactor: -0.5, // 轻微向前偏移，确保可见
+        polygonOffsetUnits: -0.5
+      });
+
+      const mesh = new THREE.Mesh(polygonGeometry, material);
+      mesh.userData = {
+        country: country,
+        isCountryColor: true,
+        countryId: country.country_id,
+        polygonIndex: polygonIndex
+      };
+
+      // 设置渲染顺序，确保国家板块在地球表面之上，但在边界之下
+      mesh.renderOrder = 1; // 板块在地球之上，但在边界之下
+
+      // 添加到专门的国家板块组中，便于管理
+      if (!scene.getObjectByName('countryGroup')) {
+        const countryGroup = new THREE.Group();
+        countryGroup.name = 'countryGroup';
+        countryGroup.renderOrder = 1; // 板块组在边界组之下
+        countryGroup.scale.set(1, 1, 1); // 初始缩放为1
+        scene.add(countryGroup);
+      }
+
+      const countryGroup = scene.getObjectByName('countryGroup');
+      countryGroup.add(mesh);
+      countryColorMeshes.push(mesh);
+    });
+  } catch (error) {
+    console.warn('创建国家多边形填充失败:', country.country_id, error);
+    // 回退到圆形标记
+    createFallbackCountryMarker(country, color);
+  }
+};
+
+// 回退方案：创建圆形标记
+const createFallbackCountryMarker = (country, color) => {
+  if (!country.latitude || !country.longitude) return;
+
+  const geometry = new THREE.CircleGeometry(0.02, 16);
+  const material = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+
+  // 计算球面坐标
+  const phi = (90 - country.latitude) * (Math.PI / 180);
+  const theta = (country.longitude + 180) * (Math.PI / 180);
+  const radius = 1.01;
+
+  mesh.position.set(
+    -Math.sin(phi) * Math.cos(theta) * radius,
+    Math.cos(phi) * radius,
+    Math.sin(phi) * Math.sin(theta) * radius
+  );
+
+  mesh.lookAt(0, 0, 0);
+  mesh.userData = {
+    country: country,
+    isCountryColor: true
+  };
+
+  scene.add(mesh);
+  countryColorMeshes.push(mesh);
+};
+
+// 为所有国家创建回退标记
+const createFallbackCountryMarkers = (maxIpv6Count) => {
+  props.countries.forEach(country => {
+    const color = getCountryColor(country.total_active_ipv6, maxIpv6Count);
+    createFallbackCountryMarker(country, color);
+  });
+};
+
+// 更新国家颜色显示
+const updateCountryColors = () => {
+  countryColorMeshes.forEach(mesh => {
+    mesh.visible = countryColorsEnabled.value;
+  });
+};
+
 // 加载国家中心坐标
 const loadCountryCenters = async () => {
   try {
@@ -1219,21 +1700,23 @@ const addCountryBorders = async () => {
               });
               
               const line = new THREE.Line(geometry, material)
-              line.userData = { 
-                country, 
+              line.userData = {
+                country,
                 isClickable: true,
                 countryId: country.country_id
               }
-              
+              line.renderOrder = 3; // 确保边界在板块之上
+
               bordersGroup.add(line)
               bordersCreated++
 
               // 添加一个稍微大一点的线条作为发光效果
-              const glowGeometry = new THREE.BufferGeometry().setFromPoints(points.map(p => 
+              const glowGeometry = new THREE.BufferGeometry().setFromPoints(points.map(p =>
                 new THREE.Vector3(p.x * 1.001, p.y * 1.001, p.z * 1.001)
               ));
               const glowLine = new THREE.Line(glowGeometry, glowMaterial);
               glowLine.userData = { isGlow: true };
+              glowLine.renderOrder = 3; // 确保发光效果也在板块之上
               bordersGroup.add(glowLine);
               
               // 如果没有中心坐标，使用第一个点的坐标作为备用
@@ -1263,8 +1746,9 @@ const addCountryBorders = async () => {
   }
     
     // 将边界组添加到场景
+    bordersGroup.renderOrder = 3; // 确保边界组在板块之上
     scene.add(bordersGroup)
-    
+
     // 更新调试信息
     debugInfo.value.geoDataLoaded = true
     debugInfo.value.bordersCreated = bordersCreated
@@ -1278,7 +1762,10 @@ const addCountryBorders = async () => {
 
     // 创建国家标签
     createCountryLabels()
-    
+
+    // 创建国家颜色标记
+    createCountryColors()
+
     // 通知加载成功
     emit('data-load-success')
     console.log('国家边界加载成功:', bordersCreated)
@@ -1615,6 +2102,36 @@ const animate = (timestamp) => {
       }
     });
   }
+
+  // 如果有选中的国家，确保其板块也保持高亮和正确的缩放
+  if (selectedCountry && countryColorsEnabled.value && countryColorMeshes.length > 0 && isZoomedIn.value) {
+    countryColorMeshes.forEach(mesh => {
+      if (mesh.userData && mesh.userData.countryId === selectedCountry) {
+        // 确保高亮板块保持可见和高亮状态
+        mesh.visible = true;
+        if (mesh.material) {
+          // 保持高亮效果 - 使用轻微颜色增亮
+          if (mesh.userData.originalMaterial) {
+            const originalColor = mesh.userData.originalMaterial.color;
+            const highlightColor = new THREE.Color(originalColor).multiplyScalar(1.2);
+            mesh.material.color.copy(highlightColor);
+          }
+          mesh.material.opacity = 0.6; // 降低不透明度，确保边界可见
+          mesh.renderOrder = 10; // 确保在最上层
+        }
+      }
+    });
+
+    // 确保板块组在放大状态下保持正确的缩放
+    if (isZoomedIn.value && countryColorsEnabled.value) {
+      const countryGroup = scene.getObjectByName('countryGroup');
+      if (countryGroup && globe) {
+        // 确保板块组的缩放与地球保持一致
+        countryGroup.scale.copy(globe.scale);
+      }
+    }
+  }
+
   if (renderer) {
     renderer.setClearColor(0x000000, 0)
   }
@@ -1730,6 +2247,14 @@ const flyToCountry = (countryId) => {
     
     // 更新地球缩放
     globe.scale.lerpVectors(startScale, targetScale, easeProgress)
+
+    // 同时缩放国家板块，使其跟随地球缩放
+    if (countryColorsEnabled.value && countryColorMeshes.length > 0) {
+      const countryGroup = scene.getObjectByName('countryGroup');
+      if (countryGroup) {
+        countryGroup.scale.lerpVectors(startScale, targetScale, easeProgress);
+      }
+    }
     
     // 更新控制器目标 - 指向国家中心
     controls.target.set(targetX, targetY, targetZ)
@@ -1788,7 +2313,16 @@ const flyToCountry = (countryId) => {
       updateLabelPositions()
       
       // 再次高亮国家，确保在动画结束后仍然有高亮效果
+      // 但要确保板块保持缩放状态
       highlightCountry(countryId)
+
+      // 确保板块组保持最终的缩放状态
+      if (countryColorsEnabled.value && countryColorMeshes.length > 0) {
+        const countryGroup = scene.getObjectByName('countryGroup');
+        if (countryGroup) {
+          countryGroup.scale.copy(targetScale); // 确保板块组保持目标缩放
+        }
+      }
       
       // 禁用控制器
       controls.enabled = false
@@ -1896,31 +2430,45 @@ const highlightCountry = (countryId) => {
     console.warn('无法高亮国家边界：边界组或国家ID为空');
     return;
   }
-  
-  // 重置之前的高亮
-  resetHighlights();
-  
+
+  // 重置之前的高亮，但不重置当前要高亮的国家
+  resetHighlights(countryId);
+
   let foundBorder = false;
-  
+
   // 遍历边界组中的所有子对象
   bordersGroup.traverse((child) => {
     if (child.userData && child.userData.countryId === countryId) {
       foundBorder = true;
-      
-      // 保存原始材质
+
+      // 保存原始材质（只保存一次）
       if (!child.userData.originalMaterial) {
-        child.userData.originalMaterial = child.material.clone();
+        child.userData.originalMaterial = {
+          color: child.material.color.clone(),
+          opacity: child.material.opacity,
+          linewidth: child.material.linewidth || 1,
+          visible: child.visible,
+          renderOrder: child.renderOrder || 0
+        };
       }
-      
-      // 创建高亮材质
+
+      // 创建更美观的高亮材质
       const highlightMaterial = new THREE.LineBasicMaterial({
-        color: 0x00ffff,
-        linewidth: 18,
+        color: 0xffd700, // 金色高亮，更美观
+        linewidth: 4, // 增加线宽
         transparent: true,
-        opacity: 1
+        opacity: 1.0, // 完全不透明，确保可见
+        depthTest: false, // 确保高亮边界始终可见
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2, // 更大的偏移，确保在板块之上
+        polygonOffsetUnits: -2
       });
-      
+
       // 应用高亮材质
+      if (child.material && child.material.dispose) {
+        child.material.dispose(); // 释放旧材质
+      }
       child.material = highlightMaterial;
       
       // 确保边界在放大状态下也可见
@@ -1960,17 +2508,44 @@ const highlightCountry = (countryId) => {
   if (!foundBorder) {
     console.warn(`未找到国家边界: ${countryId}`);
   }
-  
+
+  // 同时高亮对应的国家板块
+  highlightCountryPolygons(countryId);
+
   // 确保边界组可见
   if (bordersGroup) {
     bordersGroup.visible = true;
     bordersGroup.renderOrder = 999; // 确保边界在其他对象之上渲染
   }
-  
+
   // 更新调试信息和选中状态
   debugInfo.value.lastSelected = countryId;
   selectedCountry = countryId;
 }
+
+// 高亮国家板块
+const highlightCountryPolygons = (countryId) => {
+  if (!countryColorsEnabled.value) return; // 只有在启用国家颜色时才高亮板块
+
+  countryColorMeshes.forEach(mesh => {
+    if (mesh.userData && mesh.userData.countryId === countryId) {
+      // 保存原始材质属性
+      if (!mesh.userData.originalMaterial) {
+        mesh.userData.originalMaterial = {
+          color: mesh.material.color.clone(),
+          opacity: mesh.material.opacity
+        };
+      }
+
+      // 应用高亮效果 - 使用轻微的颜色增亮，确保不遮挡轮廓
+      const originalColor = mesh.userData.originalMaterial.color;
+      const highlightColor = new THREE.Color(originalColor).multiplyScalar(1.2); // 轻微增亮，避免过强
+      mesh.material.color.copy(highlightColor);
+      mesh.material.opacity = 0.6; // 降低不透明度，确保边界可见
+      mesh.renderOrder = 10; // 确保高亮板块在最上层
+    }
+  });
+};
 
 const highlightAsn = (asn) => {
   resetHighlights()
@@ -1995,35 +2570,46 @@ const highlightAsn = (asn) => {
   selectedAsn = asn
 }
 
-const resetHighlights = () => {
+const resetHighlights = (excludeCountryId = null) => {
   // 重置国家边界高亮
   if (bordersGroup) {
     bordersGroup.traverse(child => {
+      // 如果指定了排除的国家ID，跳过该国家
+      if (excludeCountryId && child.userData?.countryId === excludeCountryId) {
+        return;
+      }
+
       if (child.material) {
+        // 释放当前材质
+        if (child.material.dispose) {
+          child.material.dispose();
+        }
+
         // 如果有保存原始材质属性，恢复它
         if (child.userData.originalMaterial) {
-          child.material.color.copy(child.userData.originalMaterial.color);
-          child.material.opacity = child.userData.originalMaterial.opacity;
-          child.material.linewidth = child.userData.originalMaterial.linewidth;
+          // 创建新的材质而不是修改现有的
+          child.material = new THREE.LineBasicMaterial({
+            color: child.userData.originalMaterial.color.clone(),
+            opacity: child.userData.originalMaterial.opacity,
+            linewidth: child.userData.originalMaterial.linewidth,
+            transparent: true,
+            depthTest: true,
+            depthWrite: true
+          });
           child.visible = child.userData.originalMaterial.visible;
           child.renderOrder = child.userData.originalMaterial.renderOrder;
-          
-          // 恢复深度测试和深度写入
-          child.material.depthTest = true;
-          child.material.depthWrite = true;
-          child.material.needsUpdate = true;
         } else {
           // 否则使用默认值
-          child.material.color.set(0x00ffff);
-          child.material.opacity = 1;
-          child.material.linewidth = 15.0;
+          child.material = new THREE.LineBasicMaterial({
+            color: 0x00ffff,
+            opacity: 0.7,
+            linewidth: 1.0,
+            transparent: true,
+            depthTest: true,
+            depthWrite: true
+          });
           child.visible = true;
           child.renderOrder = 0;
-          
-          // 恢复深度测试和深度写入
-          child.material.depthTest = true;
-          child.material.depthWrite = true;
-          child.material.needsUpdate = true;
         }
         
         // 恢复原始几何体位置
@@ -2056,12 +2642,31 @@ const resetHighlights = () => {
       }
     });
   }
-  
+
+  // 重置国家板块高亮
+  countryColorMeshes.forEach(mesh => {
+    if (mesh.userData && mesh.userData.originalMaterial) {
+      // 恢复原始材质属性
+      mesh.material.color.copy(mesh.userData.originalMaterial.color);
+      mesh.material.opacity = mesh.userData.originalMaterial.opacity;
+      mesh.renderOrder = 1; // 恢复原始渲染顺序
+
+      // 清除保存的原始材质
+      delete mesh.userData.originalMaterial;
+    }
+  });
+
+  // 重置国家板块组的缩放
+  const countryGroup = scene.getObjectByName('countryGroup');
+  if (countryGroup) {
+    countryGroup.scale.set(1, 1, 1); // 重置为原始缩放
+  }
+
   // 清除后期处理高亮
   if (outlinePass) {
     outlinePass.selectedObjects = [];
   }
-  
+
   selectedCountry = null;
   selectedAsn = null;
 }
@@ -2138,7 +2743,7 @@ const onDocumentMouseMove = (event) => {
  
  // 收集可点击对象
  const clickableObjects = [];
- 
+
  // 检查国家边界
  if (bordersGroup) {
    bordersGroup.traverse(child => {
@@ -2147,7 +2752,7 @@ const onDocumentMouseMove = (event) => {
      }
    });
  }
- 
+
  // 检查ASN标记
  globe.traverse(child => {
    if (child.userData?.isClickable && child.userData?.type === 'asn') {
@@ -2205,7 +2810,7 @@ const onDocumentMouseMove = (event) => {
        const countryObj = obj.userData?.country ? obj : obj.parent;
        const country = countryObj.userData.country;
        debugInfo.value.lastHovered = countryObj.userData.countryId;
-       
+
        // 高亮当前悬停的边界
        if (countryObj.material) {
          countryObj.material.color.set(0xffff00); // 黄色高亮
@@ -2213,11 +2818,11 @@ const onDocumentMouseMove = (event) => {
          countryObj.material.linewidth = 5.0; // 线条宽度
          hoveredBorder = countryObj;
        }
-       
+
        // 显示国家信息提示
        hoveredCountryInfo.value = country;
        globeContainer.value.style.cursor = 'pointer';
-     } 
+     }
      // 处理ASN标记
      else if (obj.userData?.asn) {
        debugInfo.value.lastHovered = `ASN:${obj.userData.asn.asn}`;
@@ -2259,7 +2864,7 @@ const onDocumentClick = (event) => {
   
   // 收集可点击对象
   const clickableObjects = []
-  
+
   // 检查国家边界
   if (bordersGroup) {
     bordersGroup.traverse(child => {
@@ -2268,7 +2873,7 @@ const onDocumentClick = (event) => {
       }
     })
   }
-  
+
   // 检查ASN标记
   if (globe) {
     globe.traverse(child => {
@@ -2376,6 +2981,14 @@ const resetCamera = () => {
     
     // 更新地球缩放
     globe.scale.lerpVectors(startScale, targetScale, easeProgress)
+
+    // 同时重置国家板块的缩放
+    if (countryColorsEnabled.value && countryColorMeshes.length > 0) {
+      const countryGroup = scene.getObjectByName('countryGroup');
+      if (countryGroup) {
+        countryGroup.scale.lerpVectors(startScale, targetScale, easeProgress);
+      }
+    }
     
     // 更新控制器目标
     controls.target.set(0, 0, 0)
@@ -2397,6 +3010,7 @@ const resetCamera = () => {
       resetHighlights()
       
       // 更新标签显示状态 - 重置视图后显示标签
+      labelVisibility.value = true // 确保标签可见性被重置为true
       updateLabelPositions()
 
       autoRotate.value = true
@@ -2466,6 +3080,14 @@ const resetView = () => {
     
     // 更新地球缩放
     globe.scale.lerpVectors(startScale, targetScale, easeProgress)
+
+    // 同时重置国家板块的缩放
+    if (countryColorsEnabled.value && countryColorMeshes.length > 0) {
+      const countryGroup = scene.getObjectByName('countryGroup');
+      if (countryGroup) {
+        countryGroup.scale.lerpVectors(startScale, targetScale, easeProgress);
+      }
+    }
     
     // 更新控制器目标
     controls.target.set(0, 0, 0)
@@ -2485,8 +3107,9 @@ const resetView = () => {
       
       // 启用控制器
       controls.enabled = true
-      
+
       // 更新标签显示状态 - 重置视图后显示标签
+      labelVisibility.value = true // 确保标签可见性被重置为true
       updateLabelPositions()
     }
   }
@@ -2513,6 +3136,8 @@ watch(() => props.countries, () => {
   if (props.countries && props.countries.length > 0) {
     nextTick(() => {
       addCountryBorders()
+      // 更新国家颜色标记
+      createCountryColors()
     })
   }
 }, { deep: true })
@@ -2545,6 +3170,8 @@ onMounted(() => {
   loadCountryCenters().then(() => {
     // 初始化标签
     createCountryLabels()
+    // 初始化国家颜色标记
+    createCountryColors()
   })
 })
 
@@ -2744,6 +3371,7 @@ defineExpose({
   resetCamera,
   resetHighlights,
   toggleLabels,
+  toggleCountryColors,
   forceUpdateLabels,
   showAllLabels,
   dispose
@@ -3025,5 +3653,74 @@ defineExpose({
   z-index: 100;
   max-width: 300px;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+/* 颜色图例样式 */
+.color-legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px; /* 移到右侧，避免遮挡左侧控制按钮 */
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px; /* 减小内边距 */
+  border-radius: 6px; /* 减小圆角 */
+  font-family: 'Arial', sans-serif;
+  z-index: 100;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5); /* 减小阴影 */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.color-legend h4 {
+  margin: 0 0 6px 0; /* 减小间距 */
+  font-size: 12px; /* 减小字体 */
+  color: #ffff00;
+  text-align: center;
+}
+
+.legend-gradient {
+  width: 120px; /* 缩小宽度 */
+  height: 15px; /* 缩小高度 */
+  background: linear-gradient(to right,
+    #1a1a1a 0%,     /* 无数据 */
+    #0066cc 15%,    /* 深蓝 */
+    #0099ff 30%,    /* 蓝色 */
+    #00cccc 50%,    /* 青色 */
+    #00ff66 70%,    /* 绿色 */
+    #ffff00 85%,    /* 黄色 */
+    #ff6600 95%,    /* 橙色 */
+    #ff0000 100%    /* 红色 */
+  );
+  border-radius: 8px; /* 减小圆角 */
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  margin-bottom: 5px; /* 减小间距 */
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px; /* 减小字体 */
+  color: #cccccc;
+}
+
+@media (max-width: 768px) {
+  .color-legend {
+    bottom: 80px; /* 在移动设备上避免遮挡底部控制按钮 */
+    right: 10px; /* 保持在右侧 */
+    padding: 8px; /* 进一步减小内边距 */
+  }
+
+  .legend-gradient {
+    width: 100px; /* 进一步缩小宽度 */
+    height: 12px; /* 进一步缩小高度 */
+  }
+
+  .color-legend h4 {
+    font-size: 10px; /* 进一步减小字体 */
+    margin-bottom: 4px;
+  }
+
+  .legend-labels {
+    font-size: 9px; /* 进一步减小字体 */
+  }
 }
 </style>

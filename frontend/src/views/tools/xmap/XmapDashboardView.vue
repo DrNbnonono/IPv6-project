@@ -34,18 +34,6 @@
       </div>
       
       <div v-if="activeTab === 'history'" class="history-section">
-        <div class="history-filters-standalone">
-          <select v-model="filterStatus" @change="handleFilterChange" class="filter-select">
-            <option value="">全部状态</option>
-            <option value="running">运行中</option>
-            <option value="completed">已完成</option>
-            <option value="failed">失败</option>
-            <option value="canceled">已取消</option>
-          </select>
-          <button class="btn btn-refresh" @click="refreshTasks">
-            <i class="icon-refresh"></i> 刷新
-          </button>
-        </div>
         
         <div v-if="xmapStore.tasks.length === 0 && !xmapStore.isLoading" class="empty-state">
           <i class="icon-empty"></i>
@@ -76,12 +64,10 @@
       
       <div v-if="activeTab === 'details'" class="details-section">
         <div v-if="xmapStore.currentTask">
-          <div class="details-header-controls">
-            <button class="btn btn-back" @click="activeTab = 'history'">
-              <i class="icon-arrow-left"></i> 返回任务列表
-            </button>
-          </div>
-          <XmapTaskDetails :task="xmapStore.currentTask" />
+          <XmapTaskDetails
+            :task="xmapStore.currentTask"
+            @close-details="activeTab = 'history'"
+          />
         </div>
         <div v-else class="empty-state">
             <i class="icon-empty"></i>
@@ -317,32 +303,7 @@ onMounted(() => {
 
 /* Removed .section-header styles as the element is removed or repurposed */
 
-.history-filters-standalone {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem; // Space before the task list or empty state
-  .filter-select {
-    font-size: 0.85rem;
-    padding: 0.4rem 0.6rem;
-  }
-  .btn-refresh {
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
-  }
-}
 
-.details-header-controls {
-  display: flex;
-  justify-content: flex-start; /* Align button to the left */
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.btn-back {
-  font-size: 0.85rem; // Reduced font size
-  padding: 0.4rem 0.8rem; // Adjust padding
-}
 
 .empty-state {
   text-align: center;
@@ -361,7 +322,47 @@ onMounted(() => {
     font-size: 0.9rem; // Reduced font size
   }
   .btn-primary {
-    font-size: 0.85rem; // Reduced font size
+    font-size: 0.9rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    position: relative;
+    overflow: hidden;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    &:hover {
+      background: linear-gradient(135deg, #2563eb, #1e40af);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+
+      &::before {
+        left: 100%;
+      }
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    i {
+      margin-right: 0.5rem;
+    }
   }
 }
 

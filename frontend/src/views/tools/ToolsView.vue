@@ -3,8 +3,8 @@
     <header class="tools-header">
       <div class="header-content">
         <div class="logo-area" @click="goToHome">
-          <h1>IPv6网络探测平台</h1>
-          <span class="logo-subtitle">专业网络探测工具集合</span>
+          <h1>ObserV6</h1>
+          <span class="logo-subtitle">IPv6网络安全态势感知与漏洞治理可视化平台</span>
         </div>
         <div class="user-info">
           <div class="ip-info">
@@ -97,13 +97,13 @@
           <div class="footer-content">
             <div class="footer-section">
               <h4><i class="icon-contact"></i> 技术支持</h4>
-              <p><i class="icon-email"></i> support@ipv6detection.com</p>
-              <p><i class="icon-phone"></i> +86 400-123-4567</p>
+              <p><i class="icon-email"></i> http://observ6.com/</p>
+              <p><i class="icon-phone"></i> +86 1352656040</p>
             </div>
             <div class="footer-section">
               <h4><i class="icon-team"></i> 开发团队</h4>
-              <p>网络探测研发中心</p>
-              <p>版本: v1.0.0</p>
+              <p>MNGA</p>
+              <p>版本: v2.0.0</p>
             </div>
             <div class="footer-section">
               <h4><i class="icon-time"></i> 系统信息</h4>
@@ -112,7 +112,7 @@
             </div>
           </div>
           <div class="copyright">
-            © 2023 IPv6探测平台 版权所有 | <a href="#" @click.prevent="showAbout">关于我们</a>
+            © 2025 ObserV6 版权所有 | <a href="#" @click.prevent="showAbout">关于我们</a>
           </div>
         </footer>
       </main>

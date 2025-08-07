@@ -49,18 +49,24 @@ apiClient.interceptors.response.use(response => {
   console.log('[Axios] 响应数据:', response.data)
   return response.data
 }, async error => {
+  console.log('[Axios] 响应错误:', error.response?.status, error.response?.data)
+
+  // 处理401未授权错误
   if (error.response?.status === 401) {
-    if (!error.config._retry) {
-      error.config._retry = true
-      const authStore = useAuthStore()
-      await authStore.refreshToken()
-      return apiClient(error.config)
-    } else {
-      const authStore = useAuthStore()
-      authStore.logout()
+    console.log('[Axios] 检测到401错误，执行登出操作')
+    const authStore = useAuthStore()
+
+    // 清除认证状态并跳转到登录页
+    authStore.logout()
+
+    // 如果当前不在登录页，则跳转到登录页
+    if (window.location.pathname !== '/login') {
       window.location.href = '/login'
     }
+
+    return Promise.reject(new Error('认证已过期，请重新登录'))
   }
+
   return Promise.reject(error)
 })
 
@@ -179,7 +185,7 @@ export default {
     getCountryRanking(params = { sort: 'total_active_ipv6', order: 'desc', limit: 10 }) {
       return apiClient.get('/addresses/countries/ranking', { params })
     },
-    getAsnRanking(params = { sort: 'total_active_ipv6', order: 'desc', limit: 10 }) {
+    getAsnRanking(params = { sort: 'total_active_ipv6', order: 'desc', limit: 20 }) {
       return apiClient.get('/addresses/asns/ranking', { params })
     },
     getCountryDetail(countryId) {

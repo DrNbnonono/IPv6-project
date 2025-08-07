@@ -79,7 +79,7 @@ exports.getCountryRanking = async (req, res) => {
  */
 exports.getAsnRanking = async (req, res) => {
   try {
-    const { sort = 'total_active_ipv6', order = 'desc' } = req.query;
+    const { sort = 'total_active_ipv6', order = 'desc', limit = 150 } = req.query;
 
     // 验证排序字段
     const validSortFields = ['total_active_ipv6', 'total_ipv6_prefixes'];
@@ -99,10 +99,10 @@ exports.getAsnRanking = async (req, res) => {
       });
     }
 
-    // 初始化变量
-    await db.query('SET @row_number = 0');
-    
-    // 修复SQL查询，使用正确的MySQL语法
+    // 验证限制数量
+    const limitNum = Math.min(parseInt(limit) || 150, 500); // 最大不超过500
+
+    // 优化查询 - 使用ROW_NUMBER()窗口函数
     const [asns] = await db.query(`
       SELECT 
         a.asn,
@@ -115,11 +115,12 @@ exports.getAsnRanking = async (req, res) => {
         c.country_name_zh,
         c.latitude,
         c.longitude,
-        @row_number := @row_number + 1 AS \`rank\`
+        ROW_NUMBER() OVER (ORDER BY a.${sort} ${order}) AS \`rank\`
       FROM asns a
       JOIN countries c ON a.country_id = c.country_id
       ORDER BY a.${sort} ${order}
-    `);
+      LIMIT ?
+    `, [limitNum]);
 
     const [[{ total }]] = await db.query(`
       SELECT COUNT(*) as total 
@@ -129,7 +130,8 @@ exports.getAsnRanking = async (req, res) => {
     res.json({
       success: true,
       data: asns,
-      total
+      total,
+      limit: limitNum
     });
   } catch (error) {
     logger.error('获取ASN排名失败:', error);
@@ -141,175 +143,9 @@ exports.getAsnRanking = async (req, res) => {
   }
 };
 
-/**
- * 获取国家详情
- */
-exports.getCountryDetail = async (req, res) => {
-  try {
-    const { countryId } = req.params;
 
-    // 获取国家基本信息
-    const [[country]] = await db.query(`
-      SELECT 
-        country_id, 
-        country_name, 
-        country_name_zh,
-        iso3_code,
-        region,
-        subregion,
-        latitude,
-        longitude,
-        total_active_ipv6,
-        total_ipv6_prefixes
-      FROM countries
-      WHERE country_id = ?
-    `, [countryId]);
 
-    if (!country) {
-      return res.status(404).json({
-        success: false,
-        message: '国家不存在'
-      });
-    }
 
-    // 获取国家下的ASN列表
-    const [asns] = await db.query(`
-      SELECT 
-        asn, 
-        as_name,
-        as_name_zh,
-        total_active_ipv6,
-        total_ipv6_prefixes
-      FROM asns
-      WHERE country_id = ?
-      ORDER BY total_active_ipv6 DESC
-      LIMIT 10
-    `, [countryId]);
-
-    // 获取国家协议使用统计
-    const [protocolStats] = await db.query(`
-      SELECT 
-        p.protocol_name,
-        cps.percentage,
-        p.description,
-        p.risk_level
-      FROM country_protocol_stats cps
-      JOIN protocols p ON cps.protocol_id = p.protocol_id
-      WHERE cps.country_id = ?
-      ORDER BY cps.percentage DESC
-      LIMIT 5
-    `, [countryId]);
-
-    // 获取国家漏洞统计
-    const [vulnerabilityStats] = await db.query(`
-      SELECT 
-        v.cve_id,
-        v.name,
-        v.severity,
-        cvs.percentage
-      FROM country_vulnerability_stats cvs
-      JOIN vulnerabilities v ON cvs.vulnerability_id = v.vulnerability_id
-      WHERE cvs.country_id = ?
-      ORDER BY cvs.percentage DESC
-      LIMIT 5
-    `, [countryId]);
-
-    res.json({
-      success: true,
-      data: {
-        ...country,
-        asns,
-        protocolStats,
-        vulnerabilityStats
-      }
-    });
-  } catch (error) {
-    logger.error('获取国家详情失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取国家详情失败'
-    });
-  }
-};
-
-/**
- * 获取ASN详情
- */
-exports.getAsnDetail = async (req, res) => {
-  try {
-    const { asn } = req.params;
-
-    // 获取ASN基本信息
-    const [[asnInfo]] = await db.query(`
-      SELECT 
-        a.asn,
-        a.as_name,
-        a.as_name_zh,
-        a.organization,
-        a.total_active_ipv6,
-        a.total_ipv6_prefixes,
-        c.country_id,
-        c.country_name,
-        c.country_name_zh,
-        c.latitude,
-        c.longitude
-      FROM asns a
-      JOIN countries c ON a.country_id = c.country_id
-      WHERE a.asn = ?
-    `, [asn]);
-
-    if (!asnInfo) {
-      return res.status(404).json({
-        success: false,
-        message: 'ASN不存在'
-      });
-    }
-
-    // 获取ASN下的前缀列表
-    const [prefixes] = await db.query(`
-      SELECT 
-        prefix_id,
-        prefix,
-        prefix_length,
-        version,
-        allocation_date,
-        registry
-      FROM ip_prefixes
-      WHERE asn = ?
-      ORDER BY prefix_length ASC
-      LIMIT 50
-    `, [asn]);
-
-    // 获取ASN协议使用统计
-    const [protocolStats] = await db.query(`
-      SELECT 
-        p.protocol_name,
-        aps.percentage,
-        p.description,
-        p.risk_level
-      FROM asn_protocol_stats aps
-      JOIN protocols p ON aps.protocol_id = p.protocol_id
-      WHERE aps.asn = ?
-      ORDER BY aps.percentage DESC
-      LIMIT 5
-    `, [asn]);
-
-    res.json({
-      success: true,
-      data: {
-        ...asnInfo,
-        prefixes,
-        protocolStats
-      }
-    });
-  } catch (error) {
-    logger.error('获取ASN详情失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取ASN详情失败'
-    });
-  }
-};
 
 /**
  * 搜索IP前缀
@@ -641,9 +477,9 @@ exports.getMapData = async (req, res) => {
       ORDER BY country_name DESC
     `);
 
-    // 获取ASN基础数据
+    // 获取ASN基础数据 - 增加返回数量以确保覆盖更多国家的ASN
     const [asns] = await db.query(`
-      SELECT 
+      SELECT
         a.asn,
         a.as_name,
         a.as_name_zh,
@@ -653,8 +489,8 @@ exports.getMapData = async (req, res) => {
         a.total_active_ipv6
       FROM asns a
       JOIN countries c ON a.country_id = c.country_id
-      ORDER BY asn DESC
-      LIMIT 100
+      ORDER BY a.total_active_ipv6 DESC
+      LIMIT 500
     `);
 
     const endTime = performance.now();
@@ -1435,10 +1271,10 @@ exports.getAsnProtocolDetail = async (req, res) => {
       // 按照前缀所占比例分配受影响地址
       const ratio = prefix.total_addresses / detail.total_active_ipv6;
       const affected_addresses = Math.round(detail.affected_addresses * ratio);
-      const affected_percentage = prefix.total_addresses > 0 
-        ? (affected_addresses / prefix.total_addresses) * 100 
+      const affected_percentage = prefix.total_addresses > 0
+        ? (affected_addresses / prefix.total_addresses) * 100
         : 0;
-        
+
       return {
         prefix: prefix.prefix,
         prefix_length: prefix.prefix_length,
@@ -1446,7 +1282,7 @@ exports.getAsnProtocolDetail = async (req, res) => {
         affected_addresses: affected_addresses,
         affected_percentage: parseFloat(affected_percentage.toFixed(2))
       };
-    });
+    }).filter(prefix => prefix.affected_addresses > 0); // 只返回受影响地址数大于0的前缀
     
     // 构建响应数据结构
     const responseData = {
@@ -1811,10 +1647,53 @@ exports.getAsnVulnerabilityDetail = async (req, res) => {
         message: `ASN ${asn} 的漏洞 ${vulnerabilityId} 详情不存在`
       });
     }
-    
+
+    // 确保affected_percentage是数字类型
+    if (detail.affected_percentage !== null && detail.affected_percentage !== undefined) {
+      detail.affected_percentage = parseFloat(detail.affected_percentage);
+    } else {
+      detail.affected_percentage = 0;
+    }
+
+    // 获取ASN的前缀列表
+    const [prefixes] = await db.query(`
+      SELECT
+        prefix,
+        prefix_length,
+        active_ipv6_count as total_addresses
+      FROM
+        ip_prefixes
+      WHERE
+        asn = ?
+    `, [asn]);
+
+    // 根据前缀数量和ASN总体受影响比例计算每个前缀的受影响地址数
+    const prefixDistribution = prefixes.map(prefix => {
+      // 按照前缀所占比例分配受影响地址
+      const ratio = prefix.total_addresses / detail.total_active_ipv6;
+      const affected_addresses = Math.round(detail.affected_addresses * ratio);
+      const affected_percentage = prefix.total_addresses > 0
+        ? (affected_addresses / prefix.total_addresses) * 100
+        : 0;
+
+      return {
+        prefix: prefix.prefix,
+        prefix_length: prefix.prefix_length,
+        total_addresses: prefix.total_addresses,
+        affected_addresses: affected_addresses,
+        affected_percentage: parseFloat(affected_percentage.toFixed(2))
+      };
+    }).filter(prefix => prefix.affected_addresses > 0); // 只返回受影响地址数大于0的前缀
+
+    // 构建响应数据结构
+    const responseData = {
+      info: detail,
+      prefixDistribution: prefixDistribution
+    };
+
     res.json({
       success: true,
-      data: detail
+      data: responseData
     });
   } catch (error) {
     logger.error(`获取ASN ${req.params.asn} 的漏洞 ${req.params.vulnerabilityId} 详情失败:`, error);
@@ -1836,18 +1715,21 @@ exports.getVulnerabilityCountries = async (req, res) => {
     logger.info(`获取漏洞 ${vulnerabilityId} 的国家列表`);
     
     const [countries] = await db.query(`
-      SELECT 
-        country_id,
-        country_name,
-        country_name_zh,
-        address_count as affected_addresses,
-        percentage as affected_percentage
-      FROM 
-        country_vulnerability_stats_view
-      WHERE 
-        vulnerability_id = ?
-      ORDER BY 
-        affected_addresses DESC
+      SELECT
+        cvs.country_id,
+        cvs.country_name,
+        cvs.country_name_zh,
+        cvs.address_count as affected_addresses,
+        cvs.percentage as affected_percentage,
+        c.region
+      FROM
+        country_vulnerability_stats_view cvs
+      LEFT JOIN
+        countries c ON cvs.country_id = c.country_id
+      WHERE
+        cvs.vulnerability_id = ?
+      ORDER BY
+        cvs.address_count DESC
       LIMIT ? OFFSET ?
     `, [vulnerabilityId, parseInt(limit), parseInt(offset)]);
     
@@ -1883,7 +1765,7 @@ exports.getCountryVulnerabilityDetail = async (req, res) => {
     const { countryId, vulnerabilityId } = req.params;
     
     const [[detail]] = await db.query(`
-      SELECT 
+      SELECT
         cvsv.country_id,
         cvsv.country_name,
         cvsv.country_name_zh,
@@ -1894,14 +1776,15 @@ exports.getCountryVulnerabilityDetail = async (req, res) => {
         v.description,
         cvsv.address_count as affected_addresses,
         c.total_active_ipv6 as total_addresses,
-        cvsv.percentage as affected_percentage
-      FROM 
+        cvsv.percentage as affected_percentage,
+        c.region
+      FROM
         country_vulnerability_stats_view cvsv
       JOIN
         vulnerabilities v ON cvsv.vulnerability_id = v.vulnerability_id
       JOIN
         countries c ON cvsv.country_id = c.country_id
-      WHERE 
+      WHERE
         cvsv.country_id = ? AND cvsv.vulnerability_id = ?
     `, [countryId, vulnerabilityId]);
     
@@ -1930,11 +1813,15 @@ exports.getCountryVulnerabilityDetail = async (req, res) => {
       LIMIT 10
     `, [countryId, vulnerabilityId]);
     
-    detail.asns = asns;
-    
+    // 构建响应数据结构，与协议组件保持一致
+    const responseData = {
+      info: detail,
+      asnDistribution: asns
+    };
+
     res.json({
       success: true,
-      data: detail
+      data: responseData
     });
   } catch (error) {
     logger.error(`获取国家 ${req.params.countryId} 的漏洞 ${req.params.vulnerabilityId} 详情失败:`, error);

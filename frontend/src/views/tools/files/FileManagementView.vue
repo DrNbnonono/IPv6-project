@@ -428,10 +428,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useFileStore } from '@/stores/file'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api'
 
 const fileStore = useFileStore()
+const authStore = useAuthStore()
 
 // 响应式数据
 const selectedTool = ref('')
@@ -505,13 +507,23 @@ const handleToolChange = () => {
 
 const fetchFiles = async () => {
   try {
+    // 检查认证状态
+    if (!authStore.isAuthenticated) {
+      console.log('用户未认证，跳过获取文件列表')
+      return
+    }
+
     isLoading.value = true
     const response = await fileStore.getFiles(selectedTool.value, selectedFileType.value, listType.value)
     if (response && response.success) {
       files.value = response.data || []
     }
   } catch (error) {
-    ElMessage.error('获取文件列表失败: ' + error.message)
+    console.error('获取文件列表失败:', error)
+    // 如果是认证错误，不显示错误消息，因为会自动跳转到登录页
+    if (error.message !== '认证已过期，请重新登录') {
+      ElMessage.error('获取文件列表失败: ' + error.message)
+    }
   } finally {
     isLoading.value = false
   }
@@ -865,7 +877,13 @@ const confirmDelete = async (file) => {
 
 // 生命周期
 onMounted(() => {
-  fetchFiles()
+  // 确保认证状态已初始化
+  authStore.init()
+
+  // 延迟一点时间确保认证状态已设置
+  setTimeout(() => {
+    fetchFiles()
+  }, 100)
 })
 </script>
 

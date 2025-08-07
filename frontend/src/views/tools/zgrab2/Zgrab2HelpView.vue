@@ -16,29 +16,28 @@
     <div class="help-container">
       <!-- 左侧导航 -->
       <div class="help-sidebar">
-        <div 
-          v-for="item in toc" 
-          :key="item.id"
-          :class="['toc-item', { active: currentDoc === item.id }]"
-          @click="item.id && loadDoc(item.id)"
-        >
-          {{ item.title }}
-        </div>
-        
-        <!-- 多级目录渲染 -->
-        <template v-for="section in toc.filter(item => item.children)" :key="'section-'+section.title">
-          <div class="toc-section">
+        <template v-for="item in toc" :key="item.id || item.title">
+          <!-- 如果有子项，显示为分组 -->
+          <div v-if="item.children" class="toc-section">
             <div class="toc-section-title">
-              {{ section.title }}
+              {{ item.title }}
             </div>
-            <div 
-              v-for="child in section.children"
+            <div
+              v-for="child in item.children"
               :key="child.id"
               :class="['toc-child-item', { active: currentDoc === child.id }]"
               @click="loadDoc(child.id)"
             >
               {{ child.title }}
             </div>
+          </div>
+          <!-- 如果没有子项，显示为普通项目 -->
+          <div
+            v-else
+            :class="['toc-item', { active: currentDoc === item.id }]"
+            @click="item.id && loadDoc(item.id)"
+          >
+            {{ item.title }}
           </div>
         </template>
       </div>
@@ -243,15 +242,28 @@ onMounted(async () => {
     
     .lang-select {
       padding: 0.5rem 1rem;
-      border-radius: 4px;
-      border: none;
+      border-radius: 6px;
+      border: 1px solid #ffffff40;
       background-color: #ffffff20;
       color: white;
       font-size: 1rem;
       cursor: pointer;
-      
+      transition: all 0.2s ease;
+
+      option {
+        background-color: #35495e;
+        color: white;
+      }
+
       &:hover {
         background-color: #ffffff30;
+        border-color: #ffffff60;
+      }
+
+      &:focus {
+        outline: none;
+        background-color: #ffffff40;
+        border-color: #ffffff80;
       }
     }
   }

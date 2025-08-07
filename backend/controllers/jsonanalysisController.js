@@ -538,7 +538,7 @@ exports.extractZgrab2Results = async (req, res) => {
 // 保存处理后的JSON文件
 exports.saveProcessedJson = async (req, res) => {
   try {
-    const { jsonData, fileName, description } = req.body;
+    const { jsonData, fileName, description, format = 'json' } = req.body;
     const userId = req.user.id;
 
     if (!jsonData || !fileName) {
@@ -551,11 +551,29 @@ exports.saveProcessedJson = async (req, res) => {
     // 生成文件名
     const timestamp = Date.now();
     const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const fullFileName = `${safeFileName}_${timestamp}.json`;
+
+    // 根据格式确定文件扩展名和内容
+    let fileExtension, fileContent, fullFileName;
+
+    if (format === 'txt' && Array.isArray(jsonData)) {
+      // 如果是txt格式且数据是数组，每行一个元素
+      fileExtension = 'txt';
+      fileContent = jsonData.join('\n');
+    } else if (format === 'txt' && typeof jsonData === 'string') {
+      // 如果是txt格式且数据是字符串
+      fileExtension = 'txt';
+      fileContent = jsonData;
+    } else {
+      // 默认JSON格式
+      fileExtension = 'json';
+      fileContent = JSON.stringify(jsonData, null, 2);
+    }
+
+    fullFileName = `${safeFileName}_${timestamp}.${fileExtension}`;
     const filePath = path.join(JSONANALYSIS_DIR, fullFileName);
 
     // 保存文件
-    fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2), 'utf8');
+    fs.writeFileSync(filePath, fileContent, 'utf8');
 
     // 获取jsonanalysis工具ID
     const [tools] = await db.query('SELECT id FROM tools WHERE name = ?', ['jsonanalysis']);
@@ -836,6 +854,44 @@ function extractXmapData(data, filterCriteria = {}) {
   // 转换Set为数组并计算唯一地址数
   results.summary.uniqueAddresses = results.uniqueAddresses.size;
   results.uniqueAddressList = Array.from(results.uniqueAddresses);
+
+  // 根据提取类型返回不同的数据
+  if (filterCriteria.extractType === 'outersaddr') {
+    // 提取所有成功响应的outersaddr字段，用于ZGrab2扫描
+    const outersaddrList = results.successfulResults
+      .map(record => record.outersaddr)
+      .filter(addr => addr && addr.trim() !== '')
+      .filter((addr, index, arr) => arr.indexOf(addr) === index); // 去重
+
+    return {
+      ...results,
+      extractedData: outersaddrList,
+      extractType: 'outersaddr',
+      description: `提取了 ${outersaddrList.length} 个唯一的IPv6地址（outersaddr字段）`
+    };
+  } else if (filterCriteria.extractType === 'successful_addresses') {
+    // 提取所有成功响应的地址
+    return {
+      ...results,
+      extractedData: results.uniqueAddressList,
+      extractType: 'successful_addresses',
+      description: `提取了 ${results.uniqueAddressList.length} 个唯一地址`
+    };
+  } else if (filterCriteria.extractType === 'all_addresses') {
+    // 提取所有地址（包括失败的）
+    const allAddresses = new Set();
+    data.forEach(record => {
+      if (record.outersaddr) allAddresses.add(record.outersaddr);
+      if (record.saddr) allAddresses.add(record.saddr);
+    });
+
+    return {
+      ...results,
+      extractedData: Array.from(allAddresses),
+      extractType: 'all_addresses',
+      description: `提取了 ${allAddresses.size} 个地址（包括失败响应）`
+    };
+  }
 
   return results;
 }

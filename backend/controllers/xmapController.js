@@ -477,7 +477,11 @@ exports.scan = async (req, res) => {
 
     const xmapProcess = spawn('sudo', ['xmap', ...args], {
       stdio: ['ignore', 'ignore', 'pipe'],
+      detached: true, // 创建新的进程组，便于管理子进程
     });
+
+    // 不要让Node.js等待这个子进程
+    xmapProcess.unref();
 
     // xmapProcess.stdin.write('NKU@ipv6!218\n');
     // xmapProcess.stdin.end();
@@ -585,23 +589,112 @@ exports.cancelTask = async (req, res) => {
 
     if (activeProcesses.has(taskId)) {
       const process = activeProcesses.get(taskId);
-      
-      // 先尝试终止进程
-      process.kill('SIGTERM');
-      
-      // 确保子进程也被终止（因为使用sudo启动的进程可能有子进程）
+
+      logger.info(`开始终止任务 ${taskId}，进程PID: ${process.pid}`);
+
+      // 由于使用sudo启动，需要更强力的终止方式
       try {
-        // 使用系统命令查找并杀死相关的xmap进程
-        const killCommand = spawn('pkill', ['-f', `xmap.*${taskId}`]);
-        
-        killCommand.on('close', (code) => {
-          logger.info(`尝试终止任务 ${taskId} 相关进程，退出码: ${code}`);
+        // 1. 首先尝试优雅终止主进程
+        process.kill('SIGTERM');
+
+        // 2. 等待一段时间后强制终止
+        setTimeout(() => {
+          if (!process.killed) {
+            logger.warn(`任务 ${taskId} 未响应SIGTERM，使用SIGKILL强制终止`);
+            process.kill('SIGKILL');
+          }
+        }, 3000); // 3秒后强制终止
+
+        // 3. 使用系统命令终止所有相关的xmap进程
+        // 查找并终止包含任务ID的xmap进程
+        const killXmapCommand = spawn('sudo', ['pkill', '-f', `xmap.*${taskId}`]);
+
+        killXmapCommand.on('close', (code) => {
+          logger.info(`终止任务 ${taskId} 相关xmap进程，退出码: ${code}`);
         });
+
+        killXmapCommand.on('error', (error) => {
+          logger.error(`终止任务 ${taskId} 相关xmap进程失败`, { error: error.message });
+        });
+
+        // 4. 通过进程组终止（由于使用了detached: true）
+        try {
+          // 终止整个进程组，使用负PID
+          process.kill(-process.pid, 'SIGTERM');
+          logger.info(`发送SIGTERM到进程组 ${process.pid}`);
+
+          setTimeout(() => {
+            try {
+              // 强制终止整个进程组
+              process.kill(-process.pid, 'SIGKILL');
+              logger.info(`发送SIGKILL到进程组 ${process.pid}`);
+            } catch (e) {
+              logger.debug(`进程组 ${process.pid} 可能已经终止`, { error: e.message });
+            }
+          }, 2000);
+        } catch (pgError) {
+          logger.warn(`无法终止进程组 ${process.pid}`, { error: pgError.message });
+        }
+
+        // 5. 使用更精确的系统命令终止xmap进程
+        try {
+          // 查找所有xmap进程并终止
+          const killAllXmapCommand = spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -TERM`]);
+
+          killAllXmapCommand.on('close', (code) => {
+            logger.info(`系统级终止xmap进程命令执行完成，退出码: ${code}`);
+
+            // 如果TERM信号无效，使用KILL信号
+            setTimeout(() => {
+              const forceKillCommand = spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
+              forceKillCommand.on('close', (forceCode) => {
+                logger.info(`强制终止xmap进程命令执行完成，退出码: ${forceCode}`);
+              });
+            }, 3000);
+          });
+
+          killAllXmapCommand.on('error', (error) => {
+            logger.error(`系统级终止xmap进程失败`, { error: error.message });
+          });
+        } catch (sysError) {
+          logger.error(`执行系统级终止命令失败`, { error: sysError.message });
+        }
+
       } catch (killError) {
-        logger.error(`尝试终止任务 ${taskId} 相关进程失败`, { error: killError.message });
+        logger.error(`终止任务 ${taskId} 进程失败`, { error: killError.message });
       }
-      
-      activeProcesses.delete(taskId);
+
+      // 延迟删除进程记录，并验证进程是否真的被终止
+      setTimeout(async () => {
+        // 验证进程是否还在运行
+        try {
+          const checkCommand = spawn('bash', ['-c', `ps aux | grep '[x]map' | grep '${taskId}' | wc -l`]);
+          let output = '';
+
+          checkCommand.stdout.on('data', (data) => {
+            output += data.toString();
+          });
+
+          checkCommand.on('close', (code) => {
+            const processCount = parseInt(output.trim());
+            if (processCount > 0) {
+              logger.warn(`任务 ${taskId} 仍有 ${processCount} 个相关进程在运行，尝试强制终止`);
+
+              // 最后的强制终止尝试
+              spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
+            } else {
+              logger.info(`任务 ${taskId} 所有相关进程已成功终止`);
+            }
+          });
+        } catch (checkError) {
+          logger.error(`检查任务 ${taskId} 进程状态失败`, { error: checkError.message });
+        }
+
+        activeProcesses.delete(taskId);
+        logger.info(`任务 ${taskId} 进程记录已清理`);
+      }, 8000); // 增加到8秒，给进程更多时间终止
+    } else {
+      logger.warn(`任务 ${taskId} 在活动进程列表中未找到`);
     }
 
     await db.query(

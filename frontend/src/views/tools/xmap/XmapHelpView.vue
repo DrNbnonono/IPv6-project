@@ -16,29 +16,28 @@
     <div class="help-container">
       <!-- 左侧导航 -->
       <div class="help-sidebar">
-        <div 
-          v-for="item in toc" 
-          :key="item.id"
-          :class="['toc-item', { active: currentDoc === item.id }]"
-          @click="item.id && loadDoc(item.id)"
-        >
-          {{ item.title }}
-        </div>
-        
-        <!-- 多级目录渲染 -->
-        <template v-for="section in toc.filter(item => item.children)" :key="'section-'+section.title">
-          <div class="toc-section">
+        <template v-for="item in toc" :key="item.id || item.title">
+          <!-- 如果有子项，显示为分组 -->
+          <div v-if="item.children" class="toc-section">
             <div class="toc-section-title">
-              {{ section.title }}
+              {{ item.title }}
             </div>
-            <div 
-              v-for="child in section.children"
+            <div
+              v-for="child in item.children"
               :key="child.id"
               :class="['toc-child-item', { active: currentDoc === child.id }]"
               @click="loadDoc(child.id)"
             >
               {{ child.title }}
             </div>
+          </div>
+          <!-- 如果没有子项，显示为普通项目 -->
+          <div
+            v-else
+            :class="['toc-item', { active: currentDoc === item.id }]"
+            @click="item.id && loadDoc(item.id)"
+          >
+            {{ item.title }}
           </div>
         </template>
       </div>
@@ -113,35 +112,37 @@ const fetchToc = async () => {
 
 // 默认目录结构 (当API不可用时使用)
 const getDefaultToc = () => {
+  const isZh = currentLang.value === 'zh'
+
   return [
-    { id: 'home', title: t('Home') },
-    { id: 'getting-started', title: t('Getting Started') },
-    { id: 'Virtual-Machine-Configuration', title: t('Virtual Machine Configuration') },
-    { id: 'Scanning-Best-Practices', title: t('Scanning Best Practices') },
-    { id: 'Installing-XMap', title: t('Installing XMap') },
-    { 
-      title: t('Global Options'),
+    { id: 'home', title: isZh ? '首页' : 'Home' },
+    { id: 'getting-started', title: isZh ? '入门指南' : 'Getting Started' },
+    { id: 'Installing-XMap', title: isZh ? '安装XMap' : 'Installing XMap' },
+    {
+      title: isZh ? '全局选项' : 'Global Options',
       children: [
-        { id: 'Basic-Arguments', title: t('Basic Arguments') },
-        { id: 'Scan-Options', title: t('Scan Options') },
-        { id: 'Network-Options', title: t('Network Options') },
-        { id: 'Output-Modules', title: t('Output Modules') },
-        { id: 'IID-Modules', title: t('IID Modules') },
-        { id: 'Logging-and-Metadata', title: t('Logging and Metadata') },
-        { id: 'Additional-Options', title: t('Additional Options') }
+        { id: 'Basic-Arguments', title: isZh ? '基础参数' : 'Basic Arguments' },
+        { id: 'Scan-Options', title: isZh ? '扫描选项' : 'Scan Options' },
+        { id: 'Network-Options', title: isZh ? '网络选项' : 'Network Options' },
+        { id: 'Additional-Options', title: isZh ? '附加选项' : 'Additional Options' },
+        { id: 'Logging-and-Metadata', title: isZh ? '日志和元数据' : 'Logging and Metadata' }
       ]
     },
-    { 
-      title: t('Probe Options'),
+    {
+      title: isZh ? '探测选项' : 'Probe Options',
       children: [
-        { id: 'ICMP-Echo-Probe-Module', title: t('ICMP Echo Probe Module') },
-        { id: 'TCP-SYN-Probe-Module', title: t('TCP SYN Probe Module') },
-        { id: 'UDP-Probe-Module', title: t('UDP Probe Module') },
-        { id: 'DNS-Probe-Module', title: t('DNS Probe Module') },
+        { id: 'TCP-SYN-Probe-Module', title: isZh ? 'TCP SYN探测模块' : 'TCP SYN Probe Module' },
+        { id: 'UDP-Probe-Module', title: isZh ? 'UDP探测模块' : 'UDP Probe Module' },
+        { id: 'ICMP-Echo-Probe-Module', title: isZh ? 'ICMP Echo探测模块' : 'ICMP Echo Probe Module' },
+        { id: 'DNS-Probe-Module', title: isZh ? 'DNS探测模块' : 'DNS Probe Module' }
       ]
     },
-    { id: 'Writing-Modules', title: t('Writing Modules') },
-    { id: 'XMap-in-Academic-Research', title: t('Academic Research') }
+    { id: 'Output-Modules', title: isZh ? '输出模块' : 'Output Modules' },
+    { id: 'IID-Modules', title: isZh ? 'IID模块' : 'IID Modules' },
+    { id: 'Scanning-Best-Practices', title: isZh ? '扫描最佳实践' : 'Scanning Best Practices' },
+    { id: 'Virtual-Machine-Configuration', title: isZh ? '虚拟机配置' : 'Virtual Machine Configuration' },
+    { id: 'Writing-Modules', title: isZh ? '编写模块' : 'Writing Modules' },
+    { id: 'XMap-in-Academic-Research', title: isZh ? '学术研究中的XMap' : 'XMap in Academic Research' }
   ]
 }
 
@@ -242,15 +243,28 @@ onMounted(async () => {
     
     .lang-select {
       padding: 0.5rem 1rem;
-      border-radius: 4px;
-      border: none;
+      border-radius: 6px;
+      border: 1px solid #ffffff40;
       background-color: #ffffff20;
       color: white;
       font-size: 1rem;
       cursor: pointer;
-      
+      transition: all 0.2s ease;
+
+      option {
+        background-color: #35495e;
+        color: white;
+      }
+
       &:hover {
         background-color: #ffffff30;
+        border-color: #ffffff60;
+      }
+
+      &:focus {
+        outline: none;
+        background-color: #ffffff40;
+        border-color: #ffffff80;
       }
     }
   }

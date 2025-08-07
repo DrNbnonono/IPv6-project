@@ -11,6 +11,7 @@ const docRouter = require('./routes/doc')
 const databaseRoutes = require('./routes/database');
 const fileRouter = require('./routes/file'); // 新增文件路由
 const jsonanalysisRouter = require('./routes/jsonanalysis'); // JSON分析路由
+const workflowRouter = require('./routes/workflows'); // 工作流路由
 dotenv.config();
 
 const app = express();
@@ -30,6 +31,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/database', databaseRoutes);
 app.use('/api/files', fileRouter);
 app.use('/api/jsonanalysis', jsonanalysisRouter);
+app.use('/api/workflows', workflowRouter);
 
 // 更新CORS配置，允许所有来源访问或指定您的域名
 app.use(cors({

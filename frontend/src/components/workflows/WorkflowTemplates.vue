@@ -259,15 +259,15 @@ const getCategoryName = (categoryId) => {
 
 const getNodeIcon = (nodeType) => {
   const icons = {
-    file_input: 'icon-file',
-    xmap_scan: 'icon-radar',
-    zgrab2_scan: 'icon-scan',
-    xmap_json_extract: 'icon-filter',
-    zgrab2_json_extract: 'icon-filter',
-    json_custom_extract: 'icon-filter',
-    file_output: 'icon-download'
+    file_input: 'icon-letter-f',
+    xmap_scan: 'icon-letter-x',
+    zgrab2_scan: 'icon-letter-z',
+    xmap_json_extract: 'icon-letter-e',
+    zgrab2_json_extract: 'icon-letter-e',
+    json_custom_extract: 'icon-letter-j',
+    file_output: 'icon-letter-o'
   }
-  return icons[nodeType] || 'icon-node'
+  return icons[nodeType] || 'icon-letter-n'
 }
 
 const getPreviewNodes = (template) => {
@@ -896,5 +896,28 @@ onMounted(async () => {
   color: #606266;
   font-size: 14px;
   line-height: 1.4;
+}
+
+/* 节点字母头像样式 */
+.icon-letter-f::before { content: "F"; }
+.icon-letter-x::before { content: "X"; }
+.icon-letter-z::before { content: "Z"; }
+.icon-letter-e::before { content: "E"; }
+.icon-letter-j::before { content: "J"; }
+.icon-letter-o::before { content: "O"; }
+.icon-letter-n::before { content: "N"; }
+
+/* 字母头像通用样式 */
+[class*="icon-letter-"]::before {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  background: #3b82f6;
+  color: white;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 10px;
 }
 </style>

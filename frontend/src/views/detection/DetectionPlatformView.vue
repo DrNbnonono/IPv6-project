@@ -6,7 +6,7 @@
     </div>
     
         <header class="platform-header">
-      <h1>IPv6网络探测平台</h1>
+      <h1>ObserV6</h1>
       <div class="time-display">{{ currentTime }}</div>
       <div class="user-info">
         <button @click="goToAdvancedQuery" class="nav-btn query-btn">高级查询</button>
@@ -305,7 +305,7 @@
     </div>
 
     <footer class="platform-footer">
-      <p>IPv6网络探测平台 | 最后数据更新: {{ lastDataUpdate }}</p>
+      <p>ObserV6 | 最后数据更新: {{ lastDataUpdate }}</p>
     </footer>
 
 

@@ -1,35 +1,40 @@
 <template>
   <div class="task-history">
+    <!-- 始终显示的表头和控件 -->
+    <div class="table-header">
+      <div class="header-title">
+        <h3><i class="icon icon-history"></i> 任务历史</h3>
+        <span class="task-count">{{ tasks.length }}个任务</span>
+      </div>
+      <div class="header-actions">
+        <select v-model="filterStatus" @change="handleFilterChange" class="filter-select">
+          <option value="">全部状态</option>
+          <option value="running">运行中</option>
+          <option value="completed">已完成</option>
+          <option value="failed">失败</option>
+          <option value="canceled">已取消</option>
+        </select>
+        <button class="btn btn-refresh" @click="handleRefresh">
+          <i class="icon icon-refresh"></i> 刷新
+        </button>
+      </div>
+    </div>
+
+    <!-- 空状态显示 -->
     <div v-if="tasks.length === 0" class="empty-state">
       <div class="empty-content">
         <i class="icon icon-empty"></i>
         <h3>暂无任务记录</h3>
-        <p>您还没有创建任何扫描任务</p>
-        <button class="btn btn-primary" @click="$emit('create-task')">
+        <p v-if="!filterStatus">您还没有创建任何扫描任务</p>
+        <p v-else>当前状态下没有任务记录</p>
+        <button v-if="!filterStatus" class="btn btn-primary" @click="$emit('create-task')">
           <i class="icon icon-plus"></i> 创建新任务
         </button>
       </div>
     </div>
-    
+
+    <!-- 任务列表 -->
     <div v-else>
-      <div class="table-header">
-        <div class="header-title">
-          <h3><i class="icon icon-history"></i> 任务历史</h3>
-          <span class="task-count">{{ tasks.length }}个任务</span>
-        </div>
-        <div class="header-actions">
-          <select v-model="filterStatus" @change="$emit('filter-change', filterStatus)" class="filter-select">
-            <option value="">全部状态</option>
-            <option value="running">运行中</option>
-            <option value="completed">已完成</option>
-            <option value="failed">失败</option>
-            <option value="canceled">已取消</option>
-          </select>
-          <button class="btn btn-refresh" @click="$emit('refresh')">
-            <i class="icon icon-refresh"></i> 刷新
-          </button>
-        </div>
-      </div>
       
       <div class="table-container">
         <table class="task-table">
@@ -126,6 +131,9 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useXmapStore } from '@/stores/xmap'
+
+const xmapStore = useXmapStore()
 
 const { tasks, pagination } = defineProps({
   tasks: {
@@ -146,10 +154,10 @@ const { tasks, pagination } = defineProps({
 })
 
 const emit = defineEmits([
-  'cancel-task', 
-  'delete-task', 
-  'view-log', 
-  'download-result', 
+  'cancel-task',
+  'delete-task',
+  'view-log',
+  'download-result',
   'view-details',
   'page-change',
   'filter-change',
@@ -158,6 +166,26 @@ const emit = defineEmits([
 ])
 
 const filterStatus = ref('')
+
+// 刷新任务列表
+const handleRefresh = async () => {
+  try {
+    await xmapStore.fetchTasks(filterStatus.value)
+    emit('refresh') // 保持向上传递事件以便父组件知道刷新了
+  } catch (error) {
+    console.error('刷新任务失败:', error)
+  }
+}
+
+// 处理过滤状态变化
+const handleFilterChange = async () => {
+  try {
+    await xmapStore.fetchTasks(filterStatus.value)
+    emit('filter-change', filterStatus.value)
+  } catch (error) {
+    console.error('过滤任务失败:', error)
+  }
+}
 
 const handleDelete = (task) => {
   if (confirm(`确定要删除任务 ${task.id} 吗？此操作将删除任务记录和相关文件，且不可恢复。`)) {

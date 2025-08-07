@@ -44,12 +44,31 @@ exports.getDocList = async (req, res) => {
   }
 }
 
+// 获取XMap目录结构
+exports.getXmapToc = async (req, res) => {
+  try {
+    const lang = req.params.lang || 'en'
+    const toc = generateXmapTocStructure(lang)
+
+    res.json({
+      success: true,
+      toc
+    })
+  } catch (error) {
+    logger.error('获取XMap目录失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '获取XMap目录失败'
+    })
+  }
+}
+
 // 获取文档内容
 exports.getDocContent = async (req, res) => {
   try {
     const { lang, docId } = req.params
     const docPath = path.join(XMAP_DOCS_DIR, lang, `${docId}.md`)
-    
+
     if (!fs.existsSync(docPath)) {
       return res.status(404).json({
         success: false,
@@ -302,15 +321,51 @@ exports.getZgrab2SupportedModules = async (req, res) => {
   }
 }
 
+// 生成XMap目录结构
+function generateXmapTocStructure(lang) {
+  const isZh = lang === 'zh'
+
+  return [
+    { id: 'home', title: isZh ? '首页' : 'Home' },
+    { id: 'getting-started', title: isZh ? '入门指南' : 'Getting Started' },
+    { id: 'Installing-XMap', title: isZh ? '安装XMap' : 'Installing XMap' },
+    {
+      title: isZh ? '全局选项' : 'Global Options',
+      children: [
+        { id: 'Basic-Arguments', title: isZh ? '基础参数' : 'Basic Arguments' },
+        { id: 'Scan-Options', title: isZh ? '扫描选项' : 'Scan Options' },
+        { id: 'Network-Options', title: isZh ? '网络选项' : 'Network Options' },
+        { id: 'Additional-Options', title: isZh ? '附加选项' : 'Additional Options' },
+        { id: 'Logging-and-Metadata', title: isZh ? '日志和元数据' : 'Logging and Metadata' }
+      ]
+    },
+    {
+      title: isZh ? '探测选项' : 'Probe Options',
+      children: [
+        { id: 'TCP-SYN-Probe-Module', title: isZh ? 'TCP SYN探测模块' : 'TCP SYN Probe Module' },
+        { id: 'UDP-Probe-Module', title: isZh ? 'UDP探测模块' : 'UDP Probe Module' },
+        { id: 'ICMP-Echo-Probe-Module', title: isZh ? 'ICMP Echo探测模块' : 'ICMP Echo Probe Module' },
+        { id: 'DNS-Probe-Module', title: isZh ? 'DNS探测模块' : 'DNS Probe Module' }
+      ]
+    },
+    { id: 'Output-Modules', title: isZh ? '输出模块' : 'Output Modules' },
+    { id: 'IID-Modules', title: isZh ? 'IID模块' : 'IID Modules' },
+    { id: 'Scanning-Best-Practices', title: isZh ? '扫描最佳实践' : 'Scanning Best Practices' },
+    { id: 'Virtual-Machine-Configuration', title: isZh ? '虚拟机配置' : 'Virtual Machine Configuration' },
+    { id: 'Writing-Modules', title: isZh ? '编写模块' : 'Writing Modules' },
+    { id: 'XMap-in-Academic-Research', title: isZh ? '学术研究中的XMap' : 'XMap in Academic Research' }
+  ]
+}
+
 // 生成ZGrab2目录结构
 function generateZgrab2TocStructure(lang) {
   const isZh = lang === 'zh'
-  
+
   return [
     { id: 'Home', title: isZh ? '首页' : 'Home' },
     { id: 'BaseFlags', title: isZh ? '基础标志' : 'Base Flags' },
     { id: 'TLSFlags', title: isZh ? 'TLS标志' : 'TLS Flags' },
-    { 
+    {
       title: isZh ? '协议模块' : 'Protocols',
       children: [
         { id: 'FTP', title: 'FTP' },
@@ -319,7 +374,7 @@ function generateZgrab2TocStructure(lang) {
         { id: 'MySQL', title: 'MySQL' }
       ]
     },
-    { 
+    {
       title: isZh ? '开发指南' : 'Development',
       children: [
         { id: 'Performance-Tuning', title: isZh ? '性能调优' : 'Performance Tuning' },

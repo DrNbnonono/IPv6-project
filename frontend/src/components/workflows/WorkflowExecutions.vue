@@ -55,8 +55,12 @@
         >
           <div class="execution-header">
             <div class="execution-info">
-              <h3>{{ execution.name }}</h3>
-              <p>{{ execution.description || '无描述' }}</p>
+              <div class="execution-title-line">
+                <h3>{{ execution.name }}</h3>
+                <span class="execution-description" :title="execution.description">
+                  {{ truncateDescription(execution.description) }}
+                </span>
+              </div>
             </div>
             <div class="execution-status" :class="execution.status">
               {{ getStatusText(execution.status) }}
@@ -342,6 +346,12 @@ const getProgressPercentage = (progress) => {
   return Math.round((progress.completedNodes / progress.totalNodes) * 100)
 }
 
+const truncateDescription = (description) => {
+  if (!description) return '无描述'
+  if (description.length <= 80) return description
+  return description.substring(0, 80) + '...'
+}
+
 // 生命周期
 onMounted(async () => {
   if (props.workflowId) {
@@ -557,6 +567,29 @@ watch(() => props.workflowId, async (newId) => {
   margin: 0;
   color: #909399;
   font-size: 14px;
+}
+
+.execution-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.execution-title-line h3 {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.execution-description {
+  color: #909399;
+  font-size: 14px;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+  flex-shrink: 1;
 }
 
 .execution-status {

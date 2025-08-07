@@ -669,15 +669,15 @@ const getCategoryName = (category) => {
 
 const getNodeIcon = (nodeType) => {
   const icons = {
-    file_input: 'icon-file',
-    xmap_scan: 'icon-radar',
-    zgrab2_scan: 'icon-scan',
-    xmap_json_extract: 'icon-filter',
-    zgrab2_json_extract: 'icon-filter',
-    json_custom_extract: 'icon-filter',
-    file_output: 'icon-download'
+    file_input: 'icon-letter-f',
+    xmap_scan: 'icon-letter-x',
+    zgrab2_scan: 'icon-letter-z',
+    xmap_json_extract: 'icon-letter-e',
+    zgrab2_json_extract: 'icon-letter-e',
+    json_custom_extract: 'icon-letter-j',
+    file_output: 'icon-letter-o'
   }
-  return icons[nodeType] || 'icon-node'
+  return icons[nodeType] || 'icon-letter-n'
 }
 
 const getStatusText = (status) => {
@@ -952,6 +952,24 @@ const centerAllNodes = () => {
   // 设置偏移使节点群居中
   canvasOffset.value.x = canvasCenterX - nodesCenterX * canvasScale.value
   canvasOffset.value.y = canvasCenterY - nodesCenterY * canvasScale.value
+}
+
+// 将节点定位到可视区域左上角
+const positionNodesInView = () => {
+  if (nodes.value.length === 0) return
+
+  // 计算所有节点的边界
+  let minX = Infinity, minY = Infinity
+
+  nodes.value.forEach(node => {
+    minX = Math.min(minX, node.position.x)
+    minY = Math.min(minY, node.position.y)
+  })
+
+  // 设置偏移，将最左上角的节点定位到可视区域的左上角（留一些边距）
+  const margin = 50
+  canvasOffset.value.x = margin - minX * canvasScale.value
+  canvasOffset.value.y = margin - minY * canvasScale.value
 }
 
 // 连接相关方法
@@ -1566,12 +1584,12 @@ onMounted(async () => {
 
     document.addEventListener('keydown', handleKeyDown)
 
-    // 如果有节点，自动居中显示
+    // 如果有节点，自动定位到可视区域
     setTimeout(() => {
       if (nodes.value.length > 0) {
-        centerAllNodes()
+        positionNodesInView()
       }
-    }, 100)
+    }, 200) // 增加延迟时间确保DOM更新完成
 
     // 清理事件监听器
     onUnmounted(() => {
@@ -1598,6 +1616,13 @@ watch(() => props.workflowId, async (newId) => {
         workflowStatus.value = workflow.status
         console.log('监听器加载的节点数量:', nodes.value.length)
         console.log('监听器加载的连接数量:', connections.value.length)
+
+        // 如果有节点，自动定位到可视区域
+        setTimeout(() => {
+          if (nodes.value.length > 0) {
+            positionNodesInView()
+          }
+        }, 200) // 增加延迟时间确保DOM更新完成
       } else {
         console.warn('监听器：工作流定义为空或不存在')
         nodes.value = []
@@ -2555,8 +2580,27 @@ watch(() => props.workflowId, async (newId) => {
   gap: 4px;
 }
 
-.icon-file::before {
-  content: "📄";
+/* 节点字母头像样式 */
+.icon-letter-f::before { content: "F"; }
+.icon-letter-x::before { content: "X"; }
+.icon-letter-z::before { content: "Z"; }
+.icon-letter-e::before { content: "E"; }
+.icon-letter-j::before { content: "J"; }
+.icon-letter-o::before { content: "O"; }
+.icon-letter-n::before { content: "N"; }
+
+/* 字母头像通用样式 */
+[class*="icon-letter-"]::before {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  background: #3b82f6;
+  color: white;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 12px;
 }
 
 /* 执行详情模态框样式 */
