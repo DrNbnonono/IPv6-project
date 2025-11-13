@@ -1,9 +1,0 @@
-10.0.0.1
-domain.com
-10.0.0.1, domain.com
-10.0.0.1, domain.com, tag
-10.0.0.1, domain.com, tag, 1234
-10.0.0.1, , tag
-10.0.0.1, , , 5678
-, domain.com, tag
-192.168.0.0/24, , tag

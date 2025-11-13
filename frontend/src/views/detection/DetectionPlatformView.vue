@@ -47,7 +47,7 @@
           </button>
         </div>
         <div class="panel-container">
-          <h2>国家排名</h2>
+          <h2>国家/地区排名</h2>
           <div class="ranking-list" ref="countryRankingList" @mouseenter="pauseCountryScroll" @mouseleave="resumeCountryScroll">
             <div 
               v-for="country in detectionStore.countryRanking" 

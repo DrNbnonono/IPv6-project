@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node --max-old-space-size=6144 node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
@@ -42,6 +42,7 @@
     "globals": "^16.0.0",
     "prettier": "3.5.3",
     "sass": "^1.86.0",
+    "terser": "^5.43.1",
     "vite": "^6.2.4",
     "vite-plugin-vue-devtools": "^7.7.2"
   }

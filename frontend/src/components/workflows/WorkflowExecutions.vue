@@ -461,8 +461,10 @@ watch(() => props.workflowId, async (newId) => {
 
 .executions-content {
   flex: 1;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 24px;
+  min-height: 0;
 }
 
 .loading-state {
@@ -470,7 +472,7 @@ watch(() => props.workflowId, async (newId) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  flex: 1;
   color: #909399;
 }
 
@@ -494,7 +496,7 @@ watch(() => props.workflowId, async (newId) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  flex: 1;
   text-align: center;
 }
 
@@ -530,8 +532,9 @@ watch(() => props.workflowId, async (newId) => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .execution-card {
