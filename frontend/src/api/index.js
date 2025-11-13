@@ -638,5 +638,49 @@ export default {
     getTemplates() {
       return apiClient.get('/workflows/templates');
     }
+  },
+
+  // AI助手相关API
+  ai: {
+    // Detection页面AI - 数据分析助手
+    detectionChat(data) {
+      // TODO: 后端实现后启用真实API
+      // return apiClient.post('/ai/detection/chat', data);
+      
+      // 临时模拟响应
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            message: `这是一个模拟响应。您询问了: "${data.message}"\n\n后端API需要实现以下功能：\n1. 解析用户问题\n2. 查询数据库获取统计数据\n3. 生成自然语言回答\n\n示例：如果问"中国的IPv6地址占比"，应返回具体的统计数据和可视化图表。`,
+            data: {
+              type: 'stats',
+              values: {} // 统计数据
+            }
+          });
+        }, 1000);
+      });
+    },
+
+    // Tools页面AI - 探测助手（集成LangChain/MCP）
+    toolsChat(data) {
+      // TODO: 后端实现后启用真实API
+      // return apiClient.post('/ai/tools/chat', data);
+      
+      // 临时模拟响应
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            message: `这是一个模拟响应。您询问了: "${data.message}"\n\n后端API需要实现以下功能：\n1. 集成LangChain进行智能对话\n2. 集成MCP (Model Context Protocol)\n3. 提供探测任务建议和命令生成\n4. 辅助工作流创建\n\n示例：如果问"如何扫描某个IPv6段"，应返回具体的XMap命令建议和参数配置。`,
+            actions: [
+              {
+                type: 'command',
+                tool: 'xmap',
+                command: '示例命令（需后端实现）'
+              }
+            ]
+          });
+        }, 1000);
+      });
+    }
   }
 }

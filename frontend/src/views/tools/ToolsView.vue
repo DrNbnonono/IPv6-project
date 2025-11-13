@@ -145,6 +145,7 @@
 
   // 工具列表 - 未来可以扩展
   const availableTools = ref([
+    { path: '/tools/aichat', name: 'AI助手', icon: 'icon-robot', badge: '新' },
     { path: '/tools/database', name: 'database', icon: 'icon-database'},
     { path: '/tools/xmap', name: 'XMap探测', icon: 'icon-xmap', badge: '热门' },
     { path: '/tools/zgrab2', name: 'zgrab2', icon: 'icon-zgrab2', badge: '新' },
@@ -214,7 +215,7 @@
 
   // 显示关于信息
   const showAbout = () => {
-    alert('IPv6探测平台 v1.0.0\n©2025 网络探测研发中心')
+    alert('IPv6探测平台 v2.0.0\n©2025 网络探测研发中心')
   }
 
   // 退出登录

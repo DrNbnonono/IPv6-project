@@ -308,6 +308,8 @@
       <p>ObserV6 | 最后数据更新: {{ lastDataUpdate }}</p>
     </footer>
 
+    <!-- AI聊天面板 -->
+    <AIChatPanel />
 
   </div>
 </template>
@@ -321,6 +323,7 @@ import GlobeMap from '@/components/detection/GlobeMap.vue'
 import SearchResultsPanel from '@/components/detection/SearchResultsPanel.vue';
 import ProtocolAnalysisPanel from '@/components/detection/ProtocolAnalysisPanel.vue'
 import VulnerabilityAnalysisPanel from '@/components/detection/VulnerabilityAnalysisPanel.vue'
+import AIChatPanel from '@/components/detection/AIChatPanel.vue'
 import axios from 'axios'
 // 路由和状态管理
 const router = useRouter()

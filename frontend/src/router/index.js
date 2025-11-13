@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 const LoginView = () => import('@/views/auth/LoginView.vue')
 const DetectionPlatformView = () => import('@/views/detection/DetectionPlatformView.vue')
 const ToolsView = () => import('@/views/tools/ToolsView.vue')
+const AIAssistantView = () => import('@/views/tools/aichat/AIAssistantView.vue')
 const XmapDashboardView = () => import('@/views/tools/xmap/XmapDashboardView.vue')
 const XmapHelpView = () => import('@/views/tools/xmap/XmapHelpView.vue')
 const Zgrab2DashboardView = () => import('@/views/tools/zgrab2/Zgrab2DashboardView.vue')
@@ -39,6 +40,12 @@ const routes = [
     component: ToolsView,
     meta: { requiresAuth: true },
     children: [
+      {
+        path: 'aichat',
+        name: 'aichat',
+        component: AIAssistantView,
+        meta: { title: 'AI探测助手' }
+      },
       {
         path: 'xmap',
         name: 'xmap',
