@@ -28,7 +28,7 @@ export const useAIStore = defineStore('ai', () => {
     detectionMessages.value.push(userMessage)
 
     try {
-      // TODO: 后端实现后替换为真实API调用
+      // 调用后端AI API
       const response = await api.ai.detectionChat({
         message,
         context,
@@ -48,19 +48,23 @@ export const useAIStore = defineStore('ai', () => {
       return aiMessage
     } catch (error) {
       console.error('Detection AI 错误:', error)
-      detectionError.value = error.message || '发送消息失败'
+      
+      // 提取错误信息
+      const errorMsg = error.response?.data?.message || error.message || '发送消息失败'
+      detectionError.value = errorMsg
       
       // 添加错误消息
       const errorMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: '抱歉，我遇到了一些问题。请稍后再试。',
+        content: `抱歉，${errorMsg}`,
         error: true,
         timestamp: new Date().toISOString()
       }
       detectionMessages.value.push(errorMessage)
       
-      throw error
+      // 不再抛出错误，避免控制台报错
+      return errorMessage
     } finally {
       detectionLoading.value = false
     }

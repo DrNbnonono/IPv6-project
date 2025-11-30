@@ -18,13 +18,12 @@
       v-show="isVisible" 
       class="ai-chat-panel"
       :style="panelStyle"
-      @mousedown="startPanelDrag"
     >
       <!-- 面板头部 -->
       <div class="panel-header" @mousedown.stop="startPanelDrag">
         <div class="header-left">
           <span class="ai-icon">🤖</span>
-          <h3>AI数据分析助手</h3>
+          <h3>IPv6知识问答助手</h3>
           <span class="status-indicator" :class="{ online: !aiStore.detectionLoading }"></span>
         </div>
         <div class="header-actions">
@@ -41,8 +40,8 @@
       <div class="messages-container" ref="messagesContainer">
         <div v-if="aiStore.detectionMessages.length === 0" class="welcome-message">
           <div class="welcome-icon">👋</div>
-          <h4>欢迎使用AI数据分析助手</h4>
-          <p>我可以帮您分析IPv6数据，回答以下问题：</p>
+          <h4>欢迎使用IPv6知识问答助手</h4>
+          <p>我可以回答IPv6相关的领域知识，回答以下问题：</p>
           <ul class="suggestions">
             <li @click="sendSuggestion('中国的IPv6地址占全球的比例是多少？')">
               📊 中国的IPv6地址占全球的比例是多少？
@@ -54,7 +53,7 @@
               📈 显示前10个ASN的IPv6地址分布
             </li>
             <li @click="sendSuggestion('分析当前选中国家的详细数据')">
-              🔍 分析当前选中国家的详细数据
+              🔍 分析中国的IPv6部署情况
             </li>
           </ul>
         </div>
@@ -63,7 +62,11 @@
           v-for="message in aiStore.detectionMessages" 
           :key="message.id"
           class="message"
-          :class="{ 'user-message': message.role === 'user', 'ai-message': message.role === 'assistant' }"
+          :class="{ 
+            'user-message': message.role === 'user', 
+            'ai-message': message.role === 'assistant',
+            'error-message': message.error 
+          }"
         >
           <div class="message-avatar">
             <span v-if="message.role === 'user'">👤</span>
@@ -71,8 +74,7 @@
           </div>
           <div class="message-content">
             <div class="message-text" v-html="formatMessage(message.content)"></div>
-            <div v-if="message.data" class="message-data">
-              <!-- 这里可以渲染图表或统计数据 -->
+            <div v-if="message.data && message.data.type && message.data.type !== 'text'" class="message-data">
               <pre>{{ JSON.stringify(message.data, null, 2) }}</pre>
             </div>
             <div class="message-time">{{ formatTime(message.timestamp) }}</div>
@@ -107,7 +109,7 @@
           class="send-btn"
           :disabled="!inputMessage.trim() || aiStore.detectionLoading"
         >
-          <span v-if="!aiStore.detectionLoading">发送 ➤</span>
+          <span v-if="!aiStore.detectionLoading">发送</span>
           <span v-else>发送中...</span>
         </button>
       </div>
@@ -253,15 +255,160 @@ const scrollToBottom = () => {
   }
 }
 
-// 格式化消息内容（支持Markdown）
+// Markdown渲染（支持表格、引用、列表等）
 const formatMessage = (content) => {
   if (!content) return ''
-  // 简单的Markdown格式化
-  return content
-    .replace(/\n/g, '<br>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
+
+  const codeBlocks = []
+  const placeholderText = content.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    const index = codeBlocks.length
+    codeBlocks.push({ lang: lang || 'text', code })
+    return `@@CODE_BLOCK_${index}@@`
+  })
+
+  const applyInline = (text) => {
+    let safe = escapeHtml(text)
+    safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>')
+    safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+    return safe
+  }
+
+  let html = ''
+  let listType = null
+  let listBuffer = []
+  let tableBuffer = []
+  let quoteBuffer = []
+
+  const flushList = () => {
+    if (!listType || !listBuffer.length) return
+    html += `<${listType}>${listBuffer.map(item => `<li>${item}</li>`).join('')}</${listType}>`
+    listType = null
+    listBuffer = []
+  }
+
+  const flushQuote = () => {
+    if (!quoteBuffer.length) return
+    html += `<blockquote>${quoteBuffer.join('<br>')}</blockquote>`
+    quoteBuffer = []
+  }
+
+  const flushTable = () => {
+    if (!tableBuffer.length) return
+    const rows = tableBuffer
+      .map(row => row.split('|').map(cell => cell.trim()).filter(cell => cell !== ''))
+      .filter(cells => cells.length)
+
+    if (!rows.length) {
+      tableBuffer = []
+      return
+    }
+
+    const isDivider = (cells) => cells.every(cell => /^:?[-]{3,}:?$/.test(cell))
+    let header = []
+    let body = []
+
+    if (rows.length > 1 && isDivider(rows[1])) {
+      header = [rows[0]]
+      body = rows.slice(2)
+    } else {
+      body = rows
+    }
+
+    const renderRow = (cells, tag) => `<tr>${cells.map(cell => `<${tag}>${applyInline(cell)}</${tag}>`).join('')}</tr>`
+
+    html += '<table>'
+    if (header.length) {
+      html += `<thead>${renderRow(header[0], 'th')}</thead>`
+    }
+    if (body.length) {
+      html += `<tbody>${body.map(row => renderRow(row, 'td')).join('')}</tbody>`
+    }
+    html += '</table>'
+
+    tableBuffer = []
+  }
+
+  placeholderText.split('\n').forEach(rawLine => {
+    const line = rawLine.trim()
+
+    if (!line) {
+      flushList()
+      flushQuote()
+      flushTable()
+      html += '<div class="message-gap"></div>'
+      return
+    }
+
+    // 标题（支持 # / ## / ###）
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/)
+    if (headingMatch) {
+      const level = headingMatch[1].length
+      const text = headingMatch[2]
+      flushList()
+      flushQuote()
+      flushTable()
+      html += `<h${level + 1}>${applyInline(text)}</h${level + 1}>`
+      return
+    }
+
+    if (/^\|.*\|$/.test(line)) {
+      flushList()
+      flushQuote()
+      tableBuffer.push(line)
+      return
+    }
+    flushTable()
+
+    if (/^>\s?/.test(line)) {
+      flushList()
+      quoteBuffer.push(applyInline(line.replace(/^>\s?/, '')))
+      return
+    }
+    flushQuote()
+
+    if (/^(\*|-)\s+/.test(line)) {
+      flushQuote()
+      if (listType !== 'ul') {
+        flushList()
+        listType = 'ul'
+      }
+      listBuffer.push(applyInline(line.replace(/^(\*|-)\s+/, '')))
+      return
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      flushQuote()
+      if (listType !== 'ol') {
+        flushList()
+        listType = 'ol'
+      }
+      listBuffer.push(applyInline(line.replace(/^\d+\.\s+/, '')))
+      return
+    }
+
+    flushList()
+    html += `<p>${applyInline(line)}</p>`
+  })
+
+  flushList()
+  flushQuote()
+  flushTable()
+
+  let finalHtml = html
+  codeBlocks.forEach((block, index) => {
+    const replacement = `<pre class="code-block"><code class="language-${block.lang}">${escapeHtml(block.code.trim())}</code></pre>`
+    finalHtml = finalHtml.replace(`@@CODE_BLOCK_${index}@@`, replacement)
+  })
+
+  return finalHtml
+}
+
+// HTML转义
+const escapeHtml = (text) => {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
 }
 
 // 格式化时间
@@ -287,56 +434,58 @@ watch(() => aiStore.detectionMessages.length, () => {
 
 .ai-trigger-btn {
   position: fixed;
-  width: 100px;
-  height: 50px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 120px;
+  height: 44px;
+  background: #3b82f6;
   border: none;
-  border-radius: 25px;
-  color: white;
+  border-radius: 12px;
+  color: #ffffff;
   cursor: move;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s ease;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.45);
+  transition: transform 0.2s ease;
   font-weight: 500;
-  
+  letter-spacing: 0.01em;
+
   &:hover {
-    transform: scale(1.05);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    transform: translateY(-2px);
   }
 
   .ai-icon {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .ai-label {
-    font-size: 14px;
+    font-size: 13px;
   }
 }
 
 .ai-chat-panel {
   position: fixed;
-  width: 400px;
-  height: 600px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 600px;
+  height: 720px;
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.4);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .panel-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 16px;
+  background: #3b82f6;
+  color: #ffffff;
+  padding: 12px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   cursor: move;
   user-select: none;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.45);
 
   .header-left {
     display: flex;
@@ -349,8 +498,9 @@ watch(() => aiStore.detectionMessages.length, () => {
 
     h3 {
       margin: 0;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
+      letter-spacing: 0.02em;
     }
 
     .status-indicator {
@@ -396,8 +546,8 @@ watch(() => aiStore.detectionMessages.length, () => {
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  background: #f9fafb;
+  padding: 18px 22px;
+  background: #f8fafc;
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -470,17 +620,25 @@ watch(() => aiStore.detectionMessages.length, () => {
     flex-direction: row-reverse;
 
     .message-content {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border-radius: 12px 12px 4px 12px;
+      background: #3b82f6;
+      color: #ffffff;
+      border-radius: 16px 16px 6px 16px;
     }
   }
 
   &.ai-message {
     .message-content {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px 12px 12px 4px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px 16px 16px 6px;
+    }
+  }
+
+  &.error-message {
+    .message-content {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
     }
   }
 
@@ -501,8 +659,88 @@ watch(() => aiStore.detectionMessages.length, () => {
     padding: 12px;
 
     .message-text {
-      line-height: 1.6;
+      line-height: 1.7;
       word-wrap: break-word;
+      color: #0f172a;
+      font-size: 15px;
+
+      h2, h3, h4 {
+        margin: 8px 0 4px;
+        font-weight: 600;
+      }
+
+      h2 { font-size: 16px; }
+      h3 { font-size: 14px; }
+      h4 { font-size: 13px; }
+
+      ul,
+      ol {
+        margin: 10px 0 10px 20px;
+        padding-left: 16px;
+      }
+
+      li {
+        margin: 4px 0;
+        line-height: 1.6;
+      }
+
+      .code-block {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 12px;
+        border-radius: 6px;
+        margin: 8px 0;
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.4;
+
+        code {
+          font-family: 'Consolas', 'Monaco', monospace;
+        }
+      }
+
+      .inline-code {
+        background: rgba(15, 23, 42, 0.08);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 13px;
+      }
+
+      strong {
+        font-weight: 600;
+      }
+
+      em {
+        font-style: italic;
+      }
+
+      blockquote {
+        margin: 10px 0;
+        border-left: 3px solid #94a3b8;
+        padding-left: 12px;
+        color: #475569;
+        background: rgba(148, 163, 184, 0.1);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        border: 1px solid #e2e8f0;
+        padding: 8px;
+        text-align: left;
+      }
+
+      thead {
+        background: #f1f5f9;
+        font-weight: 600;
+      }
     }
 
     .message-data {
@@ -560,18 +798,23 @@ watch(() => aiStore.detectionMessages.length, () => {
   }
 }
 
+.message-gap {
+  height: 8px;
+}
+
 .input-container {
-  padding: 16px;
-  background: white;
-  border-top: 1px solid #e5e7eb;
+  padding: 18px 22px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  position: relative;
 
   textarea {
     flex: 1;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 10px;
+    padding: 12px 120px 12px 14px; // 右侧预留空间给固定位置的发送按钮
     font-size: 14px;
     resize: none;
     font-family: inherit;
@@ -588,24 +831,32 @@ watch(() => aiStore.detectionMessages.length, () => {
   }
 
   .send-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    min-width: 96px;
+    background: #3b82f6;
+    color: #ffffff;
     border: none;
-    border-radius: 8px;
-    padding: 0 20px;
+    border-radius: 999px;
     font-weight: 500;
+    letter-spacing: 0.02em;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: opacity 0.2s ease;
+    position: absolute;
+    right: 22px;
+    bottom: 22px;
 
     &:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      opacity: 0.9;
     }
 
     &:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
     }
   }
+}
+
+/* 用户消息文字在深色气泡中保持高对比度 */
+.message.user-message .message-content .message-text {
+  color: #ffffff;
 }
 </style>

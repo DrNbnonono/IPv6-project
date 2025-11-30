@@ -36,6 +36,9 @@ zgrab2_logs/
 xmap_result/
 zgrab2_results/
 IPv6_addresses/
+zgrab2_input/
+zgrab2_config/
+zgrab2_logs/
 
 # Environment variables
 .env
@@ -148,3 +151,6 @@ zgrab2_results/
 01-address/
 jsonanalysis/
 *.env
+
+# 文档说明
+AI_INTEGRATION_README.md

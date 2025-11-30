@@ -642,31 +642,21 @@ export default {
 
   // AI助手相关API
   ai: {
-    // Detection页面AI - 数据分析助手
+    // Detection页面AI - IPv6数据分析专家
     detectionChat(data) {
-      // TODO: 后端实现后启用真实API
-      // return apiClient.post('/ai/detection/chat', data);
-      
-      // 临时模拟响应
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            message: `这是一个模拟响应。您询问了: "${data.message}"\n\n后端API需要实现以下功能：\n1. 解析用户问题\n2. 查询数据库获取统计数据\n3. 生成自然语言回答\n\n示例：如果问"中国的IPv6地址占比"，应返回具体的统计数据和可视化图表。`,
-            data: {
-              type: 'stats',
-              values: {} // 统计数据
-            }
-          });
-        }, 1000);
-      });
+      // 注意：apiClient 已在响应拦截器中返回 response.data
+      // 这里直接返回即可，格式为 { success, message, data }
+      return apiClient.post('/ai/detection/chat', data);
     },
 
     // Tools页面AI - 探测助手（集成LangChain/MCP）
-    toolsChat(data) {
+    // 注意：后端暂未实现，会返回501状态
+    async toolsChat(data) {
       // TODO: 后端实现后启用真实API
-      // return apiClient.post('/ai/tools/chat', data);
+      // const response = await apiClient.post('/ai/tools/chat', data);
+      // return response.data;
       
-      // 临时模拟响应
+      // 临时模拟响应（后端暂未实现）
       return new Promise((resolve) => {
         setTimeout(() => {
           resolve({
@@ -681,6 +671,12 @@ export default {
           });
         }, 1000);
       });
+    },
+
+    // 获取AI服务状态
+    async getStatus() {
+      const response = await apiClient.get('/ai/status');
+      return response.data;
     }
   }
 }
