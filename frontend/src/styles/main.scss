@@ -13,6 +13,17 @@ $info-color: #2196f3;
   box-sizing: border-box;
 }
 
+/* 全局隐藏滚动条但允许滚动 */
+html, body, #app {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Chrome, Safari and Opera */
+::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   font-family: 'Avenir', Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;

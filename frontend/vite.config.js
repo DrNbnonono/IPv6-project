@@ -12,12 +12,23 @@ export default defineConfig(({ command }) => {
       }
     },
     server: {
+      host: '::', // 监听 IPv6（同时覆盖所有地址）
+      port: 5173,
+      strictPort: false,
+      hmr: {
+        protocol: 'ws'
+        // 让 Vite 自动使用当前服务端口和访问主机，避免端口不一致
+      },
       proxy: {
         '/api': {
           target: 'http://localhost:3000', // 后端API地址
           changeOrigin: true
         }
       }
+    },
+    preview: {
+      host: '::', // 预览模式也支持 IPv6
+      port: 5173
     },
     build: {
       // 优化构建配置，减少内存使用

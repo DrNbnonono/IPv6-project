@@ -215,15 +215,173 @@ const scrollToBottom = () => {
   }
 }
 
-// 格式化消息内容
+// 格式化消息内容 - 完整Markdown支持
 const formatMessage = (content) => {
   if (!content) return ''
-  return content
-    .replace(/\n/g, '<br>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+
+  const codeBlocks = []
+  const placeholderText = content.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    const index = codeBlocks.length
+    codeBlocks.push({ lang: lang || 'text', code })
+    return `@@CODE_BLOCK_${index}@@`
+  })
+
+  const applyInline = (text) => {
+    const div = document.createElement('div')
+    div.textContent = text
+    let safe = div.innerHTML
+    // 支持链接 [text](url)
+    safe = safe.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>')
+    safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+    return safe
+  }
+
+  let html = ''
+  let listType = null
+  let listBuffer = []
+  let tableBuffer = []
+  let quoteBuffer = []
+
+  const flushList = () => {
+    if (!listType || !listBuffer.length) return
+    html += `<${listType}>${listBuffer.map(item => `<li>${item}</li>`).join('')}</${listType}>`
+    listType = null
+    listBuffer = []
+  }
+
+  const flushQuote = () => {
+    if (!quoteBuffer.length) return
+    html += `<blockquote>${quoteBuffer.join('<br>')}</blockquote>`
+    quoteBuffer = []
+  }
+
+  const flushTable = () => {
+    if (!tableBuffer.length) return
+    const rows = tableBuffer
+      .map(row => row.split('|').map(cell => cell.trim()).filter(cell => cell !== ''))
+      .filter(cells => cells.length)
+
+    if (!rows.length) {
+      tableBuffer = []
+      return
+    }
+
+    const isDivider = (cells) => cells.every(cell => /^:?[-]{3,}:?$/.test(cell))
+    let header = []
+    let body = []
+
+    if (rows.length > 1 && isDivider(rows[1])) {
+      header = [rows[0]]
+      body = rows.slice(2)
+    } else {
+      body = rows
+    }
+
+    const renderRow = (cells, tag) => `<tr>${cells.map(cell => `<${tag} style="border: 1px solid #94a3b8; padding: 8px 12px;">${applyInline(cell)}</${tag}>`).join('')}</tr>`
+
+    html += '<table class="markdown-table" style="width: 100%; border-collapse: collapse; border: 2px solid #94a3b8; margin: 12px 0;">'
+    if (header.length) {
+      html += `<thead style="background: #e2e8f0;">${renderRow(header[0], 'th')}</thead>`
+    }
+    if (body.length) {
+      html += `<tbody>${body.map(row => renderRow(row, 'td')).join('')}</tbody>`
+    }
+    html += '</table>'
+
+    tableBuffer = []
+  }
+
+  placeholderText.split('\n').forEach(rawLine => {
+    const line = rawLine.trim()
+
+    if (!line) {
+      flushList()
+      flushQuote()
+      flushTable()
+      html += '<div class="message-gap"></div>'
+      return
+    }
+
+    // 水平分隔线
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      flushList()
+      flushQuote()
+      flushTable()
+      html += '<hr class="md-hr">'
+      return
+    }
+
+    // 标题
+    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/)
+    if (headingMatch) {
+      const level = headingMatch[1].length
+      const text = headingMatch[2]
+      flushList()
+      flushQuote()
+      flushTable()
+      html += `<h${level + 1}>${applyInline(text)}</h${level + 1}>`
+      return
+    }
+
+    // 表格
+    if (/^\|.*\|$/.test(line)) {
+      flushList()
+      flushQuote()
+      tableBuffer.push(line)
+      return
+    }
+    flushTable()
+
+    // 引用
+    if (/^>\s?/.test(line)) {
+      flushList()
+      quoteBuffer.push(applyInline(line.replace(/^>\s?/, '')))
+      return
+    }
+    flushQuote()
+
+    // 无序列表
+    if (/^(\*|-)\s+/.test(line)) {
+      flushQuote()
+      if (listType !== 'ul') {
+        flushList()
+        listType = 'ul'
+      }
+      listBuffer.push(applyInline(line.replace(/^(\*|-)\s+/, '')))
+      return
+    }
+
+    // 有序列表
+    if (/^\d+\.\s+/.test(line)) {
+      flushQuote()
+      if (listType !== 'ol') {
+        flushList()
+        listType = 'ol'
+      }
+      listBuffer.push(applyInline(line.replace(/^\d+\.\s+/, '')))
+      return
+    }
+
+    flushList()
+    html += `<p>${applyInline(line)}</p>`
+  })
+
+  flushList()
+  flushQuote()
+  flushTable()
+
+  let finalHtml = html
+  codeBlocks.forEach((block, index) => {
+    const div = document.createElement('div')
+    div.textContent = block.code.trim()
+    const escapedCode = div.innerHTML
+    const replacement = `<pre class="code-block"><code class="language-${block.lang}">${escapedCode}</code></pre>`
+    finalHtml = finalHtml.replace(`@@CODE_BLOCK_${index}@@`, replacement)
+  })
+
+  return finalHtml
 }
 
 // 格式化时间
@@ -317,7 +475,7 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   font-size: 14px;
-  color: #666;
+  color: #6b76c9;
 }
 
 .status-dot {
@@ -370,15 +528,15 @@ onMounted(() => {
   }
 
   &::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: #e7eaf6;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #888;
+    background: #8895e6;
     border-radius: 4px;
 
     &:hover {
-      background: #555;
+      background: #6f7cd1;
     }
   }
 }
@@ -415,13 +573,13 @@ onMounted(() => {
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.3s;
-      border: 2px solid #e5e7eb;
+      border: 2px solid rgba(102, 126, 234, 0.24);
       text-align: center;
 
       &:hover {
         border-color: #667eea;
         transform: translateY(-4px);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
       }
 
       .feature-icon {
@@ -449,7 +607,7 @@ onMounted(() => {
     background: white;
     padding: 20px;
     border-radius: 12px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid rgba(102, 126, 234, 0.24);
 
     h5 {
       margin: 0 0 15px;
@@ -464,7 +622,7 @@ onMounted(() => {
 
       .action-btn {
         background: #f3f4f6;
-        border: 1px solid #e5e7eb;
+        border: 1px solid rgba(102, 126, 234, 0.24);
         padding: 10px 16px;
         border-radius: 8px;
         cursor: pointer;
@@ -472,7 +630,7 @@ onMounted(() => {
         font-size: 14px;
 
         &:hover {
-          background: #667eea;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
           border-color: #667eea;
         }
@@ -516,39 +674,114 @@ onMounted(() => {
     flex-shrink: 0;
   }
 
-  .message-content {
-    max-width: 75%;
-    padding: 16px;
+    .message-content {
+      max-width: 75%;
+      padding: 16px;
 
-    .message-text {
-      line-height: 1.6;
-      word-wrap: break-word;
+      .message-text {
+        line-height: 1.7;
+        word-wrap: break-word;
+        color: #0f172a;
+        font-size: 15px;
+        padding: 0 8px; // 增加左右内边距，防止内容贴边
 
-      code {
-        background: rgba(0, 0, 0, 0.1);
+        h2, h3, h4 {
+          margin: 8px 0 4px;
+          font-weight: 600;
+        }
+
+        h2 { font-size: 16px; }
+        h3 { font-size: 14px; }
+        h4 { font-size: 13px; }
+
+        p {
+          margin: 8px 0;
+        }
+
+        ul,
+        ol {
+          margin: 10px 0 10px -8px; // 左侧负margin抵消padding
+          padding-left: 32px; // 增加padding确保标号有空间
+        }
+
+        li {
+          margin: 4px 0;
+          line-height: 1.6;
+          padding-left: 4px;
+        }
+
+        table,
+        table.markdown-table {
+          font-size: 13px;
+        }
+
+        th,
+        td {
+          text-align: left;
+        }
+
+        thead {
+          font-weight: 600;
+        }
+
+        tbody tr:nth-child(even) {
+          background: #f1f5f9;
+        }
+
+        hr.md-hr, hr {
+          border: none;
+          border-top: 1px solid #e5e7eb;
+          margin: 12px 0;
+        }
+
+        .inline-code {
+          background: rgba(0, 0, 0, 0.08);
         padding: 2px 6px;
         border-radius: 4px;
-        font-family: 'Courier New', monospace;
+          font-family: 'Consolas', 'Monaco', monospace;
+          font-size: 13px;
       }
 
-      pre {
-        background: rgba(0, 0, 0, 0.05);
+        .code-block {
+          background: #1e1e1e;
+          color: #d4d4d4;
         padding: 12px;
-        border-radius: 8px;
+          border-radius: 6px;
+          margin: 8px 0;
         overflow-x: auto;
-        margin: 10px 0;
+          font-size: 13px;
+          line-height: 1.4;
 
         code {
-          background: none;
-          padding: 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+          }
         }
+
+        a {
+          color: #667eea;
+          text-decoration: none;
+          border-bottom: 1px solid #667eea;
+          transition: all 0.2s;
+
+          &:hover {
+            color: #764ba2;
+            border-bottom-color: #764ba2;
+          }
+        }
+
+        blockquote {
+          margin: 10px 0;
+          border-left: 3px solid #94a3b8;
+          padding-left: 12px;
+          color: #475569;
+          background: rgba(148, 163, 184, 0.1);
       }
     }
 
     .message-actions {
       margin-top: 16px;
       padding-top: 16px;
-      border-top: 1px solid rgba(0, 0, 0, 0.1);
+      border-top: 1px solid rgba(102, 126, 234, 0.24);
 
       h5 {
         margin: 0 0 12px;
@@ -557,7 +790,7 @@ onMounted(() => {
       }
 
       .action-item {
-        background: rgba(0, 0, 0, 0.03);
+        background: rgba(102, 126, 234, 0.06);
         padding: 12px;
         border-radius: 8px;
         margin-bottom: 10px;
@@ -578,7 +811,7 @@ onMounted(() => {
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(0, 0, 0, 0.05);
+          background: rgba(102, 126, 234, 0.08);
           padding: 10px;
           border-radius: 6px;
           margin-bottom: 8px;
@@ -604,7 +837,7 @@ onMounted(() => {
         }
 
         .execute-btn {
-          background: #667eea;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
           border: none;
           padding: 8px 16px;
@@ -616,6 +849,7 @@ onMounted(() => {
           &:hover {
             background: #5568d3;
             transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.35);
           }
         }
       }
@@ -670,7 +904,7 @@ onMounted(() => {
 
 .input-section {
   background: white;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid rgba(102, 126, 234, 0.24);
   padding: 16px;
 
   .input-toolbar {
@@ -680,7 +914,7 @@ onMounted(() => {
 
     .toolbar-btn {
       background: #f3f4f6;
-      border: 1px solid #e5e7eb;
+      border: 1px solid rgba(102, 126, 234, 0.24);
       padding: 8px 12px;
       border-radius: 8px;
       cursor: pointer;
@@ -688,7 +922,7 @@ onMounted(() => {
       font-size: 16px;
 
       &:hover {
-        background: #e5e7eb;
+        background: #e7eaf6;
       }
     }
   }
@@ -699,7 +933,7 @@ onMounted(() => {
 
     textarea {
       flex: 1;
-      border: 2px solid #e5e7eb;
+      border: 2px solid rgba(102, 126, 234, 0.24);
       border-radius: 12px;
       padding: 12px;
       font-size: 14px;
@@ -743,7 +977,7 @@ onMounted(() => {
 
       &:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 10px 24px rgba(102, 126, 234, 0.35);
       }
 
       &:disabled {
@@ -761,5 +995,34 @@ onMounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 用户消息文字在深色气泡中保持高对比度 */
+.message.user-message .message-content .message-text {
+  color: #ffffff;
+
+  a {
+    color: #ffffff;
+    border-bottom-color: rgba(255, 255, 255, 0.5);
+
+    &:hover {
+      border-bottom-color: #ffffff;
+    }
+  }
+
+  table,
+  table.markdown-table {
+    th, td {
+      color: #ffffff;
+    }
+
+    tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+}
+
+.message-gap {
+  height: 8px;
 }
 </style>

@@ -18,6 +18,7 @@
       v-show="isVisible" 
       class="ai-chat-panel"
       :style="panelStyle"
+      ref="chatPanel"
     >
       <!-- 面板头部 -->
       <div class="panel-header" @mousedown.stop="startPanelDrag">
@@ -41,7 +42,7 @@
         <div v-if="aiStore.detectionMessages.length === 0" class="welcome-message">
           <div class="welcome-icon">👋</div>
           <h4>欢迎使用IPv6知识问答助手</h4>
-          <p>我可以回答IPv6相关的领域知识，回答以下问题：</p>
+          <p>我可以回答IPv6相关的领域知识，尝试以下问题：</p>
           <ul class="suggestions">
             <li @click="sendSuggestion('中国的IPv6地址占全球的比例是多少？')">
               📊 中国的IPv6地址占全球的比例是多少？
@@ -113,6 +114,16 @@
           <span v-else>发送中...</span>
         </button>
       </div>
+
+      <!-- 调整大小手柄 -->
+      <div class="resize-handle resize-e" @mousedown="startResize($event, 'e')"></div>
+      <div class="resize-handle resize-s" @mousedown="startResize($event, 's')"></div>
+      <div class="resize-handle resize-w" @mousedown="startResize($event, 'w')"></div>
+      <div class="resize-handle resize-n" @mousedown="startResize($event, 'n')"></div>
+      <div class="resize-handle resize-se" @mousedown="startResize($event, 'se')"></div>
+      <div class="resize-handle resize-sw" @mousedown="startResize($event, 'sw')"></div>
+      <div class="resize-handle resize-ne" @mousedown="startResize($event, 'ne')"></div>
+      <div class="resize-handle resize-nw" @mousedown="startResize($event, 'nw')"></div>
     </div>
   </div>
 </template>
@@ -129,6 +140,7 @@ const detectionStore = useDetectionStore()
 const isVisible = ref(false)
 const inputMessage = ref('')
 const messagesContainer = ref(null)
+const chatPanel = ref(null)
 
 // 拖拽相关状态
 const isDragging = ref(false)
@@ -136,6 +148,7 @@ const dragStartX = ref(0)
 const dragStartY = ref(0)
 const btnPosition = ref({ x: window.innerWidth - 120, y: window.innerHeight - 120 })
 const panelPosition = ref({ x: window.innerWidth - 420, y: 100 })
+const panelSize = ref({ width: 600, height: 720 })
 
 // 计算样式
 const triggerBtnStyle = computed(() => ({
@@ -145,7 +158,9 @@ const triggerBtnStyle = computed(() => ({
 
 const panelStyle = computed(() => ({
   left: `${panelPosition.value.x}px`,
-  top: `${panelPosition.value.y}px`
+  top: `${panelPosition.value.y}px`,
+  width: `${panelSize.value.width}px`,
+  height: `${panelSize.value.height}px`
 }))
 
 // 切换面板显示
@@ -194,9 +209,58 @@ const startPanelDrag = (e) => {
   const onMouseMove = (e) => {
     if (isDragging.value) {
       panelPosition.value = {
-        x: Math.max(0, Math.min(window.innerWidth - 400, e.clientX - dragStartX.value)),
-        y: Math.max(0, Math.min(window.innerHeight - 500, e.clientY - dragStartY.value))
+        x: Math.max(0, Math.min(window.innerWidth - panelSize.value.width, e.clientX - dragStartX.value)),
+        y: Math.max(0, Math.min(window.innerHeight - panelSize.value.height, e.clientY - dragStartY.value))
       }
+    }
+  }
+
+  const onMouseUp = () => {
+    isDragging.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
+
+// 开始调整大小
+const startResize = (e, direction) => {
+  e.preventDefault()
+  e.stopPropagation()
+  isDragging.value = true
+
+  const startWidth = panelSize.value.width
+  const startHeight = panelSize.value.height
+  const startX = e.clientX
+  const startY = e.clientY
+  const startPosX = panelPosition.value.x
+  const startPosY = panelPosition.value.y
+
+  const onMouseMove = (e) => {
+    if (!isDragging.value) return
+
+    const deltaX = e.clientX - startX
+    const deltaY = e.clientY - startY
+
+    if (direction.includes('e')) {
+      panelSize.value.width = Math.max(400, Math.min(window.innerWidth - startPosX - 20, startWidth + deltaX))
+    }
+    if (direction.includes('s')) {
+      panelSize.value.height = Math.max(400, Math.min(window.innerHeight - startPosY - 20, startHeight + deltaY))
+    }
+    if (direction.includes('w')) {
+      const newWidth = Math.max(400, startWidth - deltaX)
+      const widthDiff = startWidth - newWidth
+      panelSize.value.width = newWidth
+      panelPosition.value.x = Math.max(0, startPosX + widthDiff)
+    }
+    if (direction.includes('n')) {
+      const newHeight = Math.max(400, startHeight - deltaY)
+      const heightDiff = startHeight - newHeight
+      panelSize.value.height = newHeight
+      panelPosition.value.y = Math.max(0, startPosY + heightDiff)
     }
   }
 
@@ -268,6 +332,8 @@ const formatMessage = (content) => {
 
   const applyInline = (text) => {
     let safe = escapeHtml(text)
+    // 支持链接 [text](url)
+    safe = safe.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>')
     safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
@@ -315,11 +381,11 @@ const formatMessage = (content) => {
       body = rows
     }
 
-    const renderRow = (cells, tag) => `<tr>${cells.map(cell => `<${tag}>${applyInline(cell)}</${tag}>`).join('')}</tr>`
+    const renderRow = (cells, tag) => `<tr>${cells.map(cell => `<${tag} style="border: 1px solid #94a3b8; padding: 8px 12px;">${applyInline(cell)}</${tag}>`).join('')}</tr>`
 
-    html += '<table>'
+    html += '<table class="markdown-table" style="width: 100%; border-collapse: collapse; border: 2px solid #94a3b8; margin: 12px 0;">'
     if (header.length) {
-      html += `<thead>${renderRow(header[0], 'th')}</thead>`
+      html += `<thead style="background: #e2e8f0;">${renderRow(header[0], 'th')}</thead>`
     }
     if (body.length) {
       html += `<tbody>${body.map(row => renderRow(row, 'td')).join('')}</tbody>`
@@ -337,6 +403,15 @@ const formatMessage = (content) => {
       flushQuote()
       flushTable()
       html += '<div class="message-gap"></div>'
+      return
+    }
+
+    // 水平分隔线（---、***、___）
+    if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      flushList()
+      flushQuote()
+      flushTable()
+      html += '<hr class="md-hr">'
       return
     }
 
@@ -436,7 +511,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   position: fixed;
   width: 120px;
   height: 44px;
-  background: #3b82f6;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
   border-radius: 12px;
   color: #ffffff;
@@ -445,7 +520,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.45);
+  box-shadow: 0 12px 30px rgba(102, 126, 234, 0.35);
   transition: transform 0.2s ease;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -465,19 +540,89 @@ watch(() => aiStore.detectionMessages.length, () => {
 
 .ai-chat-panel {
   position: fixed;
-  width: 600px;
-  height: 720px;
   background: #ffffff;
   border-radius: 18px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 30px 70px rgba(102, 126, 234, 0.35);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(102, 126, 234, 0.24);
+  min-width: 400px;
+  min-height: 400px;
+}
+
+.resize-handle {
+  position: absolute;
+  background: transparent;
+  z-index: 10;
+
+  &.resize-e {
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+  }
+
+  &.resize-s {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 8px;
+    cursor: ns-resize;
+  }
+
+  &.resize-w {
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+  }
+
+  &.resize-n {
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 8px;
+    cursor: ns-resize;
+  }
+
+  &.resize-se {
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+  }
+
+  &.resize-sw {
+    left: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+  }
+
+  &.resize-ne {
+    right: 0;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+  }
+
+  &.resize-nw {
+    left: 0;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+  }
 }
 
 .panel-header {
-  background: #3b82f6;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #ffffff;
   padding: 12px 18px;
   display: flex;
@@ -485,7 +630,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   align-items: center;
   cursor: move;
   user-select: none;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.45);
+  box-shadow: 0 10px 24px rgba(102, 126, 234, 0.35);
 
   .header-left {
     display: flex;
@@ -547,22 +692,22 @@ watch(() => aiStore.detectionMessages.length, () => {
   flex: 1;
   overflow-y: auto;
   padding: 18px 22px;
-  background: #f8fafc;
+  background: #f7f9fc;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: #e7eaf6;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #888;
+    background: #8895e6;
     border-radius: 3px;
 
     &:hover {
-      background: #555;
+      background: #6f7cd1;
     }
   }
 }
@@ -601,6 +746,7 @@ watch(() => aiStore.detectionMessages.length, () => {
       cursor: pointer;
       transition: all 0.2s;
       border: 1px solid #e5e7eb;
+      color: #000000;
 
       &:hover {
         background: #f3f4f6;
@@ -620,7 +766,7 @@ watch(() => aiStore.detectionMessages.length, () => {
     flex-direction: row-reverse;
 
     .message-content {
-      background: #3b82f6;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #ffffff;
       border-radius: 16px 16px 6px 16px;
     }
@@ -663,6 +809,7 @@ watch(() => aiStore.detectionMessages.length, () => {
       word-wrap: break-word;
       color: #0f172a;
       font-size: 15px;
+      padding: 0 8px; // 增加左右内边距
 
       h2, h3, h4 {
         margin: 8px 0 4px;
@@ -675,13 +822,14 @@ watch(() => aiStore.detectionMessages.length, () => {
 
       ul,
       ol {
-        margin: 10px 0 10px 20px;
-        padding-left: 16px;
+        margin: 10px 0 10px -8px; // 左侧负margin抵消padding
+        padding-left: 32px; // 增加padding确保标号有空间
       }
 
       li {
         margin: 4px 0;
         line-height: 1.6;
+        padding-left: 4px;
       }
 
       .code-block {
@@ -715,6 +863,18 @@ watch(() => aiStore.detectionMessages.length, () => {
         font-style: italic;
       }
 
+      a {
+        color: #667eea;
+        text-decoration: none;
+        border-bottom: 1px solid #667eea;
+        transition: all 0.2s;
+
+        &:hover {
+          color: #764ba2;
+          border-bottom-color: #764ba2;
+        }
+      }
+
       blockquote {
         margin: 10px 0;
         border-left: 3px solid #94a3b8;
@@ -723,23 +883,28 @@ watch(() => aiStore.detectionMessages.length, () => {
         background: rgba(148, 163, 184, 0.1);
       }
 
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 12px 0;
+      table,
+      table.markdown-table {
         font-size: 13px;
       }
 
       th,
       td {
-        border: 1px solid #e2e8f0;
-        padding: 8px;
         text-align: left;
       }
 
       thead {
-        background: #f1f5f9;
         font-weight: 600;
+      }
+
+      tbody tr:nth-child(even) {
+        background: #f1f5f9;
+      }
+
+      hr.md-hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 12px 0;
       }
     }
 
@@ -832,20 +997,22 @@ watch(() => aiStore.detectionMessages.length, () => {
 
   .send-btn {
     min-width: 96px;
-    background: #3b82f6;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: #ffffff;
     border: none;
     border-radius: 999px;
     font-weight: 500;
     letter-spacing: 0.02em;
     cursor: pointer;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
     position: absolute;
     right: 22px;
     bottom: 22px;
 
     &:hover:not(:disabled) {
-      opacity: 0.9;
+      opacity: 0.95;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(102, 126, 234, 0.35);
     }
 
     &:disabled {
@@ -858,5 +1025,25 @@ watch(() => aiStore.detectionMessages.length, () => {
 /* 用户消息文字在深色气泡中保持高对比度 */
 .message.user-message .message-content .message-text {
   color: #ffffff;
+
+  a {
+    color: #ffffff;
+    border-bottom-color: rgba(255, 255, 255, 0.5);
+
+    &:hover {
+      border-bottom-color: #ffffff;
+    }
+  }
+
+  table,
+  table.markdown-table {
+    th, td {
+      color: #ffffff;
+    }
+
+    tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
 }
 </style>

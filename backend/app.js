@@ -52,7 +52,8 @@ app.get('/api/test', (req, res) => {
   res.send('Hello World!');
 });
 
-// 启动服务，监听所有网络接口
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`服务器正在运行在 http://0.0.0.0:${PORT}`);
+// 启动服务，同时监听IPv4和IPv6地址
+app.listen(PORT, '::', () => {
+  console.log(`服务器正在运行在 http://[::]:${PORT}`);
+  console.log(`IPv4访问地址: http://0.0.0.0:${PORT}`);
 });
