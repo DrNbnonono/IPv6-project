@@ -15,6 +15,7 @@ const JsonAnalysisDashboardView = () => import('@/views/tools/jsonanalysis/JsonA
 const Addr6DashboardView = () => import('@/views/tools/addr6/Addr6DashboardView.vue')
 const NmapDashboardView = () => import('@/views/tools/nmap/NmapDashboardView.vue')
 const WorkflowDashboardView = () => import('@/views/tools/workflows/WorkflowDashboardView.vue')
+const AgentDashboardView = () => import('@/views/tools/agent/AgentDashboardView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 
 const routes = [
@@ -40,6 +41,12 @@ const routes = [
     component: ToolsView,
     meta: { requiresAuth: true },
     children: [
+      {
+        path: 'agent',
+        name: 'agent',
+        component: AgentDashboardView,
+        meta: { title: 'Agent助手' }
+      },
       {
         path: 'aichat',
         name: 'aichat',

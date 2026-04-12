@@ -655,7 +655,7 @@ export default {
       // TODO: 后端实现后启用真实API
       // const response = await apiClient.post('/ai/tools/chat', data);
       // return response.data;
-      
+
       // 临时模拟响应（后端暂未实现）
       return new Promise((resolve) => {
         setTimeout(() => {
@@ -677,6 +677,76 @@ export default {
     async getStatus() {
       const response = await apiClient.get('/ai/status');
       return response.data;
+    }
+  },
+
+  // Agent相关API
+  agent: {
+    // Agent对话
+    chat(data) {
+      return apiClient.post('/agent/chat', data);
+    },
+
+    // 获取可用工具列表
+    getTools() {
+      return apiClient.get('/agent/tools');
+    },
+
+    // 执行工具
+    executeTool(data) {
+      return apiClient.post('/agent/tools/execute', data);
+    },
+
+    // 生成工作流
+    generateWorkflow(data) {
+      return apiClient.post('/agent/workflow/generate', data);
+    },
+
+    // 获取Agent状态
+    getStatus() {
+      return apiClient.get('/agent/status');
+    },
+
+    // 获取欢迎消息
+    getWelcome() {
+      return apiClient.get('/agent/welcome');
+    },
+
+    // 记忆管理
+    getMemorySummary() {
+      return apiClient.get('/agent/memory/summary');
+    },
+    getPreferences() {
+      return apiClient.get('/agent/memory/preferences');
+    },
+    savePreferences(data) {
+      return apiClient.post('/agent/memory/preferences', data);
+    },
+    clearMemory() {
+      return apiClient.delete('/agent/memory');
+    },
+
+    // 终端管理
+    getTerminals() {
+      return apiClient.get('/agent/terminals');
+    },
+    createTerminal() {
+      return apiClient.post('/agent/terminal');
+    },
+    getTerminal(id) {
+      return apiClient.get(`/agent/terminal/${id}`);
+    },
+    closeTerminal(id) {
+      return apiClient.delete(`/agent/terminal/${id}`);
+    },
+    getTerminalHistory(id) {
+      return apiClient.get(`/agent/terminal/${id}/history`);
+    },
+    executeCommand(data) {
+      return apiClient.post('/agent/terminal/execute', data);
+    },
+    getAllowedCommands() {
+      return apiClient.get('/agent/terminal/allowed-commands');
     }
   }
 }

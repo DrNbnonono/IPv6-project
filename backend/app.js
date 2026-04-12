@@ -14,6 +14,7 @@ const fileRouter = require('./routes/file'); // 新增文件路由
 const jsonanalysisRouter = require('./routes/jsonanalysis'); // JSON分析路由
 const workflowRouter = require('./routes/workflows'); // 工作流路由
 const aichatRouter = require('./routes/aichat'); // AI聊天路由
+const agentRouter = require('./routes/agent'); // Agent路由
 
 // 先尝试加载项目根目录的 .env，再加载 backend 目录下的 .env（如果存在，后者会覆盖前者同名变量）
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -38,6 +39,7 @@ app.use('/api/files', fileRouter);
 app.use('/api/jsonanalysis', jsonanalysisRouter);
 app.use('/api/workflows', workflowRouter);
 app.use('/api/ai', aichatRouter); // AI聊天路由
+app.use('/api/agent', agentRouter); // Agent路由
 
 // 更新CORS配置，允许所有来源访问或指定您的域名
 app.use(cors({

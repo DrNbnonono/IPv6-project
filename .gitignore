@@ -39,6 +39,7 @@ IPv6_addresses/
 zgrab2_input/
 zgrab2_config/
 zgrab2_logs/
+zgrab2_inputs/
 
 # Environment variables
 .env
@@ -152,5 +153,9 @@ zgrab2_results/
 jsonanalysis/
 *.env
 
+*.pid
+
 # 文档说明
 AI_INTEGRATION_README.md
+
+prompt.md
