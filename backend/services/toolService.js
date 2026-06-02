@@ -240,6 +240,10 @@ const TOOL_REGISTRY = {
       try {
         const { command, terminalId, timeout = 60000 } = params;
 
+        if (context.user?.role !== 'admin') {
+          throw new Error('仅管理员可使用终端工具');
+        }
+
         const terminalService = require('./terminalService');
 
         // 获取或创建终端

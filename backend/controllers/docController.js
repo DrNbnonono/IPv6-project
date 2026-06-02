@@ -9,12 +9,54 @@ const logger = createLogger({
 
 const XMAP_DOCS_DIR = path.join(__dirname, '../../docs/xmap')
 const ZGRAB2_DOCS_DIR = path.join(__dirname, '../../docs/zgrab2')
+const ALLOWED_LANGS = new Set(['en', 'zh'])
+const DOC_ID_PATTERN = /^[A-Za-z0-9-]+$/
+
+function isValidLang(lang) {
+  return ALLOWED_LANGS.has(lang)
+}
+
+function isValidDocId(docId) {
+  return DOC_ID_PATTERN.test(docId)
+}
+
+function resolveSafePath(baseDir, ...segments) {
+  const resolvedBase = path.resolve(baseDir)
+  const resolvedPath = path.resolve(baseDir, ...segments)
+  const basePrefix = `${resolvedBase}${path.sep}`
+
+  if (resolvedPath !== resolvedBase && !resolvedPath.startsWith(basePrefix)) {
+    throw new Error('非法文档路径')
+  }
+
+  return resolvedPath
+}
+
+function findMatchingMarkdownFile(docDir, docId) {
+  const files = fs.readdirSync(docDir)
+
+  return files.find(file => {
+    const lowerFile = file.toLowerCase()
+    return lowerFile.endsWith('.md') && lowerFile.replace('.md', '') === docId.toLowerCase()
+  })
+}
+
+function sendInvalidParams(res) {
+  return res.status(400).json({
+    success: false,
+    message: '无效的文档参数'
+  })
+}
 
 // 获取文档列表
 exports.getDocList = async (req, res) => {
   try {
     const lang = req.params.lang || 'en'
-    const docDir = path.join(XMAP_DOCS_DIR, lang)
+    if (!isValidLang(lang)) {
+      return sendInvalidParams(res)
+    }
+
+    const docDir = resolveSafePath(XMAP_DOCS_DIR, lang)
     
     if (!fs.existsSync(docDir)) {
       return res.status(404).json({
@@ -48,6 +90,10 @@ exports.getDocList = async (req, res) => {
 exports.getXmapToc = async (req, res) => {
   try {
     const lang = req.params.lang || 'en'
+    if (!isValidLang(lang)) {
+      return sendInvalidParams(res)
+    }
+
     const toc = generateXmapTocStructure(lang)
 
     res.json({
@@ -67,7 +113,11 @@ exports.getXmapToc = async (req, res) => {
 exports.getDocContent = async (req, res) => {
   try {
     const { lang, docId } = req.params
-    const docPath = path.join(XMAP_DOCS_DIR, lang, `${docId}.md`)
+    if (!isValidLang(lang) || !isValidDocId(docId)) {
+      return sendInvalidParams(res)
+    }
+
+    const docPath = resolveSafePath(XMAP_DOCS_DIR, lang, `${docId}.md`)
 
     if (!fs.existsSync(docPath)) {
       return res.status(404).json({
@@ -95,6 +145,9 @@ exports.updateDocContent = async (req, res) => {
   try {
     const { lang, docId } = req.params
     const { content } = req.body
+    if (!isValidLang(lang) || !isValidDocId(docId)) {
+      return sendInvalidParams(res)
+    }
     
     // 验证用户权限
     if (req.user.role !== 'admin') {
@@ -104,7 +157,7 @@ exports.updateDocContent = async (req, res) => {
       })
     }
 
-    const docPath = path.join(XMAP_DOCS_DIR, lang, `${docId}.md`)
+    const docPath = resolveSafePath(XMAP_DOCS_DIR, lang, `${docId}.md`)
     fs.writeFileSync(docPath, content, 'utf-8')
     
     res.json({
@@ -126,7 +179,11 @@ exports.updateDocContent = async (req, res) => {
 exports.getZgrab2DocList = async (req, res) => {
   try {
     const lang = req.params.lang || 'en'
-    const docDir = path.join(ZGRAB2_DOCS_DIR, lang)
+    if (!isValidLang(lang)) {
+      return sendInvalidParams(res)
+    }
+
+    const docDir = resolveSafePath(ZGRAB2_DOCS_DIR, lang)
     
     if (!fs.existsSync(docDir)) {
       return res.status(404).json({
@@ -160,7 +217,11 @@ exports.getZgrab2DocList = async (req, res) => {
 exports.getZgrab2DocContent = async (req, res) => {
   try {
     const { lang, docId } = req.params
-    const docDir = path.join(ZGRAB2_DOCS_DIR, lang)
+    if (!isValidLang(lang) || !isValidDocId(docId)) {
+      return sendInvalidParams(res)
+    }
+
+    const docDir = resolveSafePath(ZGRAB2_DOCS_DIR, lang)
     
     if (!fs.existsSync(docDir)) {
       return res.status(404).json({
@@ -170,12 +231,7 @@ exports.getZgrab2DocContent = async (req, res) => {
     }
 
     // 获取目录中的所有文件
-    const files = fs.readdirSync(docDir)
-    
-    // 查找匹配的文件（不区分大小写）
-    const targetFile = files.find(file => 
-      file.toLowerCase().replace('.md', '') === docId.toLowerCase()
-    )
+    const targetFile = findMatchingMarkdownFile(docDir, docId)
     
     if (!targetFile) {
       return res.status(404).json({
@@ -184,7 +240,7 @@ exports.getZgrab2DocContent = async (req, res) => {
       })
     }
 
-    const docPath = path.join(docDir, targetFile)
+    const docPath = resolveSafePath(docDir, targetFile)
     const content = fs.readFileSync(docPath, 'utf-8')
     
     res.json({
@@ -205,6 +261,9 @@ exports.updateZgrab2DocContent = async (req, res) => {
   try {
     const { lang, docId } = req.params
     const { content } = req.body
+    if (!isValidLang(lang) || !isValidDocId(docId)) {
+      return sendInvalidParams(res)
+    }
     
     // 验证用户权限
     if (req.user.role !== 'admin') {
@@ -214,7 +273,7 @@ exports.updateZgrab2DocContent = async (req, res) => {
       })
     }
 
-    const docDir = path.join(ZGRAB2_DOCS_DIR, lang)
+    const docDir = resolveSafePath(ZGRAB2_DOCS_DIR, lang)
     
     if (!fs.existsSync(docDir)) {
       return res.status(404).json({
@@ -224,12 +283,7 @@ exports.updateZgrab2DocContent = async (req, res) => {
     }
 
     // 获取目录中的所有文件
-    const files = fs.readdirSync(docDir)
-    
-    // 查找匹配的文件（不区分大小写）
-    const targetFile = files.find(file => 
-      file.toLowerCase().replace('.md', '') === docId.toLowerCase()
-    )
+    const targetFile = findMatchingMarkdownFile(docDir, docId)
     
     if (!targetFile) {
       return res.status(404).json({
@@ -238,7 +292,7 @@ exports.updateZgrab2DocContent = async (req, res) => {
       })
     }
 
-    const docPath = path.join(docDir, targetFile)
+    const docPath = resolveSafePath(docDir, targetFile)
     fs.writeFileSync(docPath, content, 'utf-8')
     
     res.json({
@@ -258,6 +312,10 @@ exports.updateZgrab2DocContent = async (req, res) => {
 exports.getZgrab2Toc = async (req, res) => {
   try {
     const lang = req.params.lang || 'en'
+    if (!isValidLang(lang)) {
+      return sendInvalidParams(res)
+    }
+
     const toc = generateZgrab2TocStructure(lang)
     
     res.json({

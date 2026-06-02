@@ -3,6 +3,8 @@
  * 支持命令执行、终端会话管理
  */
 
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 
@@ -17,6 +19,157 @@ const TERMINAL_CONFIG = {
 
 // 活跃终端会话
 const activeTerminals = new Map();
+const FORBIDDEN_COMMAND_PATTERN = /[;&|<>`$()\n\r]/;
+const BUILTIN_COMMANDS = new Set(['cd', 'clear', 'history']);
+
+const tokenizeCommand = (command) => {
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (const char of command.trim()) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped || quote) {
+    throw new Error('命令格式无效');
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+};
+
+const parseCommand = (command) => {
+  if (!command || typeof command !== 'string' || !command.trim()) {
+    throw new Error('命令不能为空');
+  }
+
+  if (FORBIDDEN_COMMAND_PATTERN.test(command)) {
+    throw new Error('命令包含不允许的控制字符');
+  }
+
+  const tokens = tokenizeCommand(command);
+  if (tokens.length === 0) {
+    throw new Error('命令不能为空');
+  }
+
+  return {
+    command: tokens[0],
+    args: tokens.slice(1)
+  };
+};
+
+const formatHistoryOutput = (terminal) => {
+  return terminal.history
+    .map((item, index) => `${index + 1}  ${item.command}`)
+    .join('\n');
+};
+
+const executeBuiltinCommand = (terminal, command, args, cwd, cmdRecord) => {
+  if (command === 'clear') {
+    cmdRecord.endTime = Date.now();
+    cmdRecord.status = 'success';
+    cmdRecord.exitCode = 0;
+    cmdRecord.stdout = '';
+    cmdRecord.stderr = '';
+
+    return {
+      success: true,
+      command: cmdRecord,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+      timedOut: false,
+      duration: cmdRecord.endTime - cmdRecord.startTime
+    };
+  }
+
+  if (command === 'history') {
+    const stdout = formatHistoryOutput(terminal);
+    cmdRecord.endTime = Date.now();
+    cmdRecord.status = 'success';
+    cmdRecord.exitCode = 0;
+    cmdRecord.stdout = stdout;
+    cmdRecord.stderr = '';
+
+    return {
+      success: true,
+      command: cmdRecord,
+      stdout,
+      stderr: '',
+      exitCode: 0,
+      timedOut: false,
+      duration: cmdRecord.endTime - cmdRecord.startTime
+    };
+  }
+
+  if (command === 'cd') {
+    const targetDir = args[0]
+      ? path.resolve(cwd, args[0])
+      : TERMINAL_CONFIG.workingDirectory;
+
+    if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+      throw new Error('目标目录不存在');
+    }
+
+    terminal.workingDirectory = targetDir;
+    terminal.lastActivityAt = Date.now();
+    cmdRecord.endTime = Date.now();
+    cmdRecord.status = 'success';
+    cmdRecord.exitCode = 0;
+    cmdRecord.stdout = targetDir;
+    cmdRecord.stderr = '';
+
+    return {
+      success: true,
+      command: cmdRecord,
+      stdout: targetDir,
+      stderr: '',
+      exitCode: 0,
+      timedOut: false,
+      duration: cmdRecord.endTime - cmdRecord.startTime
+    };
+  }
+
+  return null;
+};
 
 /**
  * 创建终端会话
@@ -36,6 +189,7 @@ const createTerminal = (sessionId, options = {}) => {
     id,
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
+    ownerId: options.userId || null,
     workingDirectory: options.workingDirectory || TERMINAL_CONFIG.workingDirectory,
     environment: { ...process.env, ...options.env },
     history: [],
@@ -71,11 +225,16 @@ const executeCommand = (terminalId, command, options = {}) => {
 
     const timeout = options.timeout || TERMINAL_CONFIG.defaultTimeout;
     const cwd = options.cwd || terminal.workingDirectory;
+    const parsedCommand = parseCommand(command);
+
+    if (!isCommandAllowed(parsedCommand.command)) {
+      return reject(new Error('命令不在允许列表中'));
+    }
 
     // 记录命令历史
     const cmdRecord = {
       id: `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      command,
+      command: command.trim(),
       startTime: Date.now(),
       cwd,
       status: 'running'
@@ -83,16 +242,32 @@ const executeCommand = (terminalId, command, options = {}) => {
     terminal.history.push(cmdRecord);
     terminal.lastActivityAt = Date.now();
 
+    if (BUILTIN_COMMANDS.has(parsedCommand.command)) {
+      try {
+        return resolve(executeBuiltinCommand(
+          terminal,
+          parsedCommand.command,
+          parsedCommand.args,
+          cwd,
+          cmdRecord
+        ));
+      } catch (error) {
+        cmdRecord.status = 'error';
+        cmdRecord.endTime = Date.now();
+        cmdRecord.error = error.message;
+        return reject(error);
+      }
+    }
+
     let stdout = '';
     let stderr = '';
     let isTimedOut = false;
 
-    const shell = options.shell || TERMINAL_CONFIG.shell;
-
-    const child = spawn(shell, ['-c', command], {
+    const child = spawn(parsedCommand.command, parsedCommand.args, {
       cwd,
       env: terminal.environment,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false
     });
 
     // 设置超时
@@ -342,10 +517,7 @@ const ALLOWED_COMMANDS = {
  * 验证命令是否在白名单中
  */
 const isCommandAllowed = (command) => {
-  const parts = command.trim().split(/\s+/);
-  const cmd = parts[0];
-
-  return ALLOWED_COMMANDS.hasOwnProperty(cmd);
+  return Object.prototype.hasOwnProperty.call(ALLOWED_COMMANDS, command);
 };
 
 /**

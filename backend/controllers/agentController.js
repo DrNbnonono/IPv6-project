@@ -9,6 +9,19 @@ const llmService = require('../services/llmService');
 const memoryService = require('../services/memoryService');
 const terminalService = require('../services/terminalService');
 
+const ensureTerminalAdmin = (req, res) => {
+  if (req.user?.role === 'admin') {
+    return true;
+  }
+
+  res.status(403).json({
+    success: false,
+    message: '仅管理员可使用终端功能'
+  });
+
+  return false;
+};
+
 /**
  * 处理Agent对话
  * POST /api/agent/chat
@@ -357,6 +370,10 @@ exports.clearMemory = async (req, res) => {
  * POST /api/agent/terminal
  */
 exports.createTerminal = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   try {
     const userId = req.user?.id || 'anonymous';
     const result = terminalService.createTerminal(null, { userId });
@@ -382,6 +399,10 @@ exports.createTerminal = async (req, res) => {
  * POST /api/agent/terminal/execute
  */
 exports.executeCommand = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   const { terminalId, command, timeout } = req.body;
 
   if (!terminalId || !command) {
@@ -411,6 +432,10 @@ exports.executeCommand = async (req, res) => {
  * GET /api/agent/terminal/:id
  */
 exports.getTerminal = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   const { id } = req.params;
 
   try {
@@ -437,6 +462,10 @@ exports.getTerminal = async (req, res) => {
  * DELETE /api/agent/terminal/:id
  */
 exports.closeTerminal = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   const { id } = req.params;
 
   try {
@@ -459,6 +488,10 @@ exports.closeTerminal = async (req, res) => {
  * GET /api/agent/terminals
  */
 exports.getAllTerminals = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   try {
     const result = terminalService.getAllTerminals();
 
@@ -479,6 +512,10 @@ exports.getAllTerminals = async (req, res) => {
  * GET /api/agent/terminal/:id/history
  */
 exports.getTerminalHistory = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   const { id } = req.params;
 
   try {
@@ -505,6 +542,10 @@ exports.getTerminalHistory = async (req, res) => {
  * GET /api/agent/terminal/allowed-commands
  */
 exports.getAllowedCommands = async (req, res) => {
+  if (!ensureTerminalAdmin(req, res)) {
+    return;
+  }
+
   try {
     const result = terminalService.getAllowedCommands();
 
