@@ -670,7 +670,7 @@ exports.getWorkflowTemplates = async (req, res) => {
               config: {
                 ipv6: true,
                 ipv4: false,
-                probeModule: 'icmp_echoscan',
+                probeModule: 'icmp_echo',
                 rate: 1000,
                 maxResults: 10000,
                 description: 'IPv6网络活跃性探测'
@@ -754,7 +754,7 @@ exports.getWorkflowTemplates = async (req, res) => {
               config: {
                 ipv6: true,
                 ipv4: false,
-                probeModule: 'icmp_echoscan',
+                probeModule: 'icmp_echo',
                 rate: 2000,
                 maxResults: 50000,
                 description: 'IPv6网络大规模探测'
