@@ -10,6 +10,7 @@ const logger = createModuleLogger('db');
 // 数据库配置
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT, 10) || 3306,
   user: process.env.DB_USER || 'linux_db',
   password: process.env.DB_PASSWORD || 'root',
   database: process.env.DB_NAME || 'ipv6_project',
@@ -40,7 +41,7 @@ async function testConnection() {
     // 只输出连接目标，不输出密码
     logger.error(
       `请检查：1. MySQL 服务是否启动；2. 数据库用户权限是否正确；` +
-        `3. .env 中 DB_HOST/DB_USER/DB_PASSWORD/DB_NAME 是否完整（当前 ${dbConfig.user}@${dbConfig.host}/${dbConfig.database}）`
+        `3. .env 中 DB_HOST/DB_USER/DB_PASSWORD/DB_NAME 是否完整（当前 ${dbConfig.user}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}）`
     );
     process.exit(1); // 退出进程（避免服务启动后因数据库不可用导致后续错误）
   }
