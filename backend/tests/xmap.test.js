@@ -35,13 +35,18 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  delete process.env.SCAN_ALLOWED_TARGETS;
   delete process.env.PROJECT_ROOT;
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
+// 默认：白名单文件属于当前用户；其余查询（策略表、配额、INSERT 等）返回空结果
+const defaultQuery = async (sql) => (/FROM whitelists/.test(sql) ? [[{ id: 1 }]] : [{}]);
+
 beforeEach(() => {
   jest.clearAllMocks();
-  db.query.mockResolvedValue([{}]);
+  process.env.SCAN_ALLOWED_TARGETS = '2001:db8::/32';
+  db.query.mockImplementation(defaultQuery);
   // 不真正打开日志文件，避免测试目录清理后异步报错
   jest.spyOn(fs, 'createWriteStream').mockReturnValue({ write: jest.fn(), end: jest.fn(), on: jest.fn() });
 });
@@ -140,8 +145,102 @@ describe('xmap 参数校验', () => {
   });
 });
 
+describe('扫描策略', () => {
+  const inserted = () => db.query.mock.calls.some(([sql]) => /INSERT INTO tasks/.test(sql));
+
+  test('目标不在白名单内：403，不入队', async () => {
+    const res = await scan({ ipv6: true, targetaddress: '2001:db9::/32' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].message).toMatch(/默认拒绝/);
+    expect(inserted()).toBe(false);
+  });
+
+  test('未配置任何白名单时一律拒绝（默认拒绝）', async () => {
+    delete process.env.SCAN_ALLOWED_TARGETS;
+    const res = await scan({ ipv6: true, targetaddress: '2001:db8::1' });
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('没有目标也没有白名单文件：不允许全网扫描', async () => {
+    const res = await scan({ ipv6: true, rate: '1M' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].message).toMatch(/未指定扫描目标/);
+    expect(inserted()).toBe(false);
+  });
+
+  test('域名与内置禁止范围被拒绝', async () => {
+    expect((await scan({ ipv6: true, targetaddress: 'example.com' })).status).toHaveBeenCalledWith(403);
+    process.env.SCAN_ALLOWED_TARGETS = '::/0';
+    expect((await scan({ ipv6: true, targetaddress: '::1' })).status).toHaveBeenCalledWith(403);
+    expect((await scan({ ipv4: true, targetaddress: '169.254.169.254' })).status).toHaveBeenCalledWith(403);
+  });
+
+  test('速率超过上限被拒绝；未指定速率时补上默认值 10M 并写入 -B', async () => {
+    expect((await scan({ ipv6: true, targetaddress: '2001:db8::/32', rate: '101M' })).status).toHaveBeenCalledWith(403);
+    expect(inserted()).toBe(false);
+
+    const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    expect(res.status).toHaveBeenCalledWith(202);
+    const args = queuedArgs();
+    expect(args[args.indexOf('-B') + 1]).toBe('10M');
+  });
+
+  test('入队的目标是规范化后的文本', async () => {
+    await scan({ ipv6: true, targetaddress: '2001:0DB8:0:0::1' });
+    expect(queuedArgs()).toContain('2001:db8::1');
+  });
+
+  test('每日配额用尽：403', async () => {
+    db.query.mockImplementation(async (sql) => (/FROM tasks/.test(sql) ? [[{ count: 100 }]] : defaultQuery(sql)));
+    const res = await scan({ ipv6: true, targetaddress: '2001:db8::1' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].message).toMatch(/每日上限/);
+  });
+
+  test('help 只打印帮助：不需要目标，不检查配额，也不会带上目标/白名单/速率参数', async () => {
+    delete process.env.SCAN_ALLOWED_TARGETS;
+    const res = await scan({ help: true, targetaddress: '8.8.8.8', rate: '9999G', whitelistFile: 'whitelist_5_1.txt' });
+    expect(res.status).toHaveBeenCalledWith(202);
+    const args = queuedArgs();
+    expect(args).toContain('-h');
+    expect(args).not.toContain('8.8.8.8');
+    expect(args).not.toContain('-B');
+    expect(args).not.toContain('-w');
+    expect(db.query.mock.calls.some(([sql]) => /FROM tasks|scan_allowlist/.test(sql))).toBe(false);
+  });
+
+  describe('白名单文件（N7：只能使用自己的文件，且内容也要过策略）', () => {
+    test('不属于当前用户（或已删除）的文件：403', async () => {
+      db.query.mockImplementation(async (sql) => (/FROM whitelists/.test(sql) ? [[]] : [{}]));
+      const res = await scan({ ipv6: true, whitelistFile: 'whitelist_5_1.txt' });
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json.mock.calls[0][0].message).toMatch(/不属于你/);
+      expect(inserted()).toBe(false);
+      const ownership = db.query.mock.calls.find(([sql]) => /FROM whitelists/.test(sql));
+      expect(ownership[1]).toEqual(['whitelist_5_1.txt', 5]);
+      expect(ownership[0]).toMatch(/is_deleted = 0/);
+    });
+
+    test('只给自己的白名单文件、不给 targetaddress 也可以，文件内容全部合规', async () => {
+      const res = await scan({ ipv6: true, whitelistFile: 'whitelist_5_1.txt' });
+      expect(res.status).toHaveBeenCalledWith(202);
+      expect(queuedArgs()).toEqual(expect.arrayContaining(['-w']));
+    });
+
+    test('文件内含有越界地址：403，并指出行号', async () => {
+      const { DIRS } = require('../services/storageService');
+      fs.writeFileSync(path.join(DIRS.whitelists, 'whitelist_5_bad.txt'), '2001:db8::1\n8.8.8.0/24\n');
+      const res = await scan({ ipv4: true, whitelistFile: 'whitelist_5_bad.txt' });
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json.mock.calls[0][0].message).toMatch(/第 2 行/);
+      expect(inserted()).toBe(false);
+    });
+  });
+});
+
 describe('任务生命周期', () => {
-  const taskSqls = () => db.query.mock.calls.filter(([sql]) => /tasks/.test(sql));
+  // 配额统计（SELECT COUNT ... FROM tasks）是只读查询，这里只关心写入
+  const taskSqls = () => db.query.mock.calls.filter(([sql]) => /tasks/.test(sql) && !/^\s*SELECT COUNT/.test(sql));
   const handlersOf = (child) => Object.fromEntries(child.on.mock.calls.map(([event, fn]) => [event, fn]));
 
   test('scan 只写 pending 记录（含 params），不启动进程、不置 running', async () => {
