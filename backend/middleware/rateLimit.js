@@ -36,12 +36,28 @@ const createApiLimiter = () => rateLimit({
   handler: buildHandler('请求过于频繁，请稍后再试')
 });
 
+/**
+ * AI 问答限流：按 IP，默认每分钟 20 次，可通过 AI_RATE_MAX 调整。
+ * /api/ai/detection/chat 面向未登录访客，每次请求都会消耗服务器配置的大模型额度，
+ * 因此单独收紧，不与全局限流（默认 600 次/分钟）共用。
+ */
+const createAiLimiter = () => rateLimit({
+  windowMs: 60 * 1000,
+  limit: toPositiveInt(process.env.AI_RATE_MAX, 20),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: buildHandler('AI 问答请求过于频繁，请稍后再试')
+});
+
 const loginLimiter = createLoginLimiter();
 const apiLimiter = createApiLimiter();
+const aiLimiter = createAiLimiter();
 
 module.exports = {
   loginLimiter,
   apiLimiter,
+  aiLimiter,
   createLoginLimiter,
-  createApiLimiter
+  createApiLimiter,
+  createAiLimiter
 };
