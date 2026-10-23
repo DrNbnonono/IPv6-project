@@ -134,7 +134,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `AI_RATE_MAX` `AI_MESSAGE_MAX_CHARS` | `20` `2000` | 公开 AI 问答的每 IP 每分钟次数与问题长度 |
 | `PROJECT_ROOT` | 仓库根目录 | 数据目录根（`xmap_result`、`zgrab2_*`、`whitelists`、`backend_logs` 等都在其下） |
 | `TERMINAL_JAIL_ROOT` | 仓库根目录 | 终端可访问的目录范围 |
-| `MAX_CONCURRENT_XMAP` `MAX_CONCURRENT_ZGRAB2` `MAX_CONCURRENT_PER_USER` | `2` `4` `3` | 任务并发上限：创建任务只是入队，调度器按上限启动，超出的排队（`pending`）；其他任务类型（`apd`、`tga`）用 `MAX_CONCURRENT_<类型>`，默认 `2` |
+| `MAX_CONCURRENT_XMAP` `MAX_CONCURRENT_ZGRAB2` `MAX_CONCURRENT_PER_USER` | `2` `4` `3` | 任务并发上限：创建任务只是入队，调度器按上限启动，超出的排队（`pending`）；其他任务类型（`apd`、`tga`、`enrich`）用 `MAX_CONCURRENT_<类型>`，默认 `2` |
 | `SCAN_ALLOWED_TARGETS` | 空（默认拒绝） | 允许扫描的地址/CIDR，逗号分隔；与管理员在 `/api/admin/scan-allowlist` 维护的表取并集。**不配置则任何扫描都被拒绝** |
 | `SCAN_MAX_RATE` `SCAN_DEFAULT_RATE` `SCAN_DAILY_LIMIT` | `100M` `10M` `100` | xmap 单任务速率上限 / 未指定时的默认速率 / 每用户每天可创建的扫描任务数；可在 `/api/admin/quotas` 按用户覆盖 |
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
@@ -159,7 +159,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `/workflows` | 工作流 CRUD、执行与控制 | 登录 |
 | `/agent` | 对话、工具、终端、记忆 | `status` / `welcome` 公开，其余登录；有副作用的工具需 `confirmed: true` |
 | `/admin` | 扫描白名单/黑名单、用户配额、审计日志查询、用户列表 | 管理员 |
-| `/database` | 统计、高级查询、国家 / ASN / 前缀 / 协议 / 漏洞管理、导入 | 查询登录；增删改与批量更新需管理员 |
+| `/database` | 统计、高级查询、国家 / ASN / 前缀 / 协议 / 漏洞管理、导入；`POST /classify-iid`（IID 分类，不写库）；`/enrich-iid`（后台任务：对 `active_addresses` 分类 IID、补全来源前缀） | 查询与 `classify-iid` 登录；增删改、批量更新与 `enrich-iid` 需管理员 |
 | `/files` `/jsonanalysis` | 文件、JSON 解析 | 登录 |
 | `/docs` | 帮助文档 | 读取公开，编辑需管理员 |
 
