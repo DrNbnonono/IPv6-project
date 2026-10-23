@@ -99,6 +99,9 @@ function runMysql({ sql, extraArgs = [], env = process.env }) {
     child.stderr.on('data', (d) => (stderr += d));
     child.on('error', (err) => reject(new Error(`无法启动 ${bin}: ${err.message}`)));
     child.on('close', (code) => resolve({ code, stdout, stderr }));
+    // 客户端提前退出（例如连不上数据库）时，写 stdin 会得到 EPIPE；这不是我们要报告的错误，
+    // 退出码和 stderr 才是（close 事件里带回），所以忽略它，否则会变成未处理的 error 事件而崩溃
+    child.stdin.on('error', () => {});
     child.stdin.end(sql);
   });
 }
@@ -202,7 +205,7 @@ async function main(argv = process.argv.slice(2), env = process.env, dir = DEFAU
   return 0;
 }
 
-module.exports = { listMigrations, planMigrations, parseArgs, parseApplied, buildConnArgs, checksumOf, main, MIN_VERSION };
+module.exports = { runMysql, listMigrations, planMigrations, parseArgs, parseApplied, buildConnArgs, checksumOf, main, MIN_VERSION };
 
 if (require.main === module) {
   require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
