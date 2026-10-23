@@ -5,6 +5,7 @@
 
 const agentService = require('../services/agentService');
 const toolService = require('../services/toolService');
+const agentAudit = require('../services/agentAuditService');
 const llmService = require('../services/llmService');
 const memoryService = require('../services/memoryService');
 const terminalService = require('../services/terminalService');
@@ -46,7 +47,7 @@ exports.chat = async (req, res) => {
 
   try {
     const userId = req.user?.id || 'anonymous';
-    const context = { user: req.user };
+    const context = { user: req.user, ip: req.ip };
 
     // 获取或创建会话
     const session = memoryService.getOrCreateSession(sessionId || userId);
@@ -153,6 +154,9 @@ exports.executeTool = async (req, res) => {
     const result = await toolService.executeTool(toolName, params || {}, context);
 
     logger.debug('工具执行完成:', { toolName, success: result.success });
+
+    // 成功执行的工具记入用户的工具历史
+    await agentAudit.recordToolHistory({ user: req.user, tool: toolName, params: params || {}, result });
 
     if (result.needsConfirmation) {
       return res.status(409).json({

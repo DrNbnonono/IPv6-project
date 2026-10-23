@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const llmService = require('./llmService');
 const toolService = require('./toolService');
+const agentAudit = require('./agentAuditService');
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('agent-service');
 
@@ -80,9 +81,11 @@ const runToolCalls = async (userMessage, calls, context, { dropped = 0, extraNot
     if (toolResult.needsConfirmation) {
       pending = toolResult;
       skipped += calls.length - i - 1;
+      await agentAudit.recordChatToolEvent({ user: context.user, tool: name, params, event: 'pending', result: toolResult, ip: context.ip });
       break;
     }
     executed.push({ tool: name, params, result: toolResult });
+    await agentAudit.recordChatToolEvent({ user: context.user, tool: name, params, event: 'executed', result: toolResult, ip: context.ip });
   }
 
   const skippedNote = (skipped > 0 ? `\n\n（本轮还有 ${skipped} 个工具调用没有处理，请在上一步完成后再告诉我继续。）` : '')
@@ -177,6 +180,7 @@ const processWithNativeTools = async (userMessage, history, context) => {
       : toolService.validateToolParams(call.name, call.arguments);
     if (!checked.valid) {
       logger.warn(`模型给出的工具调用无效: ${String(call.name).slice(0, 40)}: ${checked.errors.join('; ')}`);
+      await agentAudit.recordChatToolEvent({ user: context.user, tool: call.name, params: call.arguments, event: 'rejected', errors: checked.errors, ip: context.ip });
       invalidNote = `我想调用「${String(call.name).slice(0, 40)}」，但参数还不完整或不正确：${checked.errors.join('；')}。请补充信息后再试一次。`;
       break;
     }
