@@ -123,6 +123,7 @@
           <AdvancedQueryForm 
             @perform-query="handlePerformQuery"
             :is-loading="isQuerying"
+            :executed-sql="lastQuerySql"
           />
           
           <div v-if="queryResults.length > 0" class="query-results">
@@ -315,6 +316,7 @@ const isUpdatingVulnerabilities = ref(false);
 const isUpdatingProtocols = ref(false);
 const isQuerying = ref(false);
 const queryResults = ref([]);
+const lastQuerySql = ref('');
 const queryColumns = ref([]);
 const countryChartInstance = ref(null);
 const vulnerabilityChartInstance = ref(null);
@@ -411,6 +413,8 @@ const handlePerformQuery = async (queryParams) => {
       return;
     }
     
+    lastQuerySql.value = typeof result.sql === 'string' ? result.sql : '';
+
     // 确保从正确的属性中获取数据
     if (result.data) {
       queryResults.value = result.data;

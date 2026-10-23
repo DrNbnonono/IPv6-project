@@ -261,9 +261,9 @@
       </div>
       
       <div class="form-section">
-        <h4>SQL预览</h4>
+        <h4>最近一次查询的SQL</h4>
         <div class="sql-preview">
-          <pre>{{ previewSql }}</pre>
+          <pre>{{ executedSql || '执行查询后，这里显示服务端实际执行的SQL（取值以 ? 占位）' }}</pre>
         </div>
       </div>
       
@@ -294,6 +294,11 @@ const props = defineProps({
   isLoading: {
     type: Boolean,
     default: false
+  },
+  // 服务端返回的、最近一次实际执行的 SQL（仅展示，前端不再拼接 SQL）
+  executedSql: {
+    type: String,
+    default: ''
   }
 });
 
@@ -302,7 +307,6 @@ const matchedAsns = ref([]);
 const matchedPrefixes = ref([]);
 const filteredAsns = ref([]);
 const filteredPrefixes = ref([]);
-const previewSql = ref('');
 
 const emit = defineEmits(['perform-query', 'delete-addresses']);
 
@@ -391,22 +395,6 @@ watch(() => queryParams.value.asn, (newVal) => {
   }
 });
 
-// 监听所有查询参数变化，更新SQL预览
-watch(queryParams, () => {
-  updateSqlPreview();
-}, { deep: true });
-
-// 更新SQL预览
-const updateSqlPreview = () => {
-  try {
-    const { sql } = buildSqlQuery();
-    previewSql.value = sql;
-  } catch (error) {
-    console.error('生成SQL预览失败:', error);
-    previewSql.value = '生成SQL预览失败';
-  }
-};
-
 onMounted(async () => {
   try {
     await loadData();
@@ -414,9 +402,6 @@ onMounted(async () => {
     
     // 初始化过滤后的ASN列表
     filteredAsns.value = asns.value;
-    
-    // 初始化SQL预览
-    updateSqlPreview();
   } catch (error) {
     console.error('初始化查询表单失败:', error);
     alert(`初始化查询表单失败: ${error.message}`);
@@ -611,191 +596,12 @@ const resetForm = () => {
   matchedPrefixes.value = [];
   filteredAsns.value = asns.value;
   filteredPrefixes.value = [];
-  updateSqlPreview();
 };
 
-// 构建SQL查询
-const buildSqlQuery = () => {
-  const params = [];
-  let sql = 'SELECT ';
-  
-  // 构建选择字段
-  const selectFields = [];
-  if (queryParams.value.fields.includes('address')) selectFields.push('aa.address');
-  if (queryParams.value.fields.includes('address_id')) selectFields.push('aa.address_id');
-  if (queryParams.value.fields.includes('prefix')) selectFields.push('ip.prefix');
-  if (queryParams.value.fields.includes('country')) selectFields.push('c.country_name_zh, c.country_name');
-  if (queryParams.value.fields.includes('asn')) selectFields.push('a.asn, a.as_name_zh, a.as_name');
-  if (queryParams.value.fields.includes('first_seen')) selectFields.push('aa.first_seen');
-  if (queryParams.value.fields.includes('last_seen')) selectFields.push('aa.last_seen');
-  if (queryParams.value.fields.includes('uptime_percentage')) selectFields.push('aa.uptime_percentage');
-  if (queryParams.value.fields.includes('iid_type')) selectFields.push('at.type_name as iid_type');
-  
-  // 添加协议信息字段，使用GROUP_CONCAT聚合多个协议
-  if (queryParams.value.fields.includes('protocols')) {
-    selectFields.push(`GROUP_CONCAT(DISTINCT CONCAT(p.protocol_name, ':', IFNULL(ap.port, p.protocol_number)) SEPARATOR '; ') as protocols`);
-  }
-  
-  // 如果需要漏洞信息，也使用GROUP_CONCAT聚合
-  if (queryParams.value.fields.includes('vulnerabilities')) {
-    selectFields.push(`GROUP_CONCAT(DISTINCT CONCAT(v.description, IF(av.is_fixed, ' (已修复)', ' (未修复)')) SEPARATOR '; ') as vulnerabilities`);
-  }
-  
-  // 如果没有选择字段，默认选择地址
-  if (selectFields.length === 0) {
-    selectFields.push('aa.address');
-  }
-  
-  sql += selectFields.join(', ');
-  
-  // 构建FROM和JOIN
-  sql += ` FROM active_addresses aa
-  JOIN ip_prefixes ip ON aa.prefix_id = ip.prefix_id
-  JOIN countries c ON ip.country_id = c.country_id
-  JOIN asns a ON ip.asn = a.asn
-  LEFT JOIN address_types at ON aa.iid_type = at.type_id`;
-  
-  // 如果需要漏洞信息
-  if (queryParams.value.hasVulnerability === 'true' || queryParams.value.fields.includes('vulnerabilities')) {
-    sql += ` LEFT JOIN address_vulnerabilities av ON aa.address_id = av.address_id
-    LEFT JOIN vulnerabilities v ON av.vulnerability_id = v.vulnerability_id`;
-  }
-  
-  // 如果需要协议支持信息
-  if (queryParams.value.protocolSupport !== '' || queryParams.value.fields.includes('protocols')) {
-    sql += ` LEFT JOIN address_protocols ap ON aa.address_id = ap.address_id
-    LEFT JOIN protocols p ON ap.protocol_id = p.protocol_id`;
-  }
-  
-  // 构建WHERE条件
-  const whereConditions = [];
-  
-  // 国家筛选
-  if (queryParams.value.country) {
-    whereConditions.push('c.country_id = ?');
-    params.push(queryParams.value.country);
-  }
-  
-  // ASN筛选
-  if (queryParams.value.asn) {
-    whereConditions.push('a.asn = ?');
-    params.push(queryParams.value.asn);
-  }
-  
-  // 前缀筛选
-  if (queryParams.value.prefix) {
-    whereConditions.push('ip.prefix = ?');
-    params.push(queryParams.value.prefix);
-  }
-  
-  // 在线率筛选
-  if (queryParams.value.minUptime) {
-    whereConditions.push('aa.uptime_percentage >= ?');
-    params.push(parseFloat(queryParams.value.minUptime));
-  }
-  
-  // 漏洞筛选
-  if (queryParams.value.hasVulnerability === 'true') {
-    whereConditions.push('av.address_id IS NOT NULL');
-    
-    // 漏洞修复状态
-    if (queryParams.value.vulnerabilityFixed === 'true') {
-      whereConditions.push('av.is_fixed = 1');
-    } else if (queryParams.value.vulnerabilityFixed === 'false') {
-      whereConditions.push('av.is_fixed = 0');
-    }
-    
-    // 漏洞类型
-    if (queryParams.value.vulnerabilityType) {
-      whereConditions.push('av.vulnerability_id = ?');
-      params.push(queryParams.value.vulnerabilityType);
-    }
-  } else if (queryParams.value.hasVulnerability === 'false') {
-    whereConditions.push('av.address_id IS NULL');
-  }
-  
-  // 协议支持筛选
-  if (queryParams.value.protocolSupport === 'true') {
-    if (queryParams.value.protocolType) {
-      whereConditions.push('ap.protocol_id = ?');
-      params.push(queryParams.value.protocolType);
-    } else {
-      whereConditions.push('ap.address_id IS NOT NULL');
-    }
-  } else if (queryParams.value.protocolSupport === 'false') {
-    if (queryParams.value.protocolType) {
-      whereConditions.push('(ap.protocol_id != ? OR ap.address_id IS NULL)');
-      params.push(queryParams.value.protocolType);
-    } else {
-      whereConditions.push('ap.address_id IS NULL');
-    }
-  }
-  
-  // 时间筛选
-  if (queryParams.value.firstSeenAfter) {
-    whereConditions.push('aa.first_seen >= ?');
-    params.push(queryParams.value.firstSeenAfter);
-  }
-  
-  if (queryParams.value.firstSeenBefore) {
-    whereConditions.push('aa.first_seen <= ?');
-    params.push(queryParams.value.firstSeenBefore + ' 23:59:59');
-  }
-  
-  if (queryParams.value.lastSeenAfter) {
-    whereConditions.push('aa.last_seen >= ?');
-    params.push(queryParams.value.lastSeenAfter);
-  }
-  
-  if (queryParams.value.lastSeenBefore) {
-    whereConditions.push('aa.last_seen <= ?');
-    params.push(queryParams.value.lastSeenBefore + ' 23:59:59');
-  }
-  
-  // 添加WHERE子句
-  if (whereConditions.length > 0) {
-    sql += ' WHERE ' + whereConditions.join(' AND ');
-  }
-  
-  // 始终添加GROUP BY，确保聚合函数正常工作
-  sql += ' GROUP BY aa.address_id';
-  
-  // 添加排序
-  if (queryParams.value.orderBy) {
-    let orderField = queryParams.value.orderBy;
-    
-    // 映射排序字段到实际数据库字段
-    if (orderField === 'address') orderField = 'aa.address';
-    else if (orderField === 'first_seen') orderField = 'aa.first_seen';
-    else if (orderField === 'last_seen') orderField = 'aa.last_seen';
-    else if (orderField === 'uptime_percentage') orderField = 'aa.uptime_percentage';
-    
-    sql += ` ORDER BY ${orderField} ${queryParams.value.orderDirection || 'ASC'}`;
-  }
-  
-  // 添加限制
-  if (queryParams.value.limit) {
-    sql += ' LIMIT ?';
-    params.push(parseInt(queryParams.value.limit));
-  }
-  
-  return { sql, params };
-};
-
-// 处理查询
-const handleQuery = async () => {
+// 处理查询：只提交结构化筛选条件，SQL 由服务端生成
+const handleQuery = () => {
   if (!isFormValid.value) return;
-  
-  try {
-    // 构建SQL查询
-    const { sql, params } = buildSqlQuery();
-    
-    // 修改这里：将sql改为query
-    emit('perform-query', { query: sql, params });
-  } catch (error) {
-    console.error('构建查询失败:', error);
-    alert(`构建查询失败: ${error.message}`);
-  }
+  emit('perform-query', { filters: { ...queryParams.value, fields: [...queryParams.value.fields] } });
 };
 
 // 搜索ASN
