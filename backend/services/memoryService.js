@@ -165,7 +165,7 @@ const cleanupExpiredSessions = () => {
 };
 
 // 定期清理过期会话（每5分钟）
-setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+setInterval(cleanupExpiredSessions, 5 * 60 * 1000).unref();
 
 /**
  * 长期记忆服务

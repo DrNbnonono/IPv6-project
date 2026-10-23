@@ -3,13 +3,17 @@ const multer = require('multer');
 const path = require('path'); // 添加这行导入
 const xmapController = require('../controllers/xmapController');
 const { authenticate } = require('../middleware/auth');
+const { DIRS, ensureDir } = require('../services/storageService');
 
 const router = express.Router();
 router.use(authenticate);
 
 // 配置multer用于文件上传
 const upload = multer({
-  dest: 'uploads/', // 临时上传目录
+  // 临时上传目录，收到文件时才创建
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, ensureDir(DIRS.uploads))
+  }),
   limits: {
     fileSize: 1024 * 1024 * 5, // 限制5MB
     files: 1

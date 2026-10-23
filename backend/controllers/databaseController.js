@@ -1,5 +1,6 @@
 const db = require('../database/db');
 const addressModel = require('../models/addressModels');
+const { DIRS } = require('../services/storageService');
 const { buildAdvancedQuery, QueryValidationError } = require('../services/queryBuilderService');
 const { createLogger, transports } = require('winston');
 const readline = require('readline');
@@ -12,7 +13,7 @@ const fs = require('fs').promises;
 // 配置文件上传
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = '/home/ipv6/IPv6-project/IPv6_addresses';
+    const uploadDir = DIRS.ipv6Addresses;
     // 确保目录存在
     fs.mkdir(uploadDir, { recursive: true })
       .then(() => cb(null, uploadDir))

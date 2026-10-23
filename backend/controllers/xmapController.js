@@ -5,22 +5,18 @@ const db = require('../database/db');
 const { createLogger, format, transports } = require('winston');
 const util = require('util');
 // 配置系统日志和目录
-const logDir = path.join(__dirname, '../../backend_logs');
-const XMAP_LOG_DIR = path.join(__dirname, '../../xmap_log');
-const XMAP_RESULT_DIR = path.join(__dirname, '../../xmap_result');
-const WHITELIST_DIR = path.join(__dirname, '../../whitelists');
+const { DIRS } = require('../services/storageService');
+const logDir = DIRS.backendLogs;
+const XMAP_LOG_DIR = DIRS.xmapLog;
+const XMAP_RESULT_DIR = DIRS.xmapResult;
+const WHITELIST_DIR = DIRS.whitelists;
 
 const ITEMS_PER_PAGE = 20; //每次查询的页面总数
 
 const readdir = util.promisify(fs.readdir);
 const stat = util.promisify(fs.stat);
 
-// 确保所有目录存在
-[logDir, XMAP_LOG_DIR, XMAP_RESULT_DIR, WHITELIST_DIR].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+// 数据目录由 storageService.ensureDirs() 在服务启动时统一创建
 
 // 添加获取文件大小的辅助函数
 const getFileSize = (filePath) => {

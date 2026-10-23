@@ -10,29 +10,12 @@ const logger = createLogger({
 });
 
 const ITEMS_PER_PAGE = 20;
-// 使用绝对路径，基于项目根目录 /home/ipv6/IPv6-project
-const PROJECT_ROOT = '/home/ipv6/IPv6-project';
-const ZGRAB2_RESULTS_DIR = path.join(PROJECT_ROOT, 'zgrab2_results');
-const ZGRAB2_LOGS_DIR = path.join(PROJECT_ROOT, 'zgrab2_logs');
-const ZGRAB2_INPUTS_DIR = path.join(PROJECT_ROOT, 'zgrab2_inputs');
-const ZGRAB2_CONFIGS_DIR = path.join(PROJECT_ROOT, 'zgrab2_configs');
-
-// 确保目录存在
-console.log('ZGrab2目录配置:', {
-  ZGRAB2_RESULTS_DIR,
-  ZGRAB2_LOGS_DIR,
-  ZGRAB2_INPUTS_DIR,
-  ZGRAB2_CONFIGS_DIR
-});
-
-[ZGRAB2_RESULTS_DIR, ZGRAB2_LOGS_DIR, ZGRAB2_INPUTS_DIR, ZGRAB2_CONFIGS_DIR].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    console.log('创建目录:', dir);
-    fs.mkdirSync(dir, { recursive: true });
-  } else {
-    console.log('目录已存在:', dir);
-  }
-});
+// 数据目录统一由 storageService 提供（根目录见 PROJECT_ROOT），启动时由 ensureDirs() 创建
+const { PROJECT_ROOT, DIRS, resolveStoredPath } = require('../services/storageService');
+const ZGRAB2_RESULTS_DIR = DIRS.zgrab2Results;
+const ZGRAB2_LOGS_DIR = DIRS.zgrab2Logs;
+const ZGRAB2_INPUTS_DIR = DIRS.zgrab2Inputs;
+const ZGRAB2_CONFIGS_DIR = DIRS.zgrab2Configs;
 
 // 支持的模块和默认端口
 const SUPPORTED_MODULES = {
