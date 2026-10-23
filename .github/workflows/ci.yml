@@ -64,7 +64,13 @@ jobs:
       - run: npm ci
         working-directory: backend
       - name: 执行迁移
-        run: node scripts/migrate.js
+        run: |
+          set +e
+          out=$(node scripts/migrate.js 2>&1); code=$?
+          echo "$out"
+          ver=$(mysql -h 127.0.0.1 -uroot -proot -N -e "select version()" 2>/dev/null)
+          echo "::error::MIGRATE-DEBUG code=$code ver=$ver $(echo "$out" | tr '\n' ' ' | cut -c1-1200)"
+          exit $code
         working-directory: backend
       - name: 再次执行迁移（应无事可做）
         run: node scripts/migrate.js | tee /dev/stderr | grep -q "已是最新"
