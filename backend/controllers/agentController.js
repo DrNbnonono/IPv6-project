@@ -133,9 +133,9 @@ exports.getTools = async (req, res) => {
  * POST /api/agent/tools/execute
  */
 exports.executeTool = async (req, res) => {
-  const { toolName, params } = req.body;
+  const { toolName, params, confirmed } = req.body;
 
-  console.log('收到工具执行请求:', { toolName, params });
+  console.log('收到工具执行请求:', { toolName });
 
   // 参数验证
   if (!toolName || typeof toolName !== 'string') {
@@ -146,10 +146,20 @@ exports.executeTool = async (req, res) => {
   }
 
   try {
-    const context = { user: req.user };
+    // confirmed 表示用户已在界面上确认；有副作用的工具未确认时不会执行
+    const context = { user: req.user, confirmed: confirmed === true };
     const result = await toolService.executeTool(toolName, params || {}, context);
 
     console.log('工具执行完成:', { toolName, success: result.success });
+
+    if (result.needsConfirmation) {
+      return res.status(409).json({
+        success: false,
+        needsConfirmation: true,
+        message: result.message,
+        data: result
+      });
+    }
 
     if (result.success) {
       res.json({

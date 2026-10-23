@@ -319,7 +319,8 @@ const canExecuteTool = computed(() => {
 const executeSelectedTool = async () => {
   if (!canExecuteTool.value) return
 
-  await agentStore.executeTool(selectedTool.value.id, { ...toolParams })
+  // 点击“执行”即用户的明确确认
+  await agentStore.executeTool(selectedTool.value.id, { ...toolParams }, true)
   showToolDetail.value = false
 }
 

@@ -95,6 +95,27 @@
               <span class="tool-params">{{ formatParams(message.toolCall.params) }}</span>
             </div>
 
+            <div v-if="message.pendingToolCall" class="confirm-card">
+              <div class="confirm-title">
+                待确认：{{ getToolName(message.pendingToolCall.tool) }}
+              </div>
+              <pre class="confirm-params">{{ JSON.stringify(message.pendingToolCall.params, null, 2) }}</pre>
+              <div v-if="message.confirmationState === 'pending'" class="confirm-actions">
+                <button
+                  class="confirm-btn confirm"
+                  :disabled="agentStore.loading"
+                  @click="agentStore.confirmPendingTool(message)"
+                >
+                  确认执行
+                </button>
+                <button class="confirm-btn cancel" @click="agentStore.cancelPendingTool(message)">
+                  取消
+                </button>
+              </div>
+              <div v-else-if="message.confirmationState === 'confirmed'" class="confirm-state">已确认并提交执行</div>
+              <div v-else class="confirm-state">已取消</div>
+            </div>
+
             <div v-if="message.suggestions?.length" class="suggestions-bar">
               <span
                 v-for="suggestion in message.suggestions"
@@ -1071,5 +1092,61 @@ const toggleHistory = () => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.confirm-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e6a23c;
+  border-radius: 8px;
+  background: rgba(230, 162, 60, 0.08);
+}
+
+.confirm-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.confirm-params {
+  margin: 0 0 8px;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm-btn {
+  padding: 4px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.confirm-btn.confirm {
+  background: #e6a23c;
+  color: #fff;
+}
+
+.confirm-btn.confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.confirm-btn.cancel {
+  background: transparent;
+  border-color: #909399;
+  color: inherit;
+}
+
+.confirm-state {
+  font-size: 12px;
+  opacity: 0.75;
 }
 </style>

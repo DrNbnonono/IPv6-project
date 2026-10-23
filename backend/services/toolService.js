@@ -5,50 +5,110 @@
 
 const db = require('../database/db');
 
+/**
+ * 工具参数校验辅助
+ * 校验失败抛出 ToolValidationError，由 executeTool 转成 { success: false, error }
+ */
+class ToolValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ToolValidationError';
+  }
+}
+
+// IPv4/IPv6 地址或网段（仅字符与长度校验，不做可达性判断）
+const ADDRESS_PATTERN = /^[0-9A-Fa-f:.]{2,45}(\/\d{1,3})?$/;
+const RATE_PATTERN = /^\d{1,6}[KkMmGg]?$/;
+const INPUT_FILE_PATTERN = /^[\w.\-\u4e00-\u9fa5]{1,128}$/;
+
+const toBoundedInt = (value, label, min, max) => {
+  const text = String(value).trim();
+  if (!/^\d{1,9}$/.test(text)) {
+    throw new ToolValidationError(`${label} 必须是整数`);
+  }
+  const number = Number(text);
+  if (number < min || number > max) {
+    throw new ToolValidationError(`${label} 必须在 ${min} 到 ${max} 之间`);
+  }
+  return number;
+};
+
+/**
+ * 调用 api/internal.js 的方法，并把失败响应转成异常
+ * internal 方法签名为 (params, userId)，返回带 statusCode 的响应对象
+ */
+const callInternal = async (fn, params, user) => {
+  const response = await fn(params, user?.id);
+  if (!response || response.success === false || response.statusCode >= 400) {
+    throw new Error(response?.message || '内部接口调用失败');
+  }
+  return response;
+};
+
 // 工具注册表
+//  requiresConfirmation: 会产生副作用（发起扫描/执行命令）的工具，必须由用户确认后才执行
+//  validate:  参数校验与规范化，返回最终参数
+//  authorize: 调用者权限检查
 const TOOL_REGISTRY = {
   xmap: {
     name: 'XMap扫描',
     description: 'IPv6地址活跃性扫描工具，用于检测目标地址或网段是否在线',
     category: 'scanner',
+    requiresConfirmation: true,
     parameters: {
-      target: { type: 'string', required: true, description: '目标地址或网段' },
-      protocol: { type: 'string', default: 'ipv6', description: '协议类型' },
-      rate: { type: 'number', default: 1000, description: '发送速率' }
+      target: { type: 'string', required: true, description: '目标地址或网段，如 2001:db8::/32' },
+      protocol: { type: 'string', default: 'ipv6', description: '协议类型：ipv6 或 ipv4' },
+      rate: { type: 'string', default: '1M', description: '带宽，如 1M、10M' },
+      port: { type: 'number', description: '目标端口（可选）' },
+      maxResults: { type: 'number', default: 1000, description: '最多返回结果数' }
+    },
+    validate: (params) => {
+      const target = String(params.target || '').trim();
+      if (!ADDRESS_PATTERN.test(target)) {
+        throw new ToolValidationError('目标地址或网段格式无效');
+      }
+      const protocol = String(params.protocol || 'ipv6').toLowerCase();
+      if (protocol !== 'ipv6' && protocol !== 'ipv4') {
+        throw new ToolValidationError('protocol 只能是 ipv6 或 ipv4');
+      }
+      const rate = String(params.rate || '1M').trim();
+      if (!RATE_PATTERN.test(rate)) {
+        throw new ToolValidationError('rate 格式无效，应类似 1M、10M');
+      }
+      const normalized = {
+        target,
+        protocol,
+        rate,
+        maxResults: toBoundedInt(params.maxResults ?? 1000, 'maxResults', 1, 100000)
+      };
+      if (params.port !== undefined && params.port !== null && params.port !== '') {
+        normalized.port = toBoundedInt(params.port, 'port', 1, 65535);
+      }
+      return normalized;
     },
     execute: async (params, context) => {
       try {
-        const { target, protocol = 'ipv6', rate = 1000 } = params;
+        const { target, protocol, rate, port, maxResults } = params;
 
-        // 调用内部API执行扫描
-        const xmap = require('../api/internal').xmap;
-        const mockReq = {
-          body: { target, protocol, rate },
-          params: {},
-          query: {},
-          user: context.user
+        // 参数名映射到 xmapController.scan 接受的字段
+        const scanParams = {
+          [protocol === 'ipv4' ? 'ipv4' : 'ipv6']: true,
+          targetaddress: target,
+          rate,
+          max_results: String(maxResults),
+          description: `Agent 发起的扫描：${target}`
         };
-        const mockRes = {
-          status: (code) => {
-            mockRes.statusCode = code;
-            return mockRes;
-          },
-          json: (data) => {
-            mockRes.data = data;
-            return mockRes;
-          }
-        };
-
-        await xmap.createTask(mockReq, mockRes);
-
-        if (mockRes.statusCode >= 400) {
-          throw new Error(mockRes.data?.message || 'XMap扫描启动失败');
+        if (port !== undefined) {
+          scanParams.targetPort = String(port);
         }
+
+        const xmap = require('../api/internal').xmap;
+        const response = await callInternal(xmap.startScan, scanParams, context.user);
 
         return {
           success: true,
           tool: 'xmap',
-          result: mockRes.data?.data || { taskId: mockRes.data?.taskId, target, protocol },
+          result: { taskId: response.taskId, target, protocol },
           message: `XMap扫描任务已创建：${target}`
         };
       } catch (error) {
@@ -64,46 +124,51 @@ const TOOL_REGISTRY = {
 
   zgrab2: {
     name: 'ZGrab2扫描',
-    description: 'IPv6服务探测工具，用于探测目标地址的端口和服务信息',
+    description: 'IPv6服务探测工具，对已上传的输入文件中的地址进行端口和服务探测',
     category: 'scanner',
+    requiresConfirmation: true,
     parameters: {
-      target: { type: 'string', required: true, description: '目标地址' },
-      module: { type: 'string', required: true, description: '探测模块' },
-      port: { type: 'number', description: '指定端口' }
+      inputFile: { type: 'string', required: true, description: '已上传的输入文件名（每行一个地址）' },
+      module: { type: 'string', required: true, description: '探测模块，如 http、ssh' },
+      port: { type: 'number', description: '指定端口（可选）' }
+    },
+    validate: (params) => {
+      const inputFile = String(params.inputFile || '').trim();
+      if (!INPUT_FILE_PATTERN.test(inputFile)) {
+        throw new ToolValidationError('输入文件名无效');
+      }
+      const module = String(params.module || '').trim().toLowerCase();
+      if (!/^[a-z0-9_]{1,32}$/.test(module)) {
+        throw new ToolValidationError('探测模块名无效');
+      }
+      const normalized = { inputFile, module };
+      if (params.port !== undefined && params.port !== null && params.port !== '') {
+        normalized.port = toBoundedInt(params.port, 'port', 1, 65535);
+      }
+      return normalized;
     },
     execute: async (params, context) => {
       try {
-        const { target, module, port } = params;
+        const { inputFile, module, port } = params;
+
+        // 只传文件名，由 zgrab2Controller 按当前用户查找文件；不接受 inputFilePath 等任意路径
+        const taskParams = {
+          module,
+          inputFile,
+          description: `Agent 发起的探测：${inputFile} (${module})`
+        };
+        if (port !== undefined) {
+          taskParams.port = String(port);
+        }
 
         const zgrab2 = require('../api/internal').zgrab2;
-        const mockReq = {
-          body: { target, module, port },
-          params: {},
-          query: {},
-          user: context.user
-        };
-        const mockRes = {
-          status: (code) => {
-            mockRes.statusCode = code;
-            return mockRes;
-          },
-          json: (data) => {
-            mockRes.data = data;
-            return mockRes;
-          }
-        };
-
-        await zgrab2.createTask(mockReq, mockRes);
-
-        if (mockRes.statusCode >= 400) {
-          throw new Error(mockRes.data?.message || 'ZGrab2扫描启动失败');
-        }
+        const response = await callInternal(zgrab2.createTask, taskParams, context.user);
 
         return {
           success: true,
           tool: 'zgrab2',
-          result: mockRes.data?.data || { taskId: mockRes.data?.taskId, target, module },
-          message: `ZGrab2扫描任务已创建：${target} (${module})`
+          result: { taskId: response.taskId, inputFile, module },
+          message: `ZGrab2扫描任务已创建：${inputFile} (${module})`
         };
       } catch (error) {
         console.error('ZGrab2工具执行错误:', error.message);
@@ -231,6 +296,15 @@ const TOOL_REGISTRY = {
     name: '终端命令',
     description: '在服务器上执行Linux终端命令，用于网络探测、系统信息查询等',
     category: 'system',
+    requiresConfirmation: true,
+    authorize: (context) => context.user?.role === 'admin',
+    validate: (params) => {
+      const command = String(params.command || '').trim();
+      if (!command || command.length > 500) {
+        throw new ToolValidationError('命令不能为空且不超过 500 字符');
+      }
+      return { ...params, command };
+    },
     parameters: {
       command: { type: 'string', required: true, description: '要执行的命令' },
       terminalId: { type: 'string', description: '终端会话ID（可选，不提供则创建新终端）' },
@@ -309,6 +383,7 @@ const getTools = () => {
       name: tool.name,
       description: tool.description,
       category: tool.category,
+      requiresConfirmation: Boolean(tool.requiresConfirmation),
       parameters: tool.parameters
     });
   }
@@ -355,9 +430,13 @@ const getToolDefinitions = () => {
 
 /**
  * 执行工具
+ * context.confirmed 只能由 HTTP 层在用户明确确认后设置；大模型驱动的调用不会带它。
+ * requiresConfirmation 的工具在未确认时只返回待确认请求，不会执行。
  */
 const executeTool = async (toolName, params, context = {}) => {
-  const tool = TOOL_REGISTRY[toolName];
+  const tool = Object.prototype.hasOwnProperty.call(TOOL_REGISTRY, toolName)
+    ? TOOL_REGISTRY[toolName]
+    : null;
 
   if (!tool) {
     return {
@@ -367,9 +446,11 @@ const executeTool = async (toolName, params, context = {}) => {
     };
   }
 
+  const safeParams = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
+
   // 参数验证
   for (const [paramName, paramConfig] of Object.entries(tool.parameters)) {
-    if (paramConfig.required && !params[paramName]) {
+    if (paramConfig.required && !safeParams[paramName]) {
       return {
         success: false,
         error: `缺少必需参数: ${paramName}`,
@@ -379,14 +460,47 @@ const executeTool = async (toolName, params, context = {}) => {
   }
 
   // 设置默认值
-  const finalParams = { ...params };
+  let finalParams = { ...safeParams };
   for (const [paramName, paramConfig] of Object.entries(tool.parameters)) {
     if (paramConfig.default !== undefined && finalParams[paramName] === undefined) {
       finalParams[paramName] = paramConfig.default;
     }
   }
 
-  console.log(`执行工具: ${toolName}`, { params: finalParams });
+  // 权限检查
+  if (tool.authorize && !tool.authorize(context)) {
+    return {
+      success: false,
+      tool: toolName,
+      error: '没有权限使用该工具'
+    };
+  }
+
+  // 参数校验与规范化
+  if (tool.validate) {
+    try {
+      finalParams = tool.validate(finalParams);
+    } catch (error) {
+      if (error instanceof ToolValidationError) {
+        return { success: false, tool: toolName, error: error.message };
+      }
+      throw error;
+    }
+  }
+
+  // 有副作用的工具必须经过用户确认
+  if (tool.requiresConfirmation && context.confirmed !== true) {
+    return {
+      success: false,
+      needsConfirmation: true,
+      tool: toolName,
+      params: finalParams,
+      error: '该操作会产生实际影响，需要用户确认后才能执行',
+      message: `请确认是否执行「${tool.name}」`
+    };
+  }
+
+  console.log(`执行工具: ${toolName}`);
 
   return await tool.execute(finalParams, context);
 };
