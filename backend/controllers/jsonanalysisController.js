@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../database/db');
+const { DIRS, ensureDir } = require('../services/storageService');
 const { createLogger, transports } = require('winston');
 
 // 创建日志记录器
@@ -8,20 +9,13 @@ const logger = createLogger({
   level: 'info',
   format: require('winston').format.json(),
   transports: [
-    new transports.File({ filename: 'backend_logs/jsonanalysis.log' })
+    new transports.File({ filename: path.join(DIRS.backendLogs, 'jsonanalysis.log') })
   ]
 });
 
-// 确保jsonanalysis目录存在
-const JSONANALYSIS_DIR = '/home/ipv6/IPv6-project/jsonanalysis';
-const TEMP_DIR = '/home/ipv6/IPv6-project/jsonanalysis/temp';
-
-if (!fs.existsSync(JSONANALYSIS_DIR)) {
-  fs.mkdirSync(JSONANALYSIS_DIR, { recursive: true });
-}
-if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
-}
+// jsonanalysis 数据目录由 storageService 提供，启动时创建，写入前再次确保存在
+const JSONANALYSIS_DIR = DIRS.jsonanalysis;
+const TEMP_DIR = DIRS.jsonanalysisTemp;
 
 // 临时文件管理 - 存储用户会话的临时文件
 const tempFiles = new Map(); // sessionId -> { filePath, createdAt, data }
@@ -135,6 +129,7 @@ exports.parseJsonFile = async (req, res) => {
     const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
     // 将数据保存到临时文件
+    ensureDir(TEMP_DIR);
     const tempFilePath = path.join(TEMP_DIR, `${sessionId}.json`);
     fs.writeFileSync(tempFilePath, JSON.stringify(jsonData, null, 2), 'utf8');
 
@@ -570,6 +565,7 @@ exports.saveProcessedJson = async (req, res) => {
     }
 
     fullFileName = `${safeFileName}_${timestamp}.${fileExtension}`;
+    ensureDir(JSONANALYSIS_DIR);
     const filePath = path.join(JSONANALYSIS_DIR, fullFileName);
 
     // 保存文件
@@ -1100,7 +1096,7 @@ function cleanupTempFiles() {
 }
 
 // 定期清理临时文件（每30分钟执行一次）
-setInterval(cleanupTempFiles, 30 * 60 * 1000);
+setInterval(cleanupTempFiles, 30 * 60 * 1000).unref();
 
 // 专门用于提取zgrab2扫描结果的函数
 function extractZgrab2Data(data, filterCriteria = {}) {

@@ -7,8 +7,9 @@ const logger = createLogger({
   transports: [new transports.Console()]
 })
 
-const XMAP_DOCS_DIR = path.join(__dirname, '../../docs/xmap')
-const ZGRAB2_DOCS_DIR = path.join(__dirname, '../../docs/zgrab2')
+const { DIRS } = require('../services/storageService')
+const XMAP_DOCS_DIR = DIRS.docsXmap
+const ZGRAB2_DOCS_DIR = DIRS.docsZgrab2
 const ALLOWED_LANGS = new Set(['en', 'zh'])
 const DOC_ID_PATTERN = /^[A-Za-z0-9-]+$/
 

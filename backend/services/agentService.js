@@ -164,32 +164,62 @@ const detectIntent = async (userMessage, history = []) => {
 };
 
 /**
+ * 从用户消息中提取 IPv4/IPv6 地址和网段，按出现顺序返回并去重。
+ * 先按"十六进制数字、冒号、点、斜杠"切出候选，再校验形态；
+ * 句末的标点（如 "2001:db8::1。"）不会被带入。
+ */
+const extractTargets = (message) => {
+  const candidates = String(message).match(/[0-9A-Fa-f:.]+(?:\/\d{1,3})?/g) || [];
+  const result = [];
+
+  for (const raw of candidates) {
+    // 去掉句末的点，以及只有单个冒号的结尾（"::" 结尾是合法的压缩写法，保留）
+    let item = raw.replace(/\.+$/, '');
+    if (item.endsWith(':') && !item.endsWith('::')) {
+      item = item.slice(0, -1);
+    }
+    const [address, prefix] = item.split('/');
+
+    let valid = false;
+    if (address.includes(':')) {
+      // IPv6：至少两个冒号，每段最多 4 位十六进制，最多一处 ::
+      const colonCount = (address.match(/:/g) || []).length;
+      const compressed = (address.match(/::/g) || []).length;
+      const groups = address.split(':').filter(Boolean);
+      valid = colonCount >= 2 && compressed <= 1 && groups.length <= 8
+        && groups.every((group) => /^[0-9A-Fa-f]{1,4}$/.test(group))
+        && (compressed === 1 || groups.length === 8)
+        && (prefix === undefined || Number(prefix) <= 128);
+    } else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(address)) {
+      valid = address.split('.').every((part) => Number(part) <= 255)
+        && (prefix === undefined || Number(prefix) <= 32);
+    }
+
+    if (valid && !result.includes(item)) {
+      result.push(item);
+    }
+  }
+
+  return result;
+};
+
+/**
  * 从用户消息中提取工具参数
  */
 const extractParams = (userMessage, toolName, suggestedParams = {}) => {
   const params = { ...suggestedParams };
 
-  // 提取IPv6地址/网段
-  const ipv6Pattern = /([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]+|::(ffff(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])/g;
-  const ipv6Matches = userMessage.match(ipv6Pattern);
-
-  // 提取IPv4地址
-  const ipv4Pattern = /(\d{1,3}\.){3}\d{1,3}/g;
-  const ipv4Matches = userMessage.match(ipv4Pattern);
-
-  // 提取网段（如 2001:db8::/32）
-  const cidrPattern = /([0-9a-fA-F:]+)\/(\d+)/g;
-  const cidrMatches = userMessage.match(cidrPattern);
+  const targets = extractTargets(userMessage);
 
   if (toolName === 'xmap') {
     // XMap参数提取
-    if (cidrMatches && cidrMatches.length > 0) {
-      params.target = cidrMatches[0];
-    } else if (ipv6Matches && ipv6Matches.length > 0) {
-      params.target = ipv6Matches[0];
-    } else if (ipv4Matches && ipv4Matches.length > 0) {
-      params.target = ipv4Matches[0];
-      params.protocol = 'ipv4';
+    // 优先网段，其次第一个地址
+    const firstTarget = targets.find((item) => item.includes('/')) || targets[0];
+    if (firstTarget) {
+      params.target = firstTarget;
+      if (!firstTarget.includes(':')) {
+        params.protocol = 'ipv4';
+      }
     }
 
     // 提取带宽，如 10M
@@ -206,10 +236,13 @@ const extractParams = (userMessage, toolName, suggestedParams = {}) => {
     }
 
   } else if (toolName === 'zgrab2') {
-    // ZGrab2 以已上传的输入文件为目标，不再从消息中提取单个地址
+    // ZGrab2 的目标：消息里的地址/网段列表，或已上传的输入文件名
     delete params.target;
+    if (targets.length > 0 && !params.targets && !params.inputFile) {
+      params.targets = targets.join(',');
+    }
     const fileMatch = userMessage.match(/[\w.\-\u4e00-\u9fa5]+\.(?:txt|csv|list)/i);
-    if (fileMatch && !params.inputFile) {
+    if (fileMatch && !params.inputFile && !params.targets) {
       params.inputFile = fileMatch[0];
     }
 
@@ -368,6 +401,7 @@ const getWelcomeMessage = () => {
 };
 
 module.exports = {
+  extractTargets,
   processMessage,
   detectIntent,
   generateWorkflow,

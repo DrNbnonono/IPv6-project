@@ -5,22 +5,18 @@ const db = require('../database/db');
 const { createLogger, format, transports } = require('winston');
 const util = require('util');
 // 配置系统日志和目录
-const logDir = path.join(__dirname, '../../backend_logs');
-const XMAP_LOG_DIR = path.join(__dirname, '../../xmap_log');
-const XMAP_RESULT_DIR = path.join(__dirname, '../../xmap_result');
-const WHITELIST_DIR = path.join(__dirname, '../../whitelists');
+const { DIRS, safeJoin } = require('../services/storageService');
+const logDir = DIRS.backendLogs;
+const XMAP_LOG_DIR = DIRS.xmapLog;
+const XMAP_RESULT_DIR = DIRS.xmapResult;
+const WHITELIST_DIR = DIRS.whitelists;
 
 const ITEMS_PER_PAGE = 20; //每次查询的页面总数
 
 const readdir = util.promisify(fs.readdir);
 const stat = util.promisify(fs.stat);
 
-// 确保所有目录存在
-[logDir, XMAP_LOG_DIR, XMAP_RESULT_DIR, WHITELIST_DIR].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+// 数据目录由 storageService.ensureDirs() 在服务启动时统一创建
 
 // 添加获取文件大小的辅助函数
 const getFileSize = (filePath) => {
@@ -71,6 +67,16 @@ if (process.env.NODE_ENV !== 'production') {
 const activeProcesses = new Map();
 
 // 验证XMap参数
+// xmap 通过 sudo 运行，参数值不能以 - 开头（否则会被当作选项），并按字段限定格式
+const XMAP_VALUE_RULES = {
+  maxlen: /^\d{1,4}$/,
+  rate: /^\d{1,6}(\.\d{1,3})?[KkMmGg]?$/,
+  targetPort: /^[0-9][0-9,\-]{0,63}$/,
+  targetaddress: /^[0-9A-Za-z:][0-9A-Za-z:.\/,_-]{0,254}$/,
+  max_results: /^\d{1,12}$/,
+  probeModule: /^[A-Za-z0-9_]{1,32}$/
+};
+
 const validateXmapParams = (params) => {
   const allowedParams = ['ipv6', 'ipv4', 'maxlen', 'rate', 'targetPort', 'targetaddress', 'help', 'whitelistFile', 'max_results', 'description', 'probeModule'];
   const forbiddenChars = /[;&|<>]/;
@@ -82,6 +88,13 @@ const validateXmapParams = (params) => {
     
     if (value && typeof value === 'string' && forbiddenChars.test(value)) {
       throw new Error(`参数 ${key} 包含非法字符`);
+    }
+
+    const rule = XMAP_VALUE_RULES[key];
+    if (rule && value !== undefined && value !== null && value !== '') {
+      if (!rule.test(String(value))) {
+        throw new Error(`参数 ${key} 格式无效`);
+      }
     }
   }
 };
@@ -446,7 +459,8 @@ exports.scan = async (req, res) => {
     if (max_results) args.push('-N', max_results);
     
     if (whitelistFile) {
-      const whitelistPath = path.join(WHITELIST_DIR, whitelistFile);
+      // 只接受白名单目录下的纯文件名，拒绝 ../ 等路径
+      const whitelistPath = safeJoin(WHITELIST_DIR, String(whitelistFile));
       if (fs.existsSync(whitelistPath)) {
         args.push('-w', whitelistPath);
       } else {
@@ -482,9 +496,6 @@ exports.scan = async (req, res) => {
 
     // 不要让Node.js等待这个子进程
     xmapProcess.unref();
-
-    // xmapProcess.stdin.write('NKU@ipv6!218\n');
-    // xmapProcess.stdin.end();
 
     activeProcesses.set(taskId, xmapProcess);
     const errorStream = fs.createWriteStream(errorLogFile);

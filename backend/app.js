@@ -17,6 +17,7 @@ const workflowRouter = require('./routes/workflows'); // 工作流路由
 const aichatRouter = require('./routes/aichat'); // AI聊天路由
 const agentRouter = require('./routes/agent'); // Agent路由
 const { apiLimiter } = require('./middleware/rateLimit');
+const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 
 // 先尝试加载项目根目录的 .env，再加载 backend 目录下的 .env（如果存在，后者会覆盖前者同名变量）
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -84,6 +85,8 @@ app.get('/api/test', (req, res) => {
 
 // 启动服务，同时监听IPv4和IPv6地址（被测试 require 时不启动监听）
 if (require.main === module) {
+  ensureDirs();
+  console.log(`数据目录根: ${PROJECT_ROOT}`);
   app.listen(PORT, '::', () => {
     console.log(`服务器正在运行在 http://[::]:${PORT}`);
     console.log(`IPv4访问地址: http://0.0.0.0:${PORT}`);

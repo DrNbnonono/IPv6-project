@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const db = require('../database/db');
+const { DIRS, ensureDir } = require('../services/storageService');
 const { createLogger, transports } = require('winston');
 
 // 配置日志
@@ -17,13 +18,7 @@ const logger = createLogger({
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     // 这个函数现在主要用于向后兼容，实际使用动态配置
-    const uploadDir = '/home/ipv6/IPv6-project/uploads';
-
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    cb(null, uploadDir);
+    cb(null, ensureDir(DIRS.uploads));
   },
   filename: (req, file, cb) => {
     const toolType = req.body.toolType || 'database';
@@ -88,33 +83,33 @@ exports.uploadFile = [
       console.log('开始处理文件路径...');
       switch(toolType) {
         case 'xmap':
-          targetDir = '/home/ipv6/IPv6-project/whitelists';
+          targetDir = DIRS.whitelists;
           filePrefix = 'whitelist_';
           break;
         case 'database':
-          targetDir = '/home/ipv6/IPv6-project/IPv6_addresses';
+          targetDir = DIRS.ipv6Addresses;
           filePrefix = 'address-';
           break;
         case 'zgrab2':
           if (fileType === 'config') {
-            targetDir = '/home/ipv6/IPv6-project/zgrab2_configs';
+            targetDir = DIRS.zgrab2Configs;
             filePrefix = 'zgrab2_config_';
           } else {
-            targetDir = '/home/ipv6/IPv6-project/zgrab2_inputs';
+            targetDir = DIRS.zgrab2Inputs;
             filePrefix = 'zgrab2_input_';
           }
           break;
         case 'jsonanalysis':
           if (fileType === 'result') {
-            targetDir = '/home/ipv6/IPv6-project/jsonanalysis';
+            targetDir = DIRS.jsonanalysis;
             filePrefix = 'json_result_';
           } else {
-            targetDir = '/home/ipv6/IPv6-project/jsonanalysis';
+            targetDir = DIRS.jsonanalysis;
             filePrefix = 'json_upload_';
           }
           break;
         default:
-          targetDir = '/home/ipv6/IPv6-project/uploads';
+          targetDir = DIRS.uploads;
           filePrefix = 'file-';
       }
 
