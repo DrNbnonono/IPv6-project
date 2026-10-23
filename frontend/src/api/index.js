@@ -197,6 +197,10 @@ export default {
     },
 
     // 获取全球统计
+    // 搜索前缀（query、limit、country_id、asn）
+    searchPrefixes(params) {
+      return apiClient.get('/addresses/prefixes/search', { params })
+    },
     getGlobalStats(params = {}) {
       return apiClient.get('/addresses/global-stats', { params });
     },
@@ -454,6 +458,10 @@ export default {
     },
     searchPrefixes(query) {
       return apiClient.get(`/database/prefixes/search?query=${query}`);
+    },
+    // 按参数搜索 ASN（query、limit、country_id）
+    searchAsnList(params) {
+      return apiClient.get('/database/asns/search', { params });
     },
     getPrefixesByAsn(asn) {
       return apiClient.get(`/database/prefixes/by-asn/${asn}`);

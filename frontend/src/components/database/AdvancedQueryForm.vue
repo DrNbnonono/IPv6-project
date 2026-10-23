@@ -288,7 +288,6 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useDetectionStore } from '@/stores/detection';
 import api from '@/api';
-import axios from 'axios';
 
 const props = defineProps({
   isLoading: {
@@ -433,16 +432,14 @@ const loadData = async () => {
 const loadCountries = async () => {
   try {
     console.log('开始加载国家数据...');
-    const response = await axios.get('/api/addresses/countries/ranking', {
-      params: { limit: 250 }
-    });
+    const response = await api.detection.getCountryRanking({ limit: 250 });
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('国家数据响应格式错误:', response);
       throw new Error('国家数据响应格式错误');
     }
     
-    countries.value = response.data.data;
+    countries.value = response.data;
     console.log(`成功加载${countries.value.length}个国家`);
   } catch (error) {
     console.error('加载国家数据失败:', error);
@@ -454,16 +451,14 @@ const loadCountries = async () => {
 const loadAsns = async () => {
   try {
     console.log('开始加载ASN数据...');
-    const response = await axios.get('/api/addresses/asns/ranking', {
-      params: { limit: 250 }
-    });
+    const response = await api.detection.getAsnRanking({ limit: 250 });
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('ASN数据响应格式错误:', response);
       throw new Error('ASN数据响应格式错误');
     }
     
-    asns.value = response.data.data;
+    asns.value = response.data;
     filteredAsns.value = asns.value;
     console.log(`成功加载${asns.value.length}个ASN`);
   } catch (error) {
@@ -476,14 +471,14 @@ const loadAsns = async () => {
 const loadVulnerabilities = async () => {
   try {
     console.log('开始加载漏洞类型...');
-    const response = await axios.get('/api/database/vulnerability-types');
+    const response = await api.database.getVulnerabilityTypes();
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('漏洞类型响应格式错误:', response);
       throw new Error('漏洞类型响应格式错误');
     }
     
-    vulnerabilities.value = response.data.data;
+    vulnerabilities.value = response.data;
     console.log(`成功加载${vulnerabilities.value.length}个漏洞类型`);
   } catch (error) {
     console.error('加载漏洞类型失败:', error);
@@ -495,14 +490,14 @@ const loadVulnerabilities = async () => {
 const loadProtocols = async () => {
   try {
     console.log('开始加载协议类型...');
-    const response = await axios.get('/api/database/protocol-types');
+    const response = await api.database.getProtocolTypes();
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('协议类型响应格式错误:', response);
       throw new Error('协议类型响应格式错误');
     }
     
-    protocols.value = response.data.data;
+    protocols.value = response.data;
     console.log(`成功加载${protocols.value.length}个协议类型`);
   } catch (error) {
     console.error('加载协议类型失败:', error);
@@ -514,14 +509,14 @@ const loadProtocols = async () => {
 const loadAsnsByCountry = async (countryId) => {
   try {
     console.log(`加载国家ID ${countryId} 的ASN...`);
-    const response = await axios.get(`/api/database/countries/${countryId}/asns`);
+    const response = await api.database.getAsnsByCountry(countryId);
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('国家ASN响应格式错误:', response);
       return;
     }
     
-    filteredAsns.value = response.data.data;
+    filteredAsns.value = response.data;
     console.log(`成功加载${filteredAsns.value.length}个国家ASN`);
   } catch (error) {
     console.error(`加载国家ID ${countryId} 的ASN失败:`, error);
@@ -534,14 +529,14 @@ const loadAsnsByCountry = async (countryId) => {
 const loadPrefixesByAsn = async (asn) => {
   try {
     console.log(`加载ASN ${asn} 的前缀...`);
-    const response = await axios.get(`/api/database/asns/${asn}/prefixes`);
+    const response = await api.database.getPrefixesByAsn(asn);
     
-    if (!response.data || !response.data.data) {
+    if (!response || !response.data) {
       console.error('ASN前缀响应格式错误:', response);
       return;
     }
     
-    filteredPrefixes.value = response.data.data;
+    filteredPrefixes.value = response.data;
     console.log(`成功加载${filteredPrefixes.value.length}个ASN前缀`);
   } catch (error) {
     console.error(`加载ASN ${asn} 的前缀失败:`, error);
@@ -614,21 +609,17 @@ const searchAsns = async () => {
     
     // 如果输入的是纯数字，则直接搜索ASN编号
     if (/^\d+$/.test(queryParams.value.asn)) {
-      const response = await axios.get('/api/database/asns/search', {
-        params: { query: queryParams.value.asn, limit: 10 }
-      });
+      const response = await api.database.searchAsnList({ query: queryParams.value.asn, limit: 10 });
       
-      if (response.data && response.data.data) {
-        matchedAsns.value = response.data.data;
+      if (response && response.data) {
+        matchedAsns.value = response.data;
       }
     } else {
       // 否则搜索ASN名称
-      const response = await axios.get('/api/database/asns/search', {
-        params: { query: queryParams.value.asn, limit: 10 }
-      });
+      const response = await api.database.searchAsnList({ query: queryParams.value.asn, limit: 10 });
       
-      if (response.data && response.data.data) {
-        matchedAsns.value = response.data.data;
+      if (response && response.data) {
+        matchedAsns.value = response.data;
       }
     }
   } catch (error) {
@@ -669,10 +660,10 @@ const searchPrefixes = async () => {
     if (queryParams.value.country) params.country_id = queryParams.value.country;
     if (queryParams.value.asn) params.asn = queryParams.value.asn;
     
-    const response = await axios.get('/api/addresses/prefixes/search', { params });
+    const response = await api.detection.searchPrefixes(params);
     
-    if (response.data && response.data.data) {
-      matchedPrefixes.value = response.data.data;
+    if (response && response.data) {
+      matchedPrefixes.value = response.data;
       console.log(`找到 ${matchedPrefixes.value.length} 个匹配前缀`);
     } else {
       matchedPrefixes.value = [];

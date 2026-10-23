@@ -143,7 +143,6 @@ import earthSpecular from '@/assets/images/8k_earth_specular_map.jpg'
 import spaceBackground from '@/assets/images/background.jpg'
 import countriesGeoData from '@/assets/data/countries.geo.json'
 import earcut from 'earcut'
-import axios from 'axios'
 
 const props = defineProps({
   countries: Array,

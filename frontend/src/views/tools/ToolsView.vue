@@ -124,7 +124,8 @@
   import { ref, onMounted } from 'vue'
   import { useAuthStore } from '@/stores/auth'
   import { useRouter } from 'vue-router'
-  import axios from 'axios'
+  import axios from 'axios' // 仅用于访问第三方（非本平台）接口
+  import api from '@/api'
 
   const authStore = useAuthStore()
   const router = useRouter()
@@ -185,9 +186,9 @@
   // 获取任务统计
   const fetchTaskStats = async () => {
     try {
-      const response = await axios.get('/api/xmap/tasks')
-      if (response.data.tasks) {
-        const tasks = response.data.tasks
+      const response = await api.xmap.getTasks()
+      if (response.tasks) {
+        const tasks = response.tasks
         stats.value[0].value = tasks.length
         stats.value[1].value = tasks.filter(t => t.status === 'running').length
         stats.value[2].value = tasks.filter(t => t.status === 'completed').length
