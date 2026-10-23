@@ -7,6 +7,12 @@ jest.mock('../api/internal', () => ({
   zgrab2: { createTask: (...args) => mockCreateZgrab2Task(...args) }
 }));
 
+const mockSaveTargetsFile = jest.fn();
+jest.mock('../services/storageService', () => ({
+  ...jest.requireActual('../services/storageService'),
+  saveTargetsFile: (...args) => mockSaveTargetsFile(...args)
+}));
+
 const mockChat = jest.fn();
 jest.mock('../services/llmService', () => ({ chat: (...args) => mockChat(...args) }));
 
@@ -166,6 +172,73 @@ describe('zgrab2 工具', () => {
   });
 });
 
+describe('zgrab2 工具：地址列表', () => {
+  test('targets 先保存为当前用户的输入文件，再以文件名创建任务', async () => {
+    mockSaveTargetsFile.mockResolvedValueOnce({ fileName: 'zgrab2_input_9_1.txt', filePath: '/x/zgrab2_input_9_1.txt', count: 2 });
+    mockCreateZgrab2Task.mockResolvedValueOnce({ success: true, taskId: 77, statusCode: 200 });
+
+    const result = await toolService.executeTool(
+      'zgrab2',
+      { targets: '2001:db8::1, 2001:db8::2', module: 'ssh' },
+      { user, confirmed: true }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.result).toEqual({ taskId: 77, inputFile: 'zgrab2_input_9_1.txt', module: 'ssh', targetCount: 2 });
+    expect(mockSaveTargetsFile).toHaveBeenCalledWith(9, ['2001:db8::1', '2001:db8::2'], 'zgrab2');
+    const [taskParams] = mockCreateZgrab2Task.mock.calls[0];
+    expect(taskParams.inputFile).toBe('zgrab2_input_9_1.txt');
+    expect(taskParams.targets).toBeUndefined();
+  });
+
+  test('未确认时不写任何文件', async () => {
+    const result = await toolService.executeTool('zgrab2', { targets: ['2001:db8::1'], module: 'http' }, { user });
+    expect(result.needsConfirmation).toBe(true);
+    expect(result.params.targets).toEqual(['2001:db8::1']);
+    expect(mockSaveTargetsFile).not.toHaveBeenCalled();
+    expect(mockCreateZgrab2Task).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['targets 与 inputFile 同时给出', { targets: '2001:db8::1', inputFile: 'a.txt', module: 'http' }],
+    ['两者都没给', { module: 'http' }],
+    ['目标含 shell 字符', { targets: '2001:db8::1; id', module: 'http' }],
+    ['目标为域名', { targets: 'example.com', module: 'http' }],
+    ['目标数量超过 Agent 上限', { targets: Array.from({ length: 1001 }, (_, i) => `10.0.${i >> 8}.${i & 255}`), module: 'http' }]
+  ])('拒绝：%s', async (_name, params) => {
+    const result = await toolService.executeTool('zgrab2', params, { user, confirmed: true });
+    expect(result.success).toBe(false);
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(mockSaveTargetsFile).not.toHaveBeenCalled();
+    expect(mockCreateZgrab2Task).not.toHaveBeenCalled();
+  });
+
+  test('保存文件失败时不创建任务', async () => {
+    mockSaveTargetsFile.mockRejectedValueOnce(new Error('磁盘已满'));
+    const result = await toolService.executeTool('zgrab2', { targets: '2001:db8::1', module: 'http' }, { user, confirmed: true });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('磁盘已满');
+    expect(mockCreateZgrab2Task).not.toHaveBeenCalled();
+  });
+});
+
+describe('对话中提取 zgrab2 目标', () => {
+  test('消息里的地址和网段变成 targets 待确认，不会执行', async () => {
+    mockChat.mockResolvedValueOnce({
+      message: JSON.stringify({ shouldUseTool: true, toolName: 'zgrab2', toolParams: {}, reason: '探测服务' })
+    });
+
+    const result = await agentService.processMessage('探测 2001:db8::/48 和 2001:db8:1::5 的 ssh 服务', [], { user });
+
+    expect(result.type).toBe('confirmation_required');
+    expect(result.pendingToolCall.tool).toBe('zgrab2');
+    expect(result.pendingToolCall.params.module).toBe('ssh');
+    expect(result.pendingToolCall.params.targets).toEqual(['2001:db8::/48', '2001:db8:1::5']);
+    expect(mockSaveTargetsFile).not.toHaveBeenCalled();
+    expect(mockCreateZgrab2Task).not.toHaveBeenCalled();
+  });
+});
+
 describe('terminal 工具', () => {
   test('非管理员即使确认也不能使用', async () => {
     const result = await toolService.executeTool('terminal', { command: 'uname -a' }, { user, confirmed: true });
@@ -242,5 +315,40 @@ describe('POST /agent/tools/execute', () => {
     );
     expect(mockStartScan).toHaveBeenCalledTimes(1);
     expect(res.json.mock.calls[0][0].success).toBe(true);
+  });
+});
+
+describe('extractTargets', () => {
+  const { extractTargets } = agentService;
+
+  test.each([
+    ['扫描 2001:db8::1', ['2001:db8::1']],
+    ['扫描2001:db8::/32这个网段', ['2001:db8::/32']],
+    ['探测 2001:db8:1::5 和 2001:db8:2::6。', ['2001:db8:1::5', '2001:db8:2::6']],
+    ['地址 2001:0db8:0000:0000:0000:0000:0000:0001 在线吗', ['2001:0db8:0000:0000:0000:0000:0000:0001']],
+    ['检查 192.0.2.10 和 198.51.100.0/24', ['192.0.2.10', '198.51.100.0/24']],
+    ['2001:db8::1 2001:db8::1', ['2001:db8::1']],
+    ['以 2001:db8:: 开头', ['2001:db8::']]
+  ])('%s', (message, expected) => {
+    expect(extractTargets(message)).toEqual(expected);
+  });
+
+  test.each([
+    ['现在 12:30 开会'],
+    ['版本 1.2.3'],
+    ['999.1.1.1'],
+    ['2001:db8::1::2'],
+    ['2001:db8::/200'],
+    ['fffff::1'],
+    ['没有地址']
+  ])('不是目标：%s', (message) => {
+    expect(extractTargets(message)).toEqual([]);
+  });
+
+  test('xmap 提取：优先网段；IPv4 自动设置协议', () => {
+    expect(agentService.extractParams('扫描 2001:db8::1 以及 2001:db8::/48', 'xmap').target).toBe('2001:db8::/48');
+    const v4 = agentService.extractParams('扫描 192.0.2.0/24', 'xmap');
+    expect(v4).toMatchObject({ target: '192.0.2.0/24', protocol: 'ipv4' });
+    expect(agentService.extractParams('扫描 2001:db8::1，速率 10M', 'xmap')).toMatchObject({ target: '2001:db8::1', protocol: 'ipv6', rate: '10M' });
   });
 });

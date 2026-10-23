@@ -4,6 +4,7 @@
  */
 
 const db = require('../database/db');
+const storageService = require('./storageService');
 
 /**
  * 工具参数校验辅助
@@ -19,6 +20,8 @@ class ToolValidationError extends Error {
 // IPv4/IPv6 地址或网段（仅字符与长度校验，不做可达性判断）
 const ADDRESS_PATTERN = /^[0-9A-Fa-f:.]{2,45}(\/\d{1,3})?$/;
 const RATE_PATTERN = /^\d{1,6}[KkMmGg]?$/;
+// Agent 一次最多处理的目标数（需要更多请上传输入文件）
+const AGENT_MAX_TARGETS = 1000;
 const INPUT_FILE_PATTERN = /^[\w.\-\u4e00-\u9fa5]{1,128}$/;
 
 const toBoundedInt = (value, label, min, max) => {
@@ -124,24 +127,47 @@ const TOOL_REGISTRY = {
 
   zgrab2: {
     name: 'ZGrab2扫描',
-    description: 'IPv6服务探测工具，对已上传的输入文件中的地址进行端口和服务探测',
+    description: 'IPv6服务探测工具，对地址列表或已上传的输入文件中的地址进行端口和服务探测',
     category: 'scanner',
     requiresConfirmation: true,
     parameters: {
-      inputFile: { type: 'string', required: true, description: '已上传的输入文件名（每行一个地址）' },
+      targets: { type: 'string', description: `目标地址列表（逗号或换行分隔，最多 ${AGENT_MAX_TARGETS} 个），与 inputFile 二选一` },
+      inputFile: { type: 'string', description: '已上传的输入文件名（每行一个地址），与 targets 二选一' },
       module: { type: 'string', required: true, description: '探测模块，如 http、ssh' },
       port: { type: 'number', description: '指定端口（可选）' }
     },
     validate: (params) => {
-      const inputFile = String(params.inputFile || '').trim();
-      if (!INPUT_FILE_PATTERN.test(inputFile)) {
-        throw new ToolValidationError('输入文件名无效');
+      const hasTargets = params.targets !== undefined && params.targets !== null && params.targets !== '';
+      const hasInputFile = params.inputFile !== undefined && params.inputFile !== null && params.inputFile !== '';
+
+      if (hasTargets === hasInputFile) {
+        throw new ToolValidationError('请提供 targets（地址列表）或 inputFile（已上传文件名），二者选其一');
       }
+
       const module = String(params.module || '').trim().toLowerCase();
       if (!/^[a-z0-9_]{1,32}$/.test(module)) {
         throw new ToolValidationError('探测模块名无效');
       }
-      const normalized = { inputFile, module };
+
+      const normalized = { module };
+
+      if (hasTargets) {
+        try {
+          normalized.targets = storageService.normalizeTargets(params.targets);
+        } catch (error) {
+          throw new ToolValidationError(error.message);
+        }
+        if (normalized.targets.length > AGENT_MAX_TARGETS) {
+          throw new ToolValidationError(`目标数量超过 ${AGENT_MAX_TARGETS}，请上传输入文件后使用 inputFile`);
+        }
+      } else {
+        const inputFile = String(params.inputFile).trim();
+        if (!INPUT_FILE_PATTERN.test(inputFile)) {
+          throw new ToolValidationError('输入文件名无效');
+        }
+        normalized.inputFile = inputFile;
+      }
+
       if (params.port !== undefined && params.port !== null && params.port !== '') {
         normalized.port = toBoundedInt(params.port, 'port', 1, 65535);
       }
@@ -149,13 +175,22 @@ const TOOL_REGISTRY = {
     },
     execute: async (params, context) => {
       try {
-        const { inputFile, module, port } = params;
+        const { targets, module, port } = params;
+        let inputFile = params.inputFile;
+
+        // 地址列表先落成当前用户名下的输入文件（与手动上传的文件一样登记到 whitelists 表）
+        if (targets) {
+          const saved = await storageService.saveTargetsFile(context.user?.id, targets, 'zgrab2');
+          inputFile = saved.fileName;
+        }
 
         // 只传文件名，由 zgrab2Controller 按当前用户查找文件；不接受 inputFilePath 等任意路径
         const taskParams = {
           module,
           inputFile,
-          description: `Agent 发起的探测：${inputFile} (${module})`
+          description: targets
+            ? `Agent 发起的探测：${targets.length} 个目标 (${module})`
+            : `Agent 发起的探测：${inputFile} (${module})`
         };
         if (port !== undefined) {
           taskParams.port = String(port);
@@ -167,8 +202,15 @@ const TOOL_REGISTRY = {
         return {
           success: true,
           tool: 'zgrab2',
-          result: { taskId: response.taskId, inputFile, module },
-          message: `ZGrab2扫描任务已创建：${inputFile} (${module})`
+          result: {
+            taskId: response.taskId,
+            inputFile,
+            module,
+            targetCount: targets ? targets.length : undefined
+          },
+          message: targets
+            ? `ZGrab2扫描任务已创建：${targets.length} 个目标 (${module})`
+            : `ZGrab2扫描任务已创建：${inputFile} (${module})`
         };
       } catch (error) {
         console.error('ZGrab2工具执行错误:', error.message);
