@@ -11,6 +11,7 @@ const ITEMS_PER_PAGE = 20;
 // 数据目录统一由 storageService 提供（根目录见 PROJECT_ROOT），启动时由 ensureDirs() 创建
 const { PROJECT_ROOT, DIRS, resolveStoredPath } = require('../services/storageService');
 const taskService = require('../services/taskService');
+const scheduler = require('../services/schedulerService');
 const {
   ZGRAB2_BIN,
   Zgrab2ArgsError,
@@ -305,7 +306,7 @@ exports.createTask = async (req, res) => {
       });
     }
 
-    // 在数据库中创建任务记录（pending），进程启动后再置为 running
+    // 只入队（pending），由调度器按并发上限启动；参数数组原样保存，runner 直接 execFile
     await taskService.createTaskRecord({
       taskId,
       userId,
@@ -313,45 +314,17 @@ exports.createTask = async (req, res) => {
       command,
       description: description || `ZGrab2 ${module} scan`,
       logPath: logFile,
-      outputPath: outputFile
+      outputPath: outputFile,
+      params: { args: commandArgs }
     });
 
     logger.info('数据库任务记录创建成功');
-    logger.debug('开始执行zgrab2命令:', command);
-
-    // 异步执行zgrab2命令
-    const childProcess = execFile(ZGRAB2_BIN, commandArgs, (error, stdout, stderr) => {
-      logger.debug('zgrab2命令执行完成');
-      logger.debug('stdout:', stdout);
-      logger.debug('stderr:', stderr);
-
-      if (error) {
-        logger.error('zgrab2执行错误:', error.message);
-      }
-
-      // 已被用户取消的任务保持 canceled，不会被改写
-      taskService.markTaskFinished(taskId, {
-        status: error ? 'failed' : 'completed',
-        errorMessage: error ? error.message : null,
-        exitCode: error ? (typeof error.code === 'number' ? error.code : null) : 0,
-        signal: error ? error.signal || null : null
-      }).catch(err => {
-        logger.error('更新任务状态失败:', err);
-      });
-    });
-
-    await taskService.markTaskRunning(taskId, childProcess.pid);
-
-    // 存储进程引用以便后续取消
-    if (!global.zgrab2Processes) {
-      global.zgrab2Processes = new Map();
-    }
-    global.zgrab2Processes.set(taskId.toString(), childProcess);
+    scheduler.requestTick();
 
     logger.info('任务创建成功，返回响应');
     res.json({
       success: true,
-      message: 'Zgrab2扫描任务已启动',
+      message: 'Zgrab2扫描任务已提交',
       taskId: taskId
     });
 
@@ -371,6 +344,55 @@ exports.createTask = async (req, res) => {
       success: false,
       message: '创建zgrab2任务失败: ' + error.message
     });
+  }
+};
+
+/**
+ * 启动 zgrab2 进程（由调度器调用，任务已被领取）。进程启动后即返回；结束时在回调里写入状态。
+ */
+const runZgrab2Task = async (task) => {
+  const taskId = task.id;
+  const args = task.params && Array.isArray(task.params.args) ? task.params.args : null;
+  if (!args) {
+    throw new Error('任务缺少 zgrab2 参数');
+  }
+
+  logger.debug('开始执行zgrab2命令:', task.command);
+
+  const childProcess = execFile(ZGRAB2_BIN, args, (error, stdout, stderr) => {
+    logger.debug('zgrab2命令执行完成');
+    logger.debug('stdout:', stdout);
+    logger.debug('stderr:', stderr);
+
+    if (error) {
+      logger.error('zgrab2执行错误:', error.message);
+    }
+    if (global.zgrab2Processes) {
+      global.zgrab2Processes.delete(taskId.toString());
+    }
+
+    // 已被用户取消的任务保持 canceled，不会被改写
+    taskService.markTaskFinished(taskId, {
+      status: error ? 'failed' : 'completed',
+      errorMessage: error ? error.message : null,
+      exitCode: error ? (typeof error.code === 'number' ? error.code : null) : 0,
+      signal: error ? error.signal || null : null
+    }).catch(err => {
+      logger.error('更新任务状态失败:', err);
+    }).finally(() => scheduler.requestTick());
+  });
+
+  // 存储进程引用以便后续取消（先登记，再 await）
+  if (!global.zgrab2Processes) {
+    global.zgrab2Processes = new Map();
+  }
+  global.zgrab2Processes.set(taskId.toString(), childProcess);
+
+  // 记录 pid。若任务在“被领取”到“进程启动”之间被取消，进程不应继续运行
+  const stillWanted = await taskService.markTaskRunning(taskId, childProcess.pid);
+  if (!stillWanted) {
+    logger.warn(`任务 ${taskId} 在启动前已被取消，终止刚启动的进程`);
+    childProcess.kill('SIGTERM');
   }
 };
 
@@ -967,3 +989,6 @@ exports.getTaskProgress = async (req, res) => {
     });
   }
 };
+
+exports.runZgrab2Task = runZgrab2Task;
+scheduler.registerRunner('zgrab2', runZgrab2Task);
