@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const databaseController = require('../controllers/databaseController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
-// 所有数据库操作路由都需要认证
+// 所有数据库操作路由都需要认证；写操作额外需要管理员权限（后端强制，不依赖前端 adminOnly）
 router.use(authenticate);
 
 // 获取数据库统计信息
@@ -20,7 +20,7 @@ router.get('/country-stats', databaseController.getCountryStats);
 router.get('/vulnerability-stats', databaseController.getVulnerabilityStats);
 
 // 删除地址
-router.post('/delete-addresses', databaseController.deleteAddresses);
+router.post('/delete-addresses', requireAdmin, databaseController.deleteAddresses);
 
 // 获取漏洞类型
 router.get('/vulnerability-types', databaseController.getVulnerabilityTypes);
@@ -36,28 +36,28 @@ router.get('/countries/:countryId/asns', databaseController.getAsnsByCountry);
 router.get('/address-types', databaseController.getAddressTypes);
 
 // 更新地址 IID 类型
-router.post('/update-iid-types', databaseController.updateIIDTypes);
+router.post('/update-iid-types', requireAdmin, databaseController.updateIIDTypes);
 
 
 //---------------国家管理相关的API----------------//
 
-router.post('/countries', databaseController.createCountry);
-router.put('/countries/:id', databaseController.updateCountry);
-router.delete('/countries/:id', databaseController.deleteCountry);
+router.post('/countries', requireAdmin, databaseController.createCountry);
+router.put('/countries/:id', requireAdmin, databaseController.updateCountry);
+router.delete('/countries/:id', requireAdmin, databaseController.deleteCountry);
 
 
 //---------------ASN管理相关的API----------------//
 
-router.post('/asns', databaseController.createAsn);
-router.put('/asns/:id', databaseController.updateAsn);
-router.delete('/asns/:id', databaseController.deleteAsn);
+router.post('/asns', requireAdmin, databaseController.createAsn);
+router.put('/asns/:id', requireAdmin, databaseController.updateAsn);
+router.delete('/asns/:id', requireAdmin, databaseController.deleteAsn);
 
 
 //---------------前缀管理相关的API----------------//
 router.get('/prefixes', databaseController.getPrefixes);
-router.post('/prefixes', databaseController.createPrefix);
-router.put('/prefixes/:id', databaseController.updatePrefix);
-router.delete('/prefixes/:id', databaseController.deletePrefix);
+router.post('/prefixes', requireAdmin, databaseController.createPrefix);
+router.put('/prefixes/:id', requireAdmin, databaseController.updatePrefix);
+router.delete('/prefixes/:id', requireAdmin, databaseController.deletePrefix);
 
 
 //---------------搜索相关的API----------------//
@@ -73,31 +73,31 @@ router.get('/prefixes/search', databaseController.searchPrefixes);// 搜索前�
 //---------------漏洞管理相关API----------------//
 // 漏洞定义管理 (CRUD for vulnerabilities table)
 router.get('/vulnerabilities', databaseController.getVulnerabilities); // 获取所有漏洞定义
-router.post('/vulnerabilities', databaseController.createVulnerability); // 添加新漏洞定义
-router.put('/vulnerabilities/:id', databaseController.updateVulnerability); // 更新漏洞定义
-router.delete('/vulnerabilities/:id', databaseController.deleteVulnerability); // 删除漏洞定义
+router.post('/vulnerabilities', requireAdmin, databaseController.createVulnerability); // 添加新漏洞定义
+router.put('/vulnerabilities/:id', requireAdmin, databaseController.updateVulnerability); // 更新漏洞定义
+router.delete('/vulnerabilities/:id', requireAdmin, databaseController.deleteVulnerability); // 删除漏洞定义
 // 批量更新ASN漏洞受影响地址数
-router.post('/asn-vulnerability-stats/batch-update', databaseController.batchUpdateAsnVulnerabilityStats);
+router.post('/asn-vulnerability-stats/batch-update', requireAdmin, databaseController.batchUpdateAsnVulnerabilityStats);
 
 
 //---------------协议管理相关API----------------//
 // 协议定义管理 (CRUD for protocols table)
 router.get('/protocols', databaseController.getProtocols); // 获取所有协议定义
-router.post('/protocols', databaseController.createProtocol); // 添加新协议定义
-router.put('/protocols/:id', databaseController.updateProtocol); // 更新协议定义
-router.delete('/protocols/:id', databaseController.deleteProtocol); // 删除协议定义
+router.post('/protocols', requireAdmin, databaseController.createProtocol); // 添加新协议定义
+router.put('/protocols/:id', requireAdmin, databaseController.updateProtocol); // 更新协议定义
+router.delete('/protocols/:id', requireAdmin, databaseController.deleteProtocol); // 删除协议定义
 // 批量更新ASN协议受影响地址数
-router.post('/asn-protocol-stats/batch-update', databaseController.batchUpdateAsnProtocolStats);
+router.post('/asn-protocol-stats/batch-update', requireAdmin, databaseController.batchUpdateAsnProtocolStats);
 
 
 //---------------文件上传相关API已经单独实现----------------//
 
 
 //---------------地址导入任务相关API----------------//
-router.post('/import-tasks', databaseController.createImportTask);
-router.get('/import-tasks', databaseController.getImportTasks);
-router.get('/import-tasks/:id', databaseController.getImportTaskStatus);
-router.delete('/import-tasks/:id', databaseController.cancelImportTask);
-router.delete('/import-tasks/:id/delete', databaseController.deleteImportTask);
+router.post('/import-tasks', requireAdmin, databaseController.createImportTask);
+router.get('/import-tasks', requireAdmin, databaseController.getImportTasks);
+router.get('/import-tasks/:id', requireAdmin, databaseController.getImportTaskStatus);
+router.delete('/import-tasks/:id', requireAdmin, databaseController.cancelImportTask);
+router.delete('/import-tasks/:id/delete', requireAdmin, databaseController.deleteImportTask);
 
 module.exports = router;

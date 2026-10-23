@@ -1,5 +1,6 @@
 const db = require('../database/db');
 const addressModel = require('../models/addressModels');
+const { isReadOnlySelect } = require('../services/sqlGuardService');
 const { createLogger, transports } = require('winston');
 const readline = require('readline');
 
@@ -91,7 +92,6 @@ exports.getDatabaseStats = async (req, res) => {
 exports.advancedQuery = async (req, res) => {
   try {
     // 打印接收到的请求体
-    console.log('高级查询接收到的请求体:', JSON.stringify(req.body, null, 2));
     
     const query = req.body.query || req.body.sql;
     const params = req.body.params || [];
@@ -328,23 +328,9 @@ exports.getProtocolTypes = async (req, res) => {
   }
 };
 
-// 辅助函数：验证SQL查询语句
+// 辅助函数：验证SQL查询语句（规则见 services/sqlGuardService.js）
 function isValidSqlQuery(query) {
-  // 只允许SELECT查询
-  if (!query.trim().toUpperCase().startsWith('SELECT')) {
-    return false;
-  }
-
-  // 禁止危险操作
-  const forbiddenKeywords = ['DROP', 'TRUNCATE', 'DELETE', 'UPDATE', 'INSERT', 'CREATE', 'ALTER', 'GRANT', 'REVOKE'];
-  const upperQuery = query.toUpperCase();
-  for (const keyword of forbiddenKeywords) {
-    if (upperQuery.includes(keyword)) {
-      return false;
-    }
-  }
-
-  return true;
+  return isReadOnlySelect(query);
 }
 
 

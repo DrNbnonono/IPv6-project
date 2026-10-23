@@ -1,64 +1,86 @@
 const jwt = require('jsonwebtoken');
 const db = require('../database/db');
 
+/**
+ * 获取JWT密钥
+ * 必须通过环境变量 JWT_SECRET 配置，不再提供默认值
+ */
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET 未配置');
+  }
+  return secret;
+};
+
+exports.getJwtSecret = getJwtSecret;
+
+/**
+ * 认证中间件
+ * 校验 Authorization: Bearer <token>，并把用户信息放入 req.user
+ */
 exports.authenticate = async (req, res, next) => {
-  console.log('\n=== 请求到达认证中间件 ===');
-  console.log('请求方法:', req.method);
-  console.log('请求路径:', req.path);
-  console.log('原始请求头:', JSON.stringify(req.headers, null, 2));
-  
   try {
-    // 从头部获取token
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-    if (!authHeader) {
-      console.log('Authorization头不存在');
-      return res.status(401).json({
-        success: false,
-        message: '未提供认证令牌',
-        receivedHeaders: req.headers
-      });
-    }
-    
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    console.log('处理后的Token:', token ? token.slice(0, 10) + '...' : '空');
-    
+    // 从头部获取token（Node 会把请求头名称统一转成小写）
+    const authHeader = req.headers['authorization'];
+    const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: '未提供认证令牌',
-        receivedHeaders: req.headers
+        message: '未提供认证令牌'
       });
     }
 
-    // 验证token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
-    console.log('解码后的Token:', decoded);
-    
-    // 检查用户是否存在
+    // 验证token（固定算法，避免算法混淆）
+    const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
+
+    // 检查用户是否存在，并以数据库中的角色为准
     const [user] = await db.query(
       'SELECT id, phone, role FROM users WHERE id = ?',
       [decoded.id]
     );
 
     if (!user.length) {
-      console.log('用户不存在，ID:', decoded.id);
-      return res.status(401).json({ 
-        success: false, 
-        message: '用户不存在' 
+      return res.status(401).json({
+        success: false,
+        message: '用户不存在'
       });
     }
 
-    console.log('认证成功，用户:', user[0]);
     // 将用户信息添加到请求对象
     req.user = user[0];
     next();
 
   } catch (error) {
-    console.error('认证失败:', error);
-    res.status(401).json({ 
-      success: false, 
-      message: '认证失败',
-      error: error.message 
+    // 服务端配置错误与令牌错误分开处理，且都不向客户端回传内部错误信息
+    if (error.message === 'JWT_SECRET 未配置') {
+      console.error('认证失败: JWT_SECRET 未配置');
+      return res.status(500).json({
+        success: false,
+        message: '服务器配置错误'
+      });
+    }
+
+    console.error('认证失败:', error.name);
+    res.status(401).json({
+      success: false,
+      message: '认证失败'
     });
   }
+};
+
+/**
+ * 管理员权限中间件
+ * 必须放在 authenticate 之后使用
+ */
+exports.requireAdmin = (req, res, next) => {
+  if (req.user?.role === 'admin') {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    message: '仅管理员可执行此操作'
+  });
 };

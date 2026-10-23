@@ -149,13 +149,7 @@ exports.updateDocContent = async (req, res) => {
       return sendInvalidParams(res)
     }
     
-    // 验证用户权限
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '无权限操作'
-      })
-    }
+    // 管理员权限由路由层的 requireAdmin 中间件保证
 
     const docPath = resolveSafePath(XMAP_DOCS_DIR, lang, `${docId}.md`)
     fs.writeFileSync(docPath, content, 'utf-8')
@@ -265,13 +259,7 @@ exports.updateZgrab2DocContent = async (req, res) => {
       return sendInvalidParams(res)
     }
     
-    // 验证用户权限
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: '无权限操作'
-      })
-    }
+    // 管理员权限由路由层的 requireAdmin 中间件保证
 
     const docDir = resolveSafePath(ZGRAB2_DOCS_DIR, lang)
     

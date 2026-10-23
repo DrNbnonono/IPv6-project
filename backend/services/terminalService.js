@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
+const { validateArgs, resolveInJail, buildSafeEnv } = require('./terminalPolicyService');
 
 // 终端配置
 const TERMINAL_CONFIG = {
@@ -14,6 +15,7 @@ const TERMINAL_CONFIG = {
   defaultTimeout: 5 * 60 * 1000,     // 默认命令超时5分钟
   maxBufferSize: 10 * 1024 * 1024,   // 最大输出缓冲10MB
   shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
+  maxTimeout: 5 * 60 * 1000,         // 单条命令超时上限，调用方传入的 timeout 不得超过
   workingDirectory: process.cwd()     // 默认工作目录
 };
 
@@ -142,7 +144,7 @@ const executeBuiltinCommand = (terminal, command, args, cwd, cmdRecord) => {
 
   if (command === 'cd') {
     const targetDir = args[0]
-      ? path.resolve(cwd, args[0])
+      ? resolveInJail(cwd, args[0])
       : TERMINAL_CONFIG.workingDirectory;
 
     if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
@@ -191,7 +193,7 @@ const createTerminal = (sessionId, options = {}) => {
     lastActivityAt: Date.now(),
     ownerId: options.userId || null,
     workingDirectory: options.workingDirectory || TERMINAL_CONFIG.workingDirectory,
-    environment: { ...process.env, ...options.env },
+    environment: buildSafeEnv(options.env),
     history: [],
     isActive: true
   };
@@ -223,12 +225,28 @@ const executeCommand = (terminalId, command, options = {}) => {
       return reject(new Error('终端已关闭'));
     }
 
-    const timeout = options.timeout || TERMINAL_CONFIG.defaultTimeout;
-    const cwd = options.cwd || terminal.workingDirectory;
-    const parsedCommand = parseCommand(command);
+    const requestedTimeout = Number(options.timeout);
+    const timeout = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+      ? Math.min(requestedTimeout, TERMINAL_CONFIG.maxTimeout)
+      : TERMINAL_CONFIG.defaultTimeout;
 
-    if (!isCommandAllowed(parsedCommand.command)) {
-      return reject(new Error('命令不在允许列表中'));
+    let cwd;
+    let parsedCommand;
+    let spawnArgs;
+    try {
+      cwd = options.cwd ? resolveInJail(terminal.workingDirectory, options.cwd) : terminal.workingDirectory;
+      parsedCommand = parseCommand(command);
+
+      if (!isCommandAllowed(parsedCommand.command)) {
+        return reject(new Error('命令不在允许列表中'));
+      }
+
+      // cd/clear/history 是内置命令，cd 的路径在 executeBuiltinCommand 中校验
+      spawnArgs = BUILTIN_COMMANDS.has(parsedCommand.command)
+        ? parsedCommand.args
+        : validateArgs(parsedCommand.command, parsedCommand.args, { cwd });
+    } catch (error) {
+      return reject(error);
     }
 
     // 记录命令历史
@@ -263,7 +281,7 @@ const executeCommand = (terminalId, command, options = {}) => {
     let stderr = '';
     let isTimedOut = false;
 
-    const child = spawn(parsedCommand.command, parsedCommand.args, {
+    const child = spawn(parsedCommand.command, spawnArgs, {
       cwd,
       env: terminal.environment,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -426,14 +444,18 @@ const getAllTerminals = () => {
 /**
  * 设置终端工作目录
  */
-const setWorkingDirectory = (terminalId, path) => {
+const setWorkingDirectory = (terminalId, dir) => {
   const terminal = activeTerminals.get(terminalId);
 
   if (!terminal) {
     return { success: false, error: '终端不存在' };
   }
 
-  terminal.workingDirectory = path;
+  try {
+    terminal.workingDirectory = resolveInJail(terminal.workingDirectory, dir);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
   terminal.lastActivityAt = Date.now();
 
   return {
@@ -457,7 +479,7 @@ const cleanupTerminals = () => {
 };
 
 // 定期清理（每5分钟）
-setInterval(cleanupTerminals, 5 * 60 * 1000);
+setInterval(cleanupTerminals, 5 * 60 * 1000).unref();
 
 /**
  * 安全的命令白名单
@@ -467,8 +489,7 @@ const ALLOWED_COMMANDS = {
   'nmap': { description: '网络扫描工具', args: ['-6', '-Pn', '-T4', '-s'] },
   'ping': { description: 'Ping命令', args: ['-c', '-W'] },
   'ping6': { description: 'IPv6 Ping', args: ['-c', '-W'] },
-  'curl': { description: 'HTTP客户端', args: ['-I', '-L', '-s', '-o'] },
-  'wget': { description: '文件下载工具', args: ['-O', '-q'] },
+  'curl': { description: 'HTTP客户端（仅 http/https，仅 -I -s -L）', args: ['-I', '-L', '-s'] },
   'netstat': { description: '网络状态', args: ['-an', '-tu'] },
   'ss': { description: 'Socket统计', args: ['-tuln'] },
   'traceroute': { description: '路由追踪', args: [] },
@@ -485,24 +506,16 @@ const ALLOWED_COMMANDS = {
   'whoami': { description: '当前用户', args: [] },
   'ps': { description: '进程列表', args: ['aux'] },
   'top': { description: '进程监视', args: ['-bn1'] },
-  // 文件操作
+  // 文件查看（只读，限定在项目目录内）
   'ls': { description: '列出目录', args: ['-la', '-lh'] },
   'cd': { description: '切换目录', args: [] },
   'pwd': { description: '当前目录', args: [] },
-  'mkdir': { description: '创建目录', args: ['-p'] },
-  'rm': { description: '删除文件', args: ['-rf'] },
-  'cp': { description: '复制文件', args: ['-r'] },
-  'mv': { description: '移动文件', args: [] },
   'cat': { description: '查看文件', args: [] },
   'head': { description: '查看文件头部', args: ['-n'] },
-  'tail': { description: '查看文件尾部', args: ['-n', '-f'] },
+  'tail': { description: '查看文件尾部', args: ['-n'] },
   'grep': { description: '文本搜索', args: ['-r', '-i', '-n'] },
-  'awk': { description: '文本处理', args: [] },
-  'sed': { description: '文本编辑', args: [] },
   'sort': { description: '排序', args: [] },
   'wc': { description: '字数统计', args: ['-l', '-c'] },
-  'find': { description: '文件搜索', args: [] },
-  'xargs': { description: '参数构建', args: [] },
   // 杂项
   'echo': { description: '输出文本', args: [] },
   'date': { description: '日期时间', args: [] },
