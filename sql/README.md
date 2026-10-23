@@ -31,6 +31,7 @@ node scripts/checkDb.js
 | `../structure.sql` | 全量结构 | 当前最新的完整表结构；结构有变动后重新导出覆盖它，并保证与迁移文件一致 |
 | `NN-*.sql`，NN ≥ 08 | **增量迁移** | 由 `scripts/migrate.js` 按文件名顺序执行，成功后记入表 `schema_migrations`（含 sha256） |
 | `01`–`07` 开头的文件 | 历史脚本 | 已全部合入 `structure.sql`，仅作参考，**不要再执行**（`01-任务等表.sql` 与 `tools_whitelist.sql`、`user_create.sql` 还有重复建表） |
+| `optional/*.sql` | 可选脚本 | **不会**被 `migrate.js` 执行，由维护者按需、在合适的时间手动运行（例如 `optional/12-address-history-indexes.sql`：给 7500 万行大表建索引，耗时长，需要低峰期） |
 | `init.sql`、`insert_*.sql`、`map.sql` | 种子/演示数据 | 可选。`init.sql` 以 `TRUNCATE TABLE asns / ip_prefixes` 开头，**只能用于新库** |
 | `user_create.sql`、`tools_whitelist.sql` | 历史脚本 | 账号请用 `scripts/createAdmin.js`；工具记录由迁移 `08-seed-tools.sql` 提供 |
 
@@ -52,3 +53,9 @@ node scripts/migrate.js --status   # 查看已应用 / 待应用
 
 退出码：`0` 成功；`1` 迁移失败或 checksum 不一致；`2` 无法连接数据库。MySQL 不支持 DDL 回滚，
 某个迁移中途失败时，已成功的语句不会撤销，修复后重新运行即可（迁移应写成可重复执行）。
+
+## 大表变更的做法（`active_addresses` 约 7500 万行）
+
+- 加列用 `ALGORITHM=INSTANT`（只改元数据，不拷贝数据、不长时间锁表）。数据库不支持时语句会直接报错，而不是悄悄重建整张表；
+- 加索引放进 `sql/optional/`，用 `ALGORITHM=INPLACE, LOCK=NONE`，由维护者选低峰期执行，并先在副本上记录耗时；
+- 迁移 12 之后，导入存储过程 `batch_import_ipv6_addresses` 把已存在的地址记为“再次观察”而不是整批失败；这个存储过程的最新定义以迁移文件为准（`structure.sql` 里是旧版本，新库跑完迁移后会被替换）。
