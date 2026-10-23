@@ -96,6 +96,16 @@ const routes = [
         meta: { title: '工作流管理' }
       },
       {
+        path: '/tools/admin',
+        name: 'admin',
+        component: () => import('@/views/tools/admin/AdminDashboardView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: true,
+          title: '扫描策略与审计'
+        }
+      },
+      {
         path: '/tools/database',
         name: 'database',
         component: () => import('@/views/tools/database/DatabaseManagementView.vue'),
@@ -156,6 +166,11 @@ router.beforeEach(async (to, from, next) => {
     })
   }
   
+  // 需要管理员的页面：非管理员回到工具首页（后端对 /api/admin 同样强制校验，这里只是不展示一个只会报 403 的页面）
+  if (to.meta.requiresAdmin && authStore.role !== 'admin') {
+    return next({ name: 'tools' })
+  }
+
   // 如果路由需要访客但用户已登录
   if (to.meta.requiresGuest && authStore.isAuthenticated) {
     return next({ name: 'tools' })

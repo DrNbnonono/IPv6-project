@@ -34,11 +34,11 @@
       <aside class="tools-sidebar">
         <div class="sidebar-header">
           <h3><i class="icon-toolbox"></i> 工具箱</h3>
-          <span class="tool-count">{{ availableTools.length }}个工具</span>
+          <span class="tool-count">{{ visibleTools.length }}个工具</span>
         </div>
         <nav class="tools-nav">
           <router-link
-            v-for="tool in availableTools"
+            v-for="tool in visibleTools"
             :key="tool.path"
             :to="tool.path"
             class="nav-item"
@@ -121,7 +121,7 @@
 </template>
 
 <script setup>
-  import { ref, onMounted } from 'vue'
+  import { ref, computed, onMounted } from 'vue'
   import { useAuthStore } from '@/stores/auth'
   import { useRouter } from 'vue-router'
   import axios from 'axios' // 仅用于访问第三方（非本平台）接口
@@ -154,8 +154,14 @@
     { path: '/tools/files', name: '文件管理', icon: 'icon-files' },
     { path: '/tools/jsonanalysis', name: 'JSON分析', icon: 'icon-json', badge: '新' },
     { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
-    { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'}
+    { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'},
+    { path: '/tools/admin', name: '扫描策略与审计', icon: 'icon-admin', adminOnly: true }
   ])
+
+  // 仅管理员可见的入口不展示给普通用户（后端同样强制校验）
+  const visibleTools = computed(() =>
+    availableTools.value.filter((tool) => !tool.adminOnly || authStore.role === 'admin')
+  )
 
   // 统计数据
   const stats = ref([
@@ -719,6 +725,7 @@
 .icon-delete:before { content: "🗑️"; }
 .icon-empty:before { content: "📭"; }
 .icon-database:before { content: "🗄️"; }
+.icon-admin:before { content: "🛡️"; }
 .icon-zgrab2:before { content: "🛰️"; } // 添加zgrab2图标示例
 .icon-addr6:before { content: "🌐"; } // 添加addr6图标示例
 .icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例
