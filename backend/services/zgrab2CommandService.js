@@ -6,6 +6,38 @@
 
 const ZGRAB2_BIN = process.env.ZGRAB2_BIN || '/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2';
 
+// 支持的模块和默认端口（扫描预设也按这个名单校验）
+const SUPPORTED_MODULES = {
+  amqp091: { defaultPort: 5672, description: 'AMQP 0.9.1' },
+  bacnet: { defaultPort: 47808, description: 'BACnet' },
+  banner: { defaultPort: 80, description: 'Banner grab' },
+  dnp3: { defaultPort: 20000, description: 'DNP3' },
+  fox: { defaultPort: 1911, description: 'Fox' },
+  ftp: { defaultPort: 21, description: 'FTP' },
+  http: { defaultPort: 80, description: 'HTTP Banner Grab' },
+  imap: { defaultPort: 143, description: 'IMAP' },
+  ipp: { defaultPort: 631, description: 'IPP' },
+  jarm: { defaultPort: 443, description: 'JARM' },
+  modbus: { defaultPort: 502, description: 'Modbus' },
+  mongodb: { defaultPort: 27017, description: 'MongoDB' },
+  mqtt: { defaultPort: 1883, description: 'MQTT' },
+  mssql: { defaultPort: 1433, description: 'MSSQL' },
+  mysql: { defaultPort: 3306, description: 'MySQL' },
+  ntp: { defaultPort: 123, description: 'NTP' },
+  oracle: { defaultPort: 1521, description: 'Oracle' },
+  pop3: { defaultPort: 110, description: 'POP3' },
+  postgres: { defaultPort: 5432, description: 'Postgres' },
+  pptp: { defaultPort: 1723, description: 'PPTP' },
+  redis: { defaultPort: 6379, description: 'Redis' },
+  siemens: { defaultPort: 102, description: 'Siemens' },
+  smb: { defaultPort: 445, description: 'SMB' },
+  smtp: { defaultPort: 25, description: 'SMTP' },
+  socks5: { defaultPort: 1080, description: 'SOCKS5' },
+  ssh: { defaultPort: 22, description: 'SSH Banner Grab' },
+  telnet: { defaultPort: 23, description: 'Telnet' },
+  tls: { defaultPort: 443, description: 'TLS Banner Grab' }
+};
+
 class Zgrab2ArgsError extends Error {
   constructor(message) {
     super(message);
@@ -106,6 +138,7 @@ const formatCommand = (args, bin = ZGRAB2_BIN) => [bin, ...args].join(' ');
 
 module.exports = {
   ZGRAB2_BIN,
+  SUPPORTED_MODULES,
   Zgrab2ArgsError,
   RESERVED_OPTIONS,
   validatePort,

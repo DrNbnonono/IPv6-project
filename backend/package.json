@@ -76,6 +76,10 @@
         "lines": 90,
         "statements": 90
       },
+      "./services/scanPresetService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/historyService.js": {
         "lines": 90,
         "statements": 90
