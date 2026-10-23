@@ -266,6 +266,7 @@ const getNodeIcon = (nodeType) => {
     zgrab2_json_extract: 'icon-letter-e',
     json_custom_extract: 'icon-letter-j',
     apd_filter: 'icon-letter-a',
+    tga_generate: 'icon-letter-t',
     file_output: 'icon-letter-o'
   }
   return icons[nodeType] || 'icon-letter-n'
@@ -906,6 +907,7 @@ onMounted(async () => {
 .icon-letter-e::before { content: "E"; }
 .icon-letter-j::before { content: "J"; }
 .icon-letter-a::before { content: "A"; }
+.icon-letter-t::before { content: "T"; }
 .icon-letter-o::before { content: "O"; }
 .icon-letter-n::before { content: "N"; }
 
