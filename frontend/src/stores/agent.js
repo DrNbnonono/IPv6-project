@@ -70,6 +70,9 @@ export const useAgentStore = defineStore('agent', () => {
         content: response.message || response.content,
         type: response.type || 'text',
         toolCall: response.toolCall,
+        // 需要用户确认的工具调用：确认前不会执行
+        pendingToolCall: response.pendingToolCall,
+        confirmationState: response.pendingToolCall ? 'pending' : undefined,
         suggestions: response.suggestions || [],
         timestamp: new Date().toISOString()
       }
@@ -122,14 +125,16 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   // 执行工具
-  const executeTool = async (toolName, params) => {
+  // confirmed 表示用户已明确确认；扫描、终端等有副作用的工具未确认时服务端会拒绝执行
+  const executeTool = async (toolName, params, confirmed = false) => {
     loading.value = true
     error.value = null
 
     try {
       const response = await api.agent.executeTool({
         toolName,
-        params
+        params,
+        confirmed
       })
 
       // 添加工具执行结果消息
@@ -165,6 +170,19 @@ export const useAgentStore = defineStore('agent', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  // 确认 Agent 提出的待执行工具调用
+  const confirmPendingTool = async (message) => {
+    if (!message?.pendingToolCall || message.confirmationState !== 'pending') return null
+    message.confirmationState = 'confirmed'
+    return executeTool(message.pendingToolCall.tool, message.pendingToolCall.params, true)
+  }
+
+  // 取消 Agent 提出的待执行工具调用
+  const cancelPendingTool = (message) => {
+    if (!message?.pendingToolCall || message.confirmationState !== 'pending') return
+    message.confirmationState = 'cancelled'
   }
 
   // 格式化工具结果
@@ -297,6 +315,8 @@ export const useAgentStore = defineStore('agent', () => {
     sendMessage,
     getTools,
     executeTool,
+    confirmPendingTool,
+    cancelPendingTool,
     generateWorkflow,
     getStatus,
     clearHistory,

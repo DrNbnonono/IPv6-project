@@ -28,11 +28,25 @@ const processMessage = async (userMessage, history = [], context = {}) => {
 
     // 如果识别到需要使用工具
     if (intentResult.shouldUseTool && intentResult.toolName) {
+      // 大模型识别出的调用永远不能自行确认：confirmed 只能由用户通过 /tools/execute 显式提供
       const toolResult = await toolService.executeTool(
         intentResult.toolName,
         intentResult.toolParams,
-        context
+        { ...context, confirmed: false }
       );
+
+      // 有副作用的工具（扫描、终端）只返回待确认请求，等待用户在界面上确认
+      if (toolResult.needsConfirmation) {
+        return {
+          success: true,
+          type: 'confirmation_required',
+          message: `我准备执行「${toolResult.tool}」，参数如下，请确认后再执行。`,
+          pendingToolCall: {
+            tool: toolResult.tool,
+            params: toolResult.params
+          }
+        };
+      }
 
       // 生成工具执行结果的解释
       const explanationPrompt = `用户请求：${userMessage}
@@ -178,10 +192,10 @@ const extractParams = (userMessage, toolName, suggestedParams = {}) => {
       params.protocol = 'ipv4';
     }
 
-    // 提取速率
-    const rateMatch = userMessage.match(/(\d+)\s*(个|包|数据包)\/?秒/);
-    if (rateMatch) {
-      params.rate = parseInt(rateMatch[1]);
+    // 提取带宽，如 10M
+    const bandwidthMatch = userMessage.match(/(\d{1,6})\s*([KkMmGg])(?:bps|b\/s)?/);
+    if (bandwidthMatch) {
+      params.rate = `${bandwidthMatch[1]}${bandwidthMatch[2].toUpperCase()}`;
     }
 
     // 判断协议
@@ -192,11 +206,11 @@ const extractParams = (userMessage, toolName, suggestedParams = {}) => {
     }
 
   } else if (toolName === 'zgrab2') {
-    // ZGrab2参数提取
-    if (ipv6Matches && ipv6Matches.length > 0) {
-      params.target = ipv6Matches[0];
-    } else if (ipv4Matches && ipv4Matches.length > 0) {
-      params.target = ipv4Matches[0];
+    // ZGrab2 以已上传的输入文件为目标，不再从消息中提取单个地址
+    delete params.target;
+    const fileMatch = userMessage.match(/[\w.\-\u4e00-\u9fa5]+\.(?:txt|csv|list)/i);
+    if (fileMatch && !params.inputFile) {
+      params.inputFile = fileMatch[0];
     }
 
     // 提取端口

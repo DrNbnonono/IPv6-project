@@ -1,6 +1,6 @@
 const db = require('../database/db');
 const addressModel = require('../models/addressModels');
-const { isReadOnlySelect } = require('../services/sqlGuardService');
+const { buildAdvancedQuery, QueryValidationError } = require('../services/queryBuilderService');
 const { createLogger, transports } = require('winston');
 const readline = require('readline');
 
@@ -88,60 +88,40 @@ exports.getDatabaseStats = async (req, res) => {
 
 /**
  * 执行高级查询
+ * 请求体为结构化筛选条件 { filters }，SQL 由 services/queryBuilderService.js 生成，
+ * 不再接受前端直接提交的 SQL。
  */
 exports.advancedQuery = async (req, res) => {
   try {
-    // 打印接收到的请求体
-    
-    const query = req.body.query || req.body.sql;
-    const params = req.body.params || [];
-    
-    if (!query) {
-      console.log('错误: 缺少查询语句');
+    const body = req.body || {};
+
+    if (body.query || body.sql) {
       return res.status(400).json({
         success: false,
-        message: '缺少查询语句'
+        message: '不再支持直接提交 SQL，请使用 filters 传入查询条件'
       });
     }
 
-    // 验证查询语句，防止SQL注入
-    if (!isValidSqlQuery(query)) {
-      console.log('错误: 无效的查询语句:', query);
-      return res.status(400).json({
-        success: false,
-        message: '无效的查询语句'
-      });
-    }
-
-    // 打印将要执行的SQL和参数
-    console.log('执行SQL查询:', query);
-    console.log('查询参数:', params);
-
-    // 执行查询
-    const [results] = await db.query(query, params);
-    
-    // 打印查询结果的行数
-    console.log(`查询完成，返回 ${results.length} 条记录`);
-    
-    // 如果结果为空，打印提示信息
-    if (results.length === 0) {
-      console.log('查询结果为空，没有符合条件的数据');
-    } else {
-      // 打印第一条记录的结构（不打印具体内容以避免日志过大）
-      console.log('结果第一条记录的字段:', Object.keys(results[0]));
-    }
+    const { sql, params } = buildAdvancedQuery(body.filters);
+    const [results] = await db.query(sql, params);
 
     res.json({
       success: true,
-      data: results
+      data: results,
+      sql
     });
   } catch (error) {
+    if (error instanceof QueryValidationError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+
     logger.error(`高级查询失败: ${error.message}`);
-    console.error('高级查询执行错误:', error);
-    console.error('错误堆栈:', error.stack);
     res.status(500).json({
       success: false,
-      message: `查询失败: ${error.message}`
+      message: '查询失败'
     });
   }
 };
@@ -328,10 +308,6 @@ exports.getProtocolTypes = async (req, res) => {
   }
 };
 
-// 辅助函数：验证SQL查询语句（规则见 services/sqlGuardService.js）
-function isValidSqlQuery(query) {
-  return isReadOnlySelect(query);
-}
 
 
 
