@@ -336,6 +336,24 @@ describe('任务生命周期', () => {
   });
 });
 
+describe('下载结果', () => {
+  const getResult = async (taskId, userId = 5) => {
+    const res = { headers: {}, status: jest.fn(() => res), json: jest.fn(() => res), setHeader: jest.fn() };
+    await controller.getResult({ params: { taskId }, user: { id: userId } }, res);
+    return res;
+  };
+
+  test('只查询当前用户自己的 xmap 任务（N18：此前任何登录用户都能按任务 ID 下载他人的结果）', async () => {
+    db.query.mockImplementation(async () => [[]]);
+    const res = await getResult('123', 5);
+    expect(res.status).toHaveBeenCalledWith(404);
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toMatch(/user_id = \?/);
+    expect(sql).toMatch(/task_type = 'xmap'/);
+    expect(params).toEqual(['123', 5]);
+  });
+});
+
 describe('取消任务', () => {
   const cancel = async (taskId = 123) => {
     const res = createRes();
