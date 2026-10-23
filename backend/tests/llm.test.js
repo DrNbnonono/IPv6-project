@@ -8,7 +8,7 @@ const ENV_KEYS = [
   'AI_PROVIDER', 'AI_API_KEY', 'AI_API_BASE_URL', 'AI_MODEL',
   'MINIMAX_API_KEY', 'MINIMAX_BASE_URL', 'MINIMAX_MODEL',
   'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL',
-  'OPENAI_API_KEY', 'SILICONFLOW_API_KEY'
+  'OPENAI_API_KEY', 'SILICONFLOW_API_KEY', 'AGENT_NATIVE_TOOLS'
 ];
 const saved = {};
 ENV_KEYS.forEach((k) => { saved[k] = process.env[k]; });
@@ -162,5 +162,78 @@ describe('getToolDefinitions', () => {
     expect(Array.isArray(defs)).toBe(true);
     expect(defs.every((d) => d.type === 'function' && d.function.name && d.function.parameters)).toBe(true);
     expect(defs.map((d) => d.function.name)).toContain('xmap_scan');
+  });
+});
+
+describe('原生工具调用', () => {
+  const tools = [{
+    type: 'function',
+    function: { name: 'xmap', description: '扫描', parameters: { type: 'object', properties: { target: { type: 'string' } }, required: ['target'] } }
+  }];
+
+  test('Anthropic：工具定义转成 input_schema；tool_use 块被整理成 toolCalls，文本只取 text 块', async () => {
+    const llm = load({ MINIMAX_API_KEY: 'mm-key' });
+    mockPost.mockResolvedValue({
+      data: {
+        content: [
+          { type: 'thinking', thinking: '...' },
+          { type: 'text', text: '好的，' },
+          { type: 'text', text: '我来扫描' },
+          { type: 'tool_use', id: 'tu_1', name: 'xmap', input: { target: '2001:db8::/64' } }
+        ]
+      }
+    });
+    const result = await llm.chat('扫描', [], { tools });
+    const body = mockPost.mock.calls[0][1];
+    expect(body.tools).toEqual([{ name: 'xmap', description: '扫描', input_schema: tools[0].function.parameters }]);
+    expect(result.message).toBe('好的，我来扫描');
+    expect(result.toolCalls).toEqual([{ id: 'tu_1', name: 'xmap', arguments: { target: '2001:db8::/64' } }]);
+  });
+
+  test('Anthropic：不传 tools 时请求里没有 tools，toolCalls 为空数组', async () => {
+    const llm = load({ MINIMAX_API_KEY: 'mm-key' });
+    mockPost.mockResolvedValue({ data: { content: [{ type: 'text', text: 'hi' }] } });
+    const result = await llm.chat('你好');
+    expect(mockPost.mock.calls[0][1].tools).toBeUndefined();
+    expect(result.toolCalls).toEqual([]);
+  });
+
+  test('OpenAI：请求带 tools 与 tool_choice=auto；arguments 字符串被解析成对象', async () => {
+    const llm = load({ AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'ds-key' });
+    mockPost.mockResolvedValue({
+      data: { choices: [{ message: { content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'xmap', arguments: '{"target":"2001:db8::1"}' } }] } }] }
+    });
+    const result = await llm.chat('扫描', [], { tools });
+    const body = mockPost.mock.calls[0][1];
+    expect(body.tools).toEqual(tools);
+    expect(body.tool_choice).toBe('auto');
+    expect(result.message).toBe('');
+    expect(result.toolCalls).toEqual([{ id: 'call_1', name: 'xmap', arguments: { target: '2001:db8::1' } }]);
+  });
+
+  test.each([
+    ['不是合法 JSON', '{bad'],
+    ['不是对象', '[1,2]'],
+    ['不是对象', '"x"']
+  ])('OpenAI：arguments %s → arguments 为 null 并带 argumentsError', async (_label, raw) => {
+    const llm = load({ AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'ds-key' });
+    mockPost.mockResolvedValue({ data: { choices: [{ message: { tool_calls: [{ id: 'c', function: { name: 'xmap', arguments: raw } }] } }] } });
+    const result = await llm.chat('扫描', [], { tools });
+    expect(result.toolCalls[0].arguments).toBeNull();
+    expect(result.toolCalls[0].argumentsError).toMatch(/JSON/);
+  });
+
+  test('OpenAI：空 arguments 视为空对象；缺 function 的项被忽略', async () => {
+    const llm = load({ AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'ds-key' });
+    mockPost.mockResolvedValue({ data: { choices: [{ message: { tool_calls: [{ id: 'a', function: { name: 'workflow', arguments: '' } }, { id: 'b' }, null] } }] } });
+    const result = await llm.chat('x', [], { tools });
+    expect(result.toolCalls).toEqual([{ id: 'a', name: 'workflow', arguments: {} }]);
+  });
+
+  test('supportsNativeTools：有密钥且未被 AGENT_NATIVE_TOOLS=false 关闭', () => {
+    expect(load({ MINIMAX_API_KEY: 'k' }).supportsNativeTools()).toBe(true);
+    expect(load({ MINIMAX_API_KEY: 'k', AGENT_NATIVE_TOOLS: 'false' }).supportsNativeTools()).toBe(false);
+    expect(load({ AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'k' }).supportsNativeTools()).toBe(true);
+    expect(load({}).supportsNativeTools()).toBe(false);
   });
 });
