@@ -103,6 +103,63 @@ const getTaskCounts = async (taskType) => {
   return counts;
 };
 
+// ---------- 调度用查询 ----------
+
+const parseParams = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return value; // MySQL 的 JSON 列由驱动解析为对象
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null; // MariaDB 的 JSON 是 LONGTEXT；内容损坏时让调用方按“缺少参数”处理
+  }
+};
+
+/**
+ * 领取一个 pending 任务（置为 running）。条件更新保证同一任务只会被领取一次，
+ * 也不会领到已被取消的任务。返回是否领取成功。
+ */
+const claimTask = async (taskId) => {
+  const result = await db.query(
+    `UPDATE tasks SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'`,
+    [taskId]
+  );
+  return affected(result);
+};
+
+/** 某类任务中等待执行的任务，按 优先级降序、入队时间、ID 排序。 */
+const listPendingTasks = async (taskType, limit = 100) => {
+  const [rows] = await db.query(
+    `SELECT id, user_id, task_type, command, description, log_path, output_path, params, priority, queued_at
+     FROM tasks
+     WHERE status = 'pending' AND task_type = ?
+     ORDER BY priority DESC, queued_at ASC, id ASC
+     LIMIT ?`,
+    [taskType, limit]
+  );
+  return (rows || []).map((row) => ({
+    id: Number(row.id),
+    userId: row.user_id,
+    taskType: row.task_type,
+    command: row.command,
+    description: row.description,
+    logPath: row.log_path,
+    outputPath: row.output_path,
+    params: parseParams(row.params),
+    priority: row.priority,
+    queuedAt: row.queued_at
+  }));
+};
+
+/** 某类任务正在运行的数量，按用户统计：Map<userId, count>。 */
+const getRunningCountsByUser = async (taskType) => {
+  const [rows] = await db.query(
+    "SELECT user_id, COUNT(*) AS count FROM tasks WHERE status = 'running' AND task_type = ? GROUP BY user_id",
+    [taskType]
+  );
+  return new Map((rows || []).map((row) => [row.user_id, Number(row.count)]));
+};
+
 // ---------- 进程探测 ----------
 
 /**
@@ -212,6 +269,9 @@ module.exports = {
   markTaskFinished,
   markTaskCanceled,
   getTaskCounts,
+  claimTask,
+  listPendingTasks,
+  getRunningCountsByUser,
   isTaskProcessAlive,
   signalTaskProcess,
   reconcileTasksOnStartup,
