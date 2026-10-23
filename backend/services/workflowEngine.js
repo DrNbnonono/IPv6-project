@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const api = require('../api/internal'); // 内部API调用
 const aliasDetect = require('./aliasDetectService');
+const targetGen = require('./targetGenService');
 
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('workflow-engine');
@@ -120,6 +121,9 @@ async function executeNode(context, node) {
         break;
       case 'apd_filter':
         outputData = await executeApdFilterNode(node, inputData, userId);
+        break;
+      case 'tga_generate':
+        outputData = await executeTgaGenerateNode(node, inputData, userId);
         break;
       case 'json_custom_extract':
         outputData = await executeJsonCustomExtractNode(node, inputData, userId);
@@ -466,6 +470,53 @@ async function executeApdFilterNode(node, inputData, userId) {
 }
 
 /**
+ * 目标生成节点：以输入文件里的地址为种子创建 TGA 任务并等待完成，
+ * 输出生成的地址文件（已登记到 whitelists，下游的 XMap 节点可直接使用）。
+ */
+async function executeTgaGenerateNode(node, inputData, userId) {
+  const inputFile = inputData.default || inputData.file;
+  if (!inputFile || !inputFile.fileName) {
+    throw new Error('目标生成节点缺少输入文件');
+  }
+  const config = node.config || {};
+
+  const created = await targetGen.enqueueTgaTask({
+    user: { id: userId },
+    body: {
+      algorithm: config.algorithm || 'density-expand',
+      budget: config.budget || undefined,
+      seedFile: inputFile.fileName,
+      excludeAliased: config.excludeAliased !== false && config.excludeAliased !== 'false',
+      description: `工作流目标生成 - ${node.id}`
+    }
+  });
+
+  const details = await waitForTaskCompletion(created.taskId, 'tga', userId);
+  const summary = details.summary || {};
+
+  const [files] = await db.query(
+    'SELECT id, file_path, file_name FROM whitelists WHERE user_id = ? AND file_name = ? AND is_deleted = 0 LIMIT 1',
+    [userId, summary.fileName]
+  );
+  if (!files || files.length === 0) {
+    throw new Error('目标生成已完成，但找不到生成的地址文件');
+  }
+  if (!summary.generated) {
+    throw new Error('目标生成没有产生任何新地址（候选空间已耗尽或全部被排除），请换算法或增加种子');
+  }
+
+  return {
+    type: 'file',
+    taskId: created.taskId,
+    fileId: files[0].id,
+    filePath: files[0].file_path,
+    fileName: files[0].file_name,
+    fileType: 'txt',
+    tga: { algorithm: summary.algorithm, seeds: summary.seeds, generated: summary.generated, aliasedSkipped: summary.aliasedSkipped, scannable: summary.scannable }
+  };
+}
+
+/**
  * ZGrab2 JSON结果提取节点执行
  */
 async function executeZgrab2JsonExtractNode(node, inputData, userId) {
@@ -667,6 +718,8 @@ async function waitForTaskCompletion(taskId, taskType, userId, maxWaitTime = 360
       taskDetails = await api.xmap.getTaskDetails(taskId, userId);
     } else if (taskType === 'zgrab2') {
       taskDetails = await api.zgrab2.getTaskDetails(taskId, userId);
+    } else if (taskType === 'tga') {
+      taskDetails = await api.tga.getTaskDetails(taskId, userId);
     } else {
       throw new Error(`不支持的任务类型: ${taskType}`);
     }
@@ -859,6 +912,7 @@ async function resumeExecution(executionId, userId) {
 
 module.exports = {
   executeApdFilterNode,
+  executeTgaGenerateNode,
   waitForTaskCompletion,
   executeWorkflow,
   cancelExecution,

@@ -6,6 +6,7 @@
 const xmapController = require('../controllers/xmapController');
 const zgrab2Controller = require('../controllers/zgrab2Controller');
 const jsonanalysisController = require('../controllers/jsonanalysisController');
+const tgaController = require('../controllers/tgaController');
 
 /**
  * 模拟Express请求对象
@@ -109,6 +110,21 @@ const zgrab2 = {
 };
 
 /**
+ * 目标生成相关API
+ */
+const tga = {
+  async getTaskDetails(taskId, userId) {
+    const req = createMockRequest({}, userId);
+    req.params.taskId = taskId;
+    const res = createMockResponse();
+
+    await tgaController.getTgaTaskDetails(req, res);
+    const response = res.getResponse();
+    return response.success ? response.task : response;
+  }
+};
+
+/**
  * JSON分析相关API
  */
 const jsonanalysis = {
@@ -157,5 +173,6 @@ const jsonanalysis = {
 module.exports = {
   xmap,
   zgrab2,
+  tga,
   jsonanalysis
 };
