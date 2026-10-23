@@ -73,6 +73,7 @@ import { ref, computed, onMounted } from 'vue'
 import { marked } from 'marked'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
+import api from '@/api'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -94,8 +95,7 @@ const compiledMarkdown = computed(() => {
 // 从后端获取文档目录结构
 const fetchToc = async () => {
   try {
-    const response = await fetch(`/api/docs/${currentLang.value}/toc`)
-    const data = await response.json()
+    const data = await api.docs.getToc(currentLang.value)
     
     if (data.success) {
       toc.value = data.toc
@@ -152,8 +152,7 @@ const loadDoc = async (docId) => {
   isLoading.value = true
   
   try {
-    const response = await fetch(`/api/docs/${currentLang.value}/${docId}`)
-    const data = await response.json()
+    const data = await api.docs.getContent(currentLang.value, docId)
     
     if (data.success) {
       currentDocContent.value = data.content
@@ -174,18 +173,7 @@ const saveDoc = async () => {
   if (!isAdmin.value) return
   
   try {
-    const response = await fetch(`/api/docs/${currentLang.value}/${currentDoc.value}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStore.token}`
-      },
-      body: JSON.stringify({
-        content: currentDocContent.value
-      })
-    })
-    
-    const data = await response.json()
+    const data = await api.docs.updateContent(currentLang.value, currentDoc.value, currentDocContent.value)
     
     if (data.success) {
       editMode.value = false

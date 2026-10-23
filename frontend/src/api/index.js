@@ -271,6 +271,9 @@ export default {
     getList(lang) {
       return apiClient.get(`/docs/${lang}`)
     },
+    getToc(lang) {
+      return apiClient.get(`/docs/${lang}/toc`)
+    },
     getContent(lang, docId) {
       return apiClient.get(`/docs/${lang}/${docId}`)
     },
