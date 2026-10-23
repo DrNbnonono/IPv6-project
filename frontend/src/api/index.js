@@ -528,6 +528,28 @@ export default {
     }
   },
 
+  // 结果富化：IID 分类、按类型过滤、库内富化任务（管理员）
+  enrich: {
+    classify(addresses) {
+      return apiClient.post('/database/classify-iid', { addresses });
+    },
+    filter(data) {
+      return apiClient.post('/database/filter-iid', data);
+    },
+    createTask(data) {
+      return apiClient.post('/database/enrich-iid', data);
+    },
+    getTasks(params) {
+      return apiClient.get('/database/enrich-iid/tasks', { params });
+    },
+    getTaskDetails(taskId) {
+      return apiClient.get(`/database/enrich-iid/task/${taskId}`);
+    },
+    cancelTask(taskId) {
+      return apiClient.post(`/database/enrich-iid/cancel/${taskId}`);
+    }
+  },
+
   // 文件管理API
   // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
   admin: {

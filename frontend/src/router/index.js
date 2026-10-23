@@ -105,6 +105,15 @@ const routes = [
         }
       },
       {
+        path: '/tools/enrich',
+        name: 'enrich',
+        component: () => import('@/views/tools/enrich/EnrichDashboardView.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '地址分类与富化'
+        }
+      },
+      {
         path: '/tools/tga',
         name: 'tga',
         component: () => import('@/views/tools/tga/TgaDashboardView.vue'),
