@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '@/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const router = useRouter()
@@ -19,29 +19,27 @@ export const useAuthStore = defineStore('auth', () => {
     errorMessage.value = ''
     
     try {
-      const response = await axios.post('/api/auth/login', {
+      // api 层的响应拦截器已返回响应体
+      const response = await api.auth.login({
         phone: phoneInput,
         password
       })
 
-      if (response.data.success) {
-        token.value = response.data.token
+      if (response.success) {
+        token.value = response.token
         phone.value = phoneInput  // 存储手机号
-        username.value = response.data.username  // 存储用户名
-        role.value = response.data.role
+        username.value = response.username  // 存储用户名
+        role.value = response.role
         localStorage.setItem('token', token.value)
         localStorage.setItem('phone', phone.value)  // 存储到本地
         localStorage.setItem('username', username.value)  // 存储用户名
         localStorage.setItem('role', role.value)
-        
-        // 更新axios默认headers
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
-        
+
         const redirect = router.currentRoute.value.query.redirect || '/tools'
         router.push(redirect)
       }
       
-      return response.data
+      return response
     } catch (error) {
       errorMessage.value = error.response?.data?.message || '登录失败，请检查网络连接'
       throw error
@@ -58,7 +56,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('phone')  // 清除本地存储
     localStorage.removeItem('role')
     localStorage.removeItem('username')  // 清除用户名
-    delete axios.defaults.headers.common['Authorization']
     router.push('/login')
   }
 
@@ -67,10 +64,6 @@ export const useAuthStore = defineStore('auth', () => {
     phone.value = localStorage.getItem('phone')  // 初始化时加载
     role.value = localStorage.getItem('role')
     username.value = localStorage.getItem('username')  // 初始化时加载用户名
-    
-    if (token.value) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
-    }
   }
 
   init()
