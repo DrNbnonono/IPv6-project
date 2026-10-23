@@ -5,6 +5,7 @@
  *   GET  /enrich-iid/tasks              管理员；任务列表
  *   GET  /enrich-iid/task/:taskId       管理员；任务详情（含摘要、运行中的进度）
  *   POST /enrich-iid/cancel/:taskId     管理员；终止
+ *   POST /filter-iid                    登录即可；按 IID 类型保留/剔除地址，可保存为自己的 ZGrab2/XMap 输入文件
  * 富化任务写的是共享的 active_addresses，所以任务接口都要求管理员，任务对所有管理员可见。
  */
 
@@ -23,6 +24,7 @@ const fail = (res, status, message) => res.status(status).json({ success: false,
 
 const handleError = (res, label, error) => {
   if (error instanceof enrichTasks.EnrichError) return fail(res, error.status, error.message);
+  if (error instanceof enrich.EnrichFilterError) return fail(res, 400, error.message);
   logger.error(`${label}失败:`, error.message);
   return fail(res, 500, `${label}失败`);
 };
@@ -63,6 +65,17 @@ exports.classifyIid = async (req, res) => {
     res.json({ success: true, data: { items, counts, invalid: items.filter((i) => !i.valid).length } });
   } catch (error) {
     handleError(res, 'IID 分类', error);
+  }
+};
+
+exports.filterIid = async (req, res) => {
+  try {
+    const result = await enrich.filterByIidType({ user: req.user, body: req.body || {} });
+    // 响应不含服务器路径
+    if (result.savedFile) delete result.savedFile.filePath;
+    res.json({ success: true, data: result });
+  } catch (error) {
+    handleError(res, '按 IID 类型过滤', error);
   }
 };
 

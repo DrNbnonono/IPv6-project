@@ -270,6 +270,35 @@ const NODE_TYPES = {
       }
     }
   },
+  'iid_filter': {
+    name: 'IID类型过滤',
+    description: '按接口标识（IID）类型保留或剔除输入地址：例如剔除随机 IID（多为终端的临时地址），只扫描低位编号、EUI-64 等更像基础设施的地址。类型由规则判断，是启发式的',
+    category: 'process',
+    inputs: ['file'],
+    outputs: ['file'],
+    config: {
+      mode: {
+        type: 'select',
+        options: ['drop', 'keep'],
+        default: 'drop',
+        label: '过滤方式',
+        description: 'drop：剔除所选类型；keep：只保留所选类型'
+      },
+      types: {
+        type: 'string',
+        default: 'random',
+        label: 'IID 类型',
+        description: '逗号分隔，可选：isatap、ieee、low-byte、service、embed-port、byte-pattern、ipv4-32、ipv4-64、random'
+      },
+      outputTool: {
+        type: 'select',
+        options: ['zgrab2', 'xmap'],
+        default: 'zgrab2',
+        label: '输出文件用途',
+        description: '过滤后的地址文件登记为哪个工具的输入文件'
+      }
+    }
+  },
   'zgrab2_json_extract': {
     name: 'ZGrab2结果提取',
     description: '从ZGrab2扫描结果中提取成功的服务信息和IP地址',

@@ -242,7 +242,72 @@ const enrichAddresses = async (addressIds, { overwrite = false, fillPrefix = tru
   return stats;
 };
 
+// ---------- 按 IID 类型过滤地址列表 ----------
+
+/** classifyIid 可能返回的类型名（库里的 ipv4-all / embed-port-all / embed-port-rev 不会产出）。 */
+const CLASSIFIER_TYPES = ['isatap', 'ieee', 'low-byte', 'service', 'embed-port', 'byte-pattern', 'ipv4-32', 'ipv4-64', 'random'];
+const MAX_FILTER_ADDRESSES = 1000000;
+
+class EnrichFilterError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'EnrichFilterError';
+  }
+}
+
+/**
+ * 按 IID 类型保留（keep）或剔除（drop）地址。不是 IPv6 单地址的行一律丢弃并计入 invalid。
+ *   body: { addressFile? | addresses?, mode: 'keep' | 'drop', types: [类型名], save?, tool? ('zgrab2' | 'xmap', 默认 zgrab2) }
+ * 返回 { total, kept, removed, invalid, counts（输入中各类型的数量）, savedFile }；save 时把保留的地址登记为对应工具的输入文件。
+ */
+const filterByIidType = async ({ user, body = {} }) => {
+  const mode = body.mode === 'drop' ? 'drop' : body.mode === 'keep' ? 'keep' : null;
+  if (!mode) throw new EnrichFilterError("mode 必须是 'keep'（只保留所选类型）或 'drop'（剔除所选类型）");
+  const types = Array.isArray(body.types) ? [...new Set(body.types.map(String))] : [];
+  if (types.length === 0) throw new EnrichFilterError('请选择至少一个 IID 类型');
+  const unknown = types.filter((t) => !CLASSIFIER_TYPES.includes(t));
+  if (unknown.length > 0) throw new EnrichFilterError(`不支持的 IID 类型: ${unknown.join(', ')}`);
+
+  let addresses;
+  if (body.addressFile) {
+    addresses = await require('./aliasDetectService').readAddressFile(user.id, body.addressFile);
+  } else if (body.addresses !== undefined) {
+    addresses = (Array.isArray(body.addresses) ? body.addresses : String(body.addresses).split(/[\s,;]+/)).map((a) => String(a).trim()).filter(Boolean);
+  } else {
+    throw new EnrichFilterError('请提供 addressFile 或 addresses');
+  }
+  if (addresses.length === 0) throw new EnrichFilterError('地址列表为空');
+  if (addresses.length > MAX_FILTER_ADDRESSES) throw new EnrichFilterError(`地址数量超过 ${MAX_FILTER_ADDRESSES}`);
+
+  const selected = new Set(types);
+  const kept = [];
+  const counts = {};
+  let invalid = 0;
+  for (const address of addresses) {
+    const type = classifyIid(address);
+    if (type === null) {
+      invalid += 1;
+      continue;
+    }
+    counts[type] = (counts[type] || 0) + 1;
+    if (selected.has(type) === (mode === 'keep')) kept.push(address);
+  }
+
+  const result = { total: addresses.length, kept: kept.length, removed: addresses.length - invalid - kept.length, invalid, counts, savedFile: null };
+  if (body.save) {
+    if (kept.length === 0) throw new EnrichFilterError('过滤后没有剩余地址，不生成文件');
+    const tool = body.tool === 'xmap' ? 'xmap' : 'zgrab2';
+    const { saveTargetsFile } = require('./storageService');
+    const saved = await saveTargetsFile(user.id, kept, tool, `按 IID 类型过滤（${mode === 'keep' ? '保留' : '剔除'} ${types.join('、')}）`);
+    result.savedFile = { fileId: saved.fileId, fileName: saved.fileName, filePath: saved.filePath, count: saved.count, tool };
+  }
+  return result;
+};
+
 module.exports = {
+  CLASSIFIER_TYPES,
+  EnrichFilterError,
+  filterByIidType,
   classifyIid,
   extractEui64Mac,
   loadOriginIndex,

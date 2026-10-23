@@ -10,6 +10,8 @@ router.use(authenticate);
 
 // 纯计算、不写库：放在审计中间件之前，避免记成 db.write
 router.post('/classify-iid', enrichController.classifyIid);
+// 只会为当前用户生成自己的输入文件（不写共享数据）
+router.post('/filter-iid', enrichController.filterIid);
 
 // 写操作与 advanced-query 记入审计日志
 router.use(auditWrites('db'));
