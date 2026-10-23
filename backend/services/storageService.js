@@ -22,6 +22,8 @@ const DIRS = {
   zgrab2Logs: path.join(PROJECT_ROOT, 'zgrab2_logs'),
   zgrab2Inputs: path.join(PROJECT_ROOT, 'zgrab2_inputs'),
   zgrab2Configs: path.join(PROJECT_ROOT, 'zgrab2_configs'),
+  apdInputs: path.join(PROJECT_ROOT, 'apd_inputs'),
+  apdResults: path.join(PROJECT_ROOT, 'apd_results'),
   uploads: path.join(PROJECT_ROOT, 'uploads'),
   ipv6Addresses: path.join(PROJECT_ROOT, 'IPv6_addresses'),
   jsonanalysis: path.join(PROJECT_ROOT, 'jsonanalysis'),

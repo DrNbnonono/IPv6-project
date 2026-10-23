@@ -14,7 +14,7 @@
  * 速率与配额（环境变量给默认值，user_quotas 表按用户覆盖）：
  * - SCAN_MAX_RATE（默认 100M，单位 bit/s，支持 K/M/G 后缀）：单个 xmap 任务的速率上限；
  * - SCAN_DEFAULT_RATE（默认 10M）：请求未指定速率时使用的值（不超过上限）；
- * - SCAN_DAILY_LIMIT（默认 100）：每个用户每天可创建的扫描任务数（xmap + zgrab2）。
+ * - SCAN_DAILY_LIMIT（默认 100）：每个用户每天可创建的扫描任务数（xmap + zgrab2 + apd）。
  *
  * 本服务返回 { allowed, reason, normalized }，不抛出业务异常；数据库错误会向上抛出。
  * 说明：策略在创建任务时检查；任务排队期间白名单发生变化不会重新检查。
@@ -132,7 +132,7 @@ const deny = (reason) => ({ allowed: false, reason, normalized: null });
 /** 今天（服务器时区）该用户已创建的扫描任务数。 */
 const countTodayScans = async (userId) => {
   const result = await db.query(
-    "SELECT COUNT(*) AS count FROM tasks WHERE user_id = ? AND task_type IN ('xmap', 'zgrab2') AND created_at >= CURDATE()",
+    "SELECT COUNT(*) AS count FROM tasks WHERE user_id = ? AND task_type IN ('xmap', 'zgrab2', 'apd') AND created_at >= CURDATE()",
     [userId]
   );
   return Number((rows(result)[0] || {}).count || 0);
@@ -141,7 +141,7 @@ const countTodayScans = async (userId) => {
 /**
  * 校验一个扫描请求。
  *   user      { id }
- *   taskType  'xmap' | 'zgrab2'（只有 xmap 检查速率）
+ *   taskType  'xmap' | 'zgrab2' | 'apd'（xmap 与 apd 会发送探测包，检查速率；zgrab2 不检查）
  *   targets   地址/CIDR 的数组或逗号分隔字符串
  *   rate      请求的速率（xmap 的 -B 写法，如 '10M'），可省略
  *   requireTargets  为 true（默认）时，没有任何目标即拒绝
@@ -166,7 +166,7 @@ const validateScanRequest = async ({ user, taskType, targets, rate, requireTarge
 
   const normalized = { targets: normalizedTargets };
 
-  if (taskType === 'xmap') {
+  if (taskType === 'xmap' || taskType === 'apd') {
     let rateBps;
     if (rate === undefined || rate === null || rate === '') {
       rateBps = policy.defaultRateBps;

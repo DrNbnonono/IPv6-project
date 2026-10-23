@@ -219,11 +219,11 @@ describe('每日配额', () => {
     expect((await xmap('2001:db8::1')).allowed).toBe(true);
   });
 
-  test('统计只看 xmap 与 zgrab2 任务、今天创建的', async () => {
+  test('统计只看 xmap、zgrab2 与 apd 任务、今天创建的', async () => {
     setPolicy({ allow: ['2001:db8::/32'] });
     await xmap('2001:db8::1');
     const countSql = db.query.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('FROM tasks'));
-    expect(countSql).toMatch(/task_type IN \('xmap', 'zgrab2'\)/);
+    expect(countSql).toMatch(/task_type IN \('xmap', 'zgrab2', 'apd'\)/);
     expect(countSql).toMatch(/created_at >= CURDATE\(\)/);
   });
 
