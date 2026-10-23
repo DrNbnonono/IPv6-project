@@ -36,10 +36,9 @@ zgrab2_logs/
 xmap_result/
 zgrab2_results/
 IPv6_addresses/
-zgrab2_input/
-zgrab2_config/
-zgrab2_logs/
 zgrab2_inputs/
+zgrab2_configs/
+zgrab2_logs/
 
 # Environment variables
 .env
@@ -117,9 +116,6 @@ jspm_packages/
 tmp/
 temp/
 
-# Documentation (if you want to ignore it)
-docs/
-
 # Upload directories
 backend/uploads/
 
@@ -146,8 +142,6 @@ xmap_result/
 xmap_log/
 IPv6_addresses/
 zgrab2_logs/
-zgrab2_config/
-zgrab2_input/
 zgrab2_results/
 01-address/
 /jsonanalysis/
@@ -159,3 +153,10 @@ zgrab2_results/
 AI_INTEGRATION_README.md
 
 prompt.md
+
+# 运行期生成的数据目录与杂项
+/whitelists/
+/reports/
+/uploads/
+nohup.out
+*:Zone.Identifier
