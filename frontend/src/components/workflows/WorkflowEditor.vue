@@ -677,6 +677,7 @@ const getNodeIcon = (nodeType) => {
     json_custom_extract: 'icon-letter-j',
     apd_filter: 'icon-letter-a',
     tga_generate: 'icon-letter-t',
+    iid_filter: 'icon-letter-i',
     file_output: 'icon-letter-o'
   }
   return icons[nodeType] || 'icon-letter-n'
@@ -1457,6 +1458,13 @@ const generateExpectedFiles = () => {
           type: '目标生成结果',
           path: '/whitelists/（生成的地址文件）',
           description: '由种子地址生成的候选目标，已登记为 XMap 白名单，可直接作为扫描节点的输入'
+        })
+        break
+      case 'iid_filter':
+        files.push({
+          type: 'IID类型过滤结果',
+          path: `/${node.config.outputTool === 'xmap' ? 'whitelists' : 'zgrab2_inputs'}/（过滤后的地址文件）`,
+          description: `${node.config.mode === 'keep' ? '只保留' : '剔除'}所选 IID 类型后的地址文件，可直接作为下一个扫描节点的输入`
         })
         break
       case 'file_output':
@@ -2604,6 +2612,7 @@ watch(() => props.workflowId, async (newId) => {
 .icon-letter-j::before { content: "J"; }
 .icon-letter-a::before { content: "A"; }
 .icon-letter-t::before { content: "T"; }
+.icon-letter-i::before { content: "I"; }
 .icon-letter-o::before { content: "O"; }
 .icon-letter-n::before { content: "N"; }
 
