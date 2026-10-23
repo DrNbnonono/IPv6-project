@@ -223,6 +223,22 @@ const NODE_TYPES = {
       }
     }
   },
+  'apd_filter': {
+    name: '别名前缀过滤',
+    description: '用已检测到的别名前缀（别名前缀检测页面产生）剔除输入地址中落在别名前缀内的地址，输出剩余地址',
+    category: 'process',
+    inputs: ['file'],
+    outputs: ['file'],
+    config: {
+      outputTool: {
+        type: 'select',
+        options: ['zgrab2', 'xmap'],
+        default: 'zgrab2',
+        label: '输出文件用途',
+        description: '过滤后的地址文件登记为哪个工具的输入文件'
+      }
+    }
+  },
   'zgrab2_json_extract': {
     name: 'ZGrab2结果提取',
     description: '从ZGrab2扫描结果中提取成功的服务信息和IP地址',
@@ -727,6 +743,50 @@ exports.getWorkflowTemplates = async (req, res) => {
             { from: 'extract_1', to: 'zgrab2_1', fromPort: 'file', toPort: 'file' },
             { from: 'zgrab2_1', to: 'extract_2', fromPort: 'result_file', toPort: 'result_file' },
             { from: 'extract_2', to: 'output_1', fromPort: 'file', toPort: 'file' }
+          ]
+        }
+      },
+      {
+        id: 'xmap_apd_zgrab2',
+        name: 'XMap + 别名过滤 + ZGrab2',
+        description: 'XMap 探测后先剔除已知别名前缀内的地址，再做应用层扫描，避免别名前缀拉高结果',
+        category: 'scan',
+        tags: ['xmap', 'apd', 'zgrab2', 'ipv6'],
+        definition: {
+          nodes: [
+            { id: 'input_1', type: 'file_input', position: { x: 50, y: 150 }, config: { fileType: 'txt', label: 'IPv6地址列表文件' } },
+            {
+              id: 'xmap_1',
+              type: 'xmap_scan',
+              position: { x: 250, y: 150 },
+              config: { ipv6: true, ipv4: false, probeModule: 'icmp_echo', rate: 1000, maxResults: 10000, description: 'IPv6网络活跃性探测' }
+            },
+            {
+              id: 'extract_1',
+              type: 'xmap_json_extract',
+              position: { x: 450, y: 150 },
+              config: { extractType: 'successful_addresses', successOnly: true, outputFormat: 'txt', fileName: 'active_ipv6_addresses' }
+            },
+            { id: 'apd_1', type: 'apd_filter', position: { x: 650, y: 150 }, config: { outputTool: 'zgrab2' } },
+            {
+              id: 'zgrab2_1',
+              type: 'zgrab2_scan',
+              position: { x: 850, y: 150 },
+              config: { module: 'http', port: 80, timeout: 10, description: 'HTTP服务扫描' }
+            },
+            {
+              id: 'extract_2',
+              type: 'zgrab2_json_extract',
+              position: { x: 1050, y: 150 },
+              config: { extractType: 'successful_ips', successOnly: true, includeMetadata: true, outputFormat: 'json', fileName: 'http_services' }
+            }
+          ],
+          connections: [
+            { from: 'input_1', to: 'xmap_1', fromPort: 'file', toPort: 'file' },
+            { from: 'xmap_1', to: 'extract_1', fromPort: 'result_file', toPort: 'result_file' },
+            { from: 'extract_1', to: 'apd_1', fromPort: 'file', toPort: 'file' },
+            { from: 'apd_1', to: 'zgrab2_1', fromPort: 'file', toPort: 'file' },
+            { from: 'zgrab2_1', to: 'extract_2', fromPort: 'result_file', toPort: 'result_file' }
           ]
         }
       },

@@ -675,6 +675,7 @@ const getNodeIcon = (nodeType) => {
     xmap_json_extract: 'icon-letter-e',
     zgrab2_json_extract: 'icon-letter-e',
     json_custom_extract: 'icon-letter-j',
+    apd_filter: 'icon-letter-a',
     file_output: 'icon-letter-o'
   }
   return icons[nodeType] || 'icon-letter-n'
@@ -1441,6 +1442,13 @@ const generateExpectedFiles = () => {
           type: 'ZGrab2提取结果',
           path: `/jsonanalysis/${zgrab2FileName}_${timestamp}.${zgrab2Format}`,
           description: `从ZGrab2结果中提取的${node.config.extractType || 'successful_ips'}数据`
+        })
+        break
+      case 'apd_filter':
+        files.push({
+          type: '别名前缀过滤结果',
+          path: `/${node.config.outputTool === 'xmap' ? 'whitelists' : 'zgrab2_inputs'}/（过滤后的地址文件）`,
+          description: '剔除已知别名前缀内地址后的地址文件，可直接作为下一个扫描节点的输入'
         })
         break
       case 'file_output':
@@ -2586,6 +2594,7 @@ watch(() => props.workflowId, async (newId) => {
 .icon-letter-z::before { content: "Z"; }
 .icon-letter-e::before { content: "E"; }
 .icon-letter-j::before { content: "J"; }
+.icon-letter-a::before { content: "A"; }
 .icon-letter-o::before { content: "O"; }
 .icon-letter-n::before { content: "N"; }
 
