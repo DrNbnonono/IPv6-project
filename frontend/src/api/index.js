@@ -121,6 +121,20 @@ export default {
 
     // 文件管理功能已移至统一的 /files 接口
 
+    // 扫描预设（模块 + 端口的套件）；套用会生成多模块 INI 配置文件
+    getPresets() {
+      return apiClient.get('/zgrab2/presets');
+    },
+    createPreset(data) {
+      return apiClient.post('/zgrab2/presets', data);
+    },
+    deletePreset(id) {
+      return apiClient.delete(`/zgrab2/presets/${id}`);
+    },
+    applyPreset(id) {
+      return apiClient.post(`/zgrab2/presets/${id}/apply`);
+    },
+
     // 创建扫描任务
     createTask(params) {
       return apiClient.post('/zgrab2', params);

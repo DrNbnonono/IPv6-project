@@ -12,6 +12,10 @@
 
     <div class="task-form">
       <div class="form-section">
+        <ScanPresetPanel :modules="supportedModules" @applied="onPresetApplied" />
+      </div>
+
+      <div class="form-section">
         <h3 class="section-title">基本配置</h3>
 
         <div class="form-row">
@@ -403,6 +407,7 @@ endpoint="/"
 import { ref, computed, onMounted } from 'vue'
 import { useZgrab2Store } from '@/stores/zgrab2'
 import { useFileStore } from '@/stores/file'
+import ScanPresetPanel from './ScanPresetPanel.vue'
 
 const emit = defineEmits(['task-created'])
 
@@ -485,6 +490,18 @@ const onScanModeChange = () => {
   taskConfig.value.port = ''
   taskConfig.value.configFile = ''
   taskConfig.value.additionalParams = ''
+}
+
+// 套用预设后：切到多模块扫描并选中生成的配置文件（配置文件列表已由 store 刷新）
+const onPresetApplied = ({ fileName, name }) => {
+  errorMessage.value = ''
+  taskConfig.value.scanMode = 'multiple'
+  taskConfig.value.module = ''
+  taskConfig.value.port = ''
+  taskConfig.value.configFile = fileName
+  configs.value = zgrab2Store.configs
+  if (!taskConfig.value.description) taskConfig.value.description = `扫描预设：${name}`
+  successMessage.value = `已套用预设“${name}”，请选择输入文件后启动扫描`
 }
 
 // 上传配置文件
