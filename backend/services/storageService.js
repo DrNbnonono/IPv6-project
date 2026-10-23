@@ -179,19 +179,21 @@ const saveTargetsFile = async (userId, targets, tool, description = 'Agent ç”Ÿæˆ
 
   fs.writeFileSync(filePath, `${list.join('\n')}\n`, { encoding: 'utf8', flag: 'wx' });
 
+  let fileId = null;
   try {
-    await db.query(
+    const [inserted] = await db.query(
       `INSERT INTO whitelists
        (user_id, tool_id, file_name, file_path, description, is_deleted, uploaded_at)
        VALUES (?, ?, ?, ?, ?, 0, NOW())`,
       [userId, tools[0].id, fileName, filePath, description]
     );
+    fileId = (inserted && inserted.insertId) || null;
   } catch (error) {
     fs.rmSync(filePath, { force: true });
     throw error;
   }
 
-  return { fileName, filePath, count: list.length };
+  return { fileId, fileName, filePath, count: list.length };
 };
 
 module.exports = {

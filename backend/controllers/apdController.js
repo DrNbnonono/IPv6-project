@@ -247,6 +247,11 @@ exports.removeAliasedPrefix = async (req, res) => {
 exports.filterAddresses = async (req, res) => {
   try {
     const data = await aliasDetect.filterWithKnownAliases({ user: req.user, body: req.body || {} });
+    if (data.savedFile) {
+      // 服务器上的文件路径不返回给客户端，客户端用 fileName 引用文件
+      const { filePath: _filePath, ...savedFile } = data.savedFile;
+      data.savedFile = savedFile;
+    }
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, '过滤地址', error);

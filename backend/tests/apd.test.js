@@ -248,6 +248,20 @@ describe('POST /api/apd/filter', () => {
     expect(res.body.data).toMatchObject({ total: 2, kept: 1, removed: 1 });
   });
 
+  test('save：返回新文件名，但不返回服务器上的文件路径', async () => {
+    installDb({
+      'FROM aliased_prefixes': () => [[{ prefix: '2001:db8:1::/48' }]],
+      'FROM tools': () => [[{ id: 3 }]],
+      'INSERT INTO whitelists': () => [{ insertId: 9 }]
+    });
+    const res = await request(app).post('/api/apd/filter').set('Authorization', USER)
+      .send({ addresses: ['2001:db8:1::5', '2001:db8:2::5'], save: true });
+    expect(res.status).toBe(200);
+    expect(res.body.data.savedFile).toMatchObject({ fileId: 9, count: 1, tool: 'zgrab2' });
+    expect(res.body.data.savedFile.filePath).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain(tmpRoot);
+  });
+
   test('缺少输入：400', async () => {
     expect((await request(app).post('/api/apd/filter').set('Authorization', USER).send({})).status).toBe(400);
   });
