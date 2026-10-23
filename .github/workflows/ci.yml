@@ -134,12 +134,28 @@ jobs:
           printf '#!/bin/sh\n' > scanner-bin/xmap
           printf '#!/bin/sh\n' > scanner-bin/zgrab2
           docker compose -f docker-compose.yml -f docker-compose.scanner.yml config -q
+      # 失败时把日志末尾写成 error 注释，方便不展开完整日志就能看到原因
       - name: 构建镜像
-        run: docker compose build
+        run: |
+          set -o pipefail
+          docker compose build --progress=plain 2>&1 | tee build.log || {
+            echo "::error title=docker compose build 失败::$(tail -n 40 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          }
       - name: 构建带扫描工具的镜像（验证 setcap 等步骤）
-        run: docker compose -f docker-compose.yml -f docker-compose.scanner.yml build backend
+        run: |
+          set -o pipefail
+          docker compose -f docker-compose.yml -f docker-compose.scanner.yml build --progress=plain backend 2>&1 | tee scanner-build.log || {
+            echo "::error title=scanner 镜像构建失败::$(tail -n 40 scanner-build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          }
       - name: 启动并等待健康
-        run: docker compose up -d --wait --wait-timeout 240
+        run: |
+          set -o pipefail
+          docker compose up -d --wait --wait-timeout 240 2>&1 | tee up.log || {
+            echo "::error title=docker compose up 失败::$(tail -n 40 up.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          }
       - name: 冒烟测试
         run: |
           curl -fsS http://127.0.0.1:8080/api/health
@@ -151,7 +167,11 @@ jobs:
           test "$(docker compose exec -T backend id -u)" != "0"
       - name: 失败时输出日志
         if: failure()
-        run: docker compose ps -a; docker compose logs --no-color --tail=200
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200 > compose.log 2>&1 || true
+          tail -n 60 compose.log
+          echo "::warning title=容器日志末尾::$(tail -n 40 compose.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
       - name: 清理
         if: always()
         run: docker compose down -v
