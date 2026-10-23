@@ -204,3 +204,26 @@ describe('取消任务', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 });
+
+describe('启动失败的竞态', () => {
+  test('error 监听器在任何 await 之前就已挂上（error 事件在 spawn 后的下一个 tick 触发）', async () => {
+    let releaseRunningUpdate;
+    db.query.mockImplementation((sql) => {
+      if (/SET status = 'running'/.test(sql)) {
+        return new Promise((resolve) => { releaseRunningUpdate = () => resolve([{ affectedRows: 1 }]); });
+      }
+      return Promise.resolve([{}]);
+    });
+
+    const pending = scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    // 让 INSERT 完成、spawn 被调用，而 running 的 UPDATE 仍悬而未决
+    for (let i = 0; i < 20 && !releaseRunningUpdate; i += 1) await new Promise(setImmediate);
+
+    const child = mockSpawn.mock.results[0].value;
+    const events = child.on.mock.calls.map(([event]) => event);
+    expect(events).toEqual(expect.arrayContaining(['error', 'close']));
+
+    releaseRunningUpdate();
+    await pending;
+  });
+});

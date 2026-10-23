@@ -434,9 +434,8 @@ exports.scan = async (req, res) => {
     const errorStream = fs.createWriteStream(errorLogFile);
     xmapProcess.stderr.pipe(errorStream);
 
-    await taskService.markTaskRunning(taskId, xmapProcess.pid);
-
-    // 找不到 sudo / xmap 等启动失败会触发 error 事件；没有监听器时 Node 会抛出未捕获异常，使整个后端退出
+    // 找不到 sudo / xmap 等启动失败会触发 error 事件；没有监听器时 Node 会抛出未捕获异常，使整个后端退出。
+    // 监听器必须在任何 await 之前挂上：error 事件在 spawn 之后的下一个 tick 就会触发。
     xmapProcess.on('error', async (spawnError) => {
       activeProcesses.delete(taskId);
       logger.error(`任务 ${taskId} 启动失败`, { error: spawnError.message });
@@ -483,6 +482,8 @@ exports.scan = async (req, res) => {
         });
       }
     });
+
+    await taskService.markTaskRunning(taskId, xmapProcess.pid);
 
     res.status(202).json({
       success: true,
