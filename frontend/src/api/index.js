@@ -473,6 +473,40 @@ export default {
   
   
   // 文件管理API
+  // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
+  admin: {
+    getScanPolicy() {
+      return apiClient.get('/admin/scan-policy');
+    },
+    addAllowlistEntry(data) {
+      return apiClient.post('/admin/scan-allowlist', data);
+    },
+    removeAllowlistEntry(id) {
+      return apiClient.delete(`/admin/scan-allowlist/${id}`);
+    },
+    addBlacklistEntry(data) {
+      return apiClient.post('/admin/scan-blacklist', data);
+    },
+    removeBlacklistEntry(id) {
+      return apiClient.delete(`/admin/scan-blacklist/${id}`);
+    },
+    getQuotas() {
+      return apiClient.get('/admin/quotas');
+    },
+    setQuota(userId, data) {
+      return apiClient.put(`/admin/quotas/${userId}`, data);
+    },
+    clearQuota(userId) {
+      return apiClient.delete(`/admin/quotas/${userId}`);
+    },
+    getAuditLogs(params) {
+      return apiClient.get('/admin/audit-logs', { params });
+    },
+    getUsers() {
+      return apiClient.get('/admin/users');
+    }
+  },
+
   files: {
     uploadFile(formData) {
       return apiClient.post('/files/upload', formData, {
