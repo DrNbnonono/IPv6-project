@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const docController = require('../controllers/docController')
-const { authenticate } = require('../middleware/auth')
+const { authenticate, requireAdmin } = require('../middleware/auth')
 
 // ========== ZGrab2 文档相关路由 ==========
 // 注意：这些路由必须在XMap路由之前，以避免路由冲突
@@ -19,7 +19,7 @@ router.get('/zgrab2/:lang', docController.getZgrab2DocList)
 router.get('/zgrab2/:lang/:docId', docController.getZgrab2DocContent)
 
 // 更新ZGrab2文档内容 (需要管理员权限)
-router.put('/zgrab2/:lang/:docId', authenticate, docController.updateZgrab2DocContent)
+router.put('/zgrab2/:lang/:docId', authenticate, requireAdmin, docController.updateZgrab2DocContent)
 
 // ========== XMap 文档相关路由 ==========
 
@@ -33,6 +33,6 @@ router.get('/:lang', docController.getDocList)
 router.get('/:lang/:docId', docController.getDocContent)
 
 // 更新文档内容 (需要管理员权限)
-router.put('/:lang/:docId', authenticate, docController.updateDocContent)
+router.put('/:lang/:docId', authenticate, requireAdmin, docController.updateDocContent)
 
 module.exports = router
