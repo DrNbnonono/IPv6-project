@@ -1,11 +1,8 @@
 const fs = require('fs')
 const path = require('path')
-const { createLogger, transports } = require('winston') // Add transports to the import
 
-// 配置日志
-const logger = createLogger({
-  transports: [new transports.Console()]
-})
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('doc');
 
 const { DIRS } = require('../services/storageService')
 const XMAP_DOCS_DIR = DIRS.docsXmap

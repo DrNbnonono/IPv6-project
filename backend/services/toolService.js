@@ -5,6 +5,8 @@
 
 const db = require('../database/db');
 const storageService = require('./storageService');
+const { createModuleLogger } = require('./loggerService');
+const logger = createModuleLogger('tool');
 
 /**
  * 工具参数校验辅助
@@ -115,7 +117,7 @@ const TOOL_REGISTRY = {
           message: `XMap扫描任务已创建：${target}`
         };
       } catch (error) {
-        console.error('XMap工具执行错误:', error.message);
+        logger.error('XMap工具执行错误:', error.message);
         return {
           success: false,
           tool: 'xmap',
@@ -213,7 +215,7 @@ const TOOL_REGISTRY = {
             : `ZGrab2扫描任务已创建：${inputFile} (${module})`
         };
       } catch (error) {
-        console.error('ZGrab2工具执行错误:', error.message);
+        logger.error('ZGrab2工具执行错误:', error.message);
         return {
           success: false,
           tool: 'zgrab2',
@@ -262,7 +264,7 @@ const TOOL_REGISTRY = {
           message: '知识查询完成'
         };
       } catch (error) {
-        console.error('Knowledge工具执行错误:', error.message);
+        logger.error('Knowledge工具执行错误:', error.message);
         return {
           success: false,
           tool: 'knowledge',
@@ -324,7 +326,7 @@ const TOOL_REGISTRY = {
           message: '工作流生成完成'
         };
       } catch (error) {
-        console.error('Workflow工具执行错误:', error.message);
+        logger.error('Workflow工具执行错误:', error.message);
         return {
           success: false,
           tool: 'workflow',
@@ -402,7 +404,7 @@ const TOOL_REGISTRY = {
           message: `命令执行${result.success ? '成功' : '失败'}（退出码: ${result.exitCode}，耗时: ${result.duration}ms）\n${output}`
         };
       } catch (error) {
-        console.error('Terminal工具执行错误:', error.message);
+        logger.error('Terminal工具执行错误:', error.message);
         return {
           success: false,
           tool: 'terminal',
@@ -542,7 +544,7 @@ const executeTool = async (toolName, params, context = {}) => {
     };
   }
 
-  console.log(`执行工具: ${toolName}`);
+  logger.debug(`执行工具: ${toolName}`);
 
   return await tool.execute(finalParams, context);
 };

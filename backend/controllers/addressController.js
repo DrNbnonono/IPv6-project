@@ -1,12 +1,9 @@
 const db = require('../database/db');
-const { createLogger, transports } = require('winston');
 const { performance } = require('perf_hooks');
 
 
-// 配置日志
-const logger = createLogger({
-  transports: [new transports.Console()]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('address');
 
 // 每页默认条目数
 const ITEMS_PER_PAGE = 20;
@@ -66,7 +63,7 @@ exports.getCountryRanking = async (req, res) => {
     });
   } catch (error) {
     logger.error('获取国家排名失败:', error);
-    console.error('获取国家排名详细错误:', error.message, error.stack);
+    logger.error('获取国家排名详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取国家排名失败'
@@ -135,7 +132,7 @@ exports.getAsnRanking = async (req, res) => {
     });
   } catch (error) {
     logger.error('获取ASN排名失败:', error);
-    console.error('获取ASN排名详细错误:', error.message, error.stack);
+    logger.error('获取ASN排名详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取ASN排名失败'
@@ -354,7 +351,7 @@ exports.getPrefixDetail = async (req, res) => {
     });
   } catch (error) {
     logger.error(`获取前缀 ${req.params.prefixId} 详情失败:`, error);
-    console.error('详细错误:', error.message, error.stack);
+    logger.error('详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '获取前缀详情失败'
@@ -729,7 +726,7 @@ exports.searchIPv6 = async (req, res) => {
     });
   } catch (error) {
     logger.error('搜索失败:', error);
-    console.error('搜索详细错误:', error.message, error.stack);
+    logger.error('搜索详细错误:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: '搜索失败: ' + (error.message || '未知错误'),
@@ -953,11 +950,11 @@ exports.getAsnDetail = async (req, res) => {
  */
 exports.getGlobalStats = async (req, res) => {
   try {
-    console.log('开始执行getGlobalStats函数...');
+    logger.debug('开始执行getGlobalStats函数...');
     const startTime = performance.now();
     
     const { sort = 'total_active_ipv6', order = 'desc', limit = 500 } = req.query;
-    console.log(`请求参数: sort=${sort}, order=${order}, limit=${limit}`);
+    logger.debug(`请求参数: sort=${sort}, order=${order}, limit=${limit}`);
     
     // 验证排序字段
     const allowedSortFields = ['total_active_ipv6', 'total_ipv6_prefixes', 'country_name'];
@@ -966,7 +963,7 @@ exports.getGlobalStats = async (req, res) => {
     // 验证排序方向
     const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
     
-    console.log('开始查询国家排名...');
+    logger.debug('开始查询国家排名...');
     const countryQueryStart = performance.now();
     // 获取国家排名
     const [countries] = await db.query(`
@@ -985,9 +982,9 @@ exports.getGlobalStats = async (req, res) => {
       ORDER BY ${sortField} ${sortOrder}
       LIMIT ?
     `, [parseInt(limit)]);
-    console.log(`国家排名查询完成，耗时: ${(performance.now() - countryQueryStart).toFixed(2)}ms, 返回${countries.length}条记录`);
+    logger.debug(`国家排名查询完成，耗时: ${(performance.now() - countryQueryStart).toFixed(2)}ms, 返回${countries.length}条记录`);
     
-    console.log('开始查询全球统计数据...');
+    logger.debug('开始查询全球统计数据...');
     const statsQueryStart = performance.now();
     // 优化全球统计数据查询 - 直接从countries和asns表获取汇总数据
     const [globalStats] = await db.query(`
@@ -997,10 +994,10 @@ exports.getGlobalStats = async (req, res) => {
         (SELECT SUM(total_ipv6_prefixes) FROM countries) AS total_prefixes,
         (SELECT SUM(total_active_ipv6) FROM countries) AS total_addresses
     `);
-    console.log(`全球统计数据查询完成，耗时: ${(performance.now() - statsQueryStart).toFixed(2)}ms`);
+    logger.debug(`全球统计数据查询完成，耗时: ${(performance.now() - statsQueryStart).toFixed(2)}ms`);
     
     // 获取区域分布
-    console.log('开始查询区域分布...');
+    logger.debug('开始查询区域分布...');
     const regionQueryStart = performance.now();
     const [regionDistribution] = await db.query(`
       SELECT 
@@ -1012,10 +1009,10 @@ exports.getGlobalStats = async (req, res) => {
       GROUP BY c.region
       ORDER BY address_count DESC
     `);
-    console.log(`区域分布查询完成，耗时: ${(performance.now() - regionQueryStart).toFixed(2)}ms, 返回${regionDistribution.length}条记录`);
+    logger.debug(`区域分布查询完成，耗时: ${(performance.now() - regionQueryStart).toFixed(2)}ms, 返回${regionDistribution.length}条记录`);
     
     const totalTime = performance.now() - startTime;
-    console.log(`getGlobalStats函数执行完成，总耗时: ${totalTime.toFixed(2)}ms`);
+    logger.debug(`getGlobalStats函数执行完成，总耗时: ${totalTime.toFixed(2)}ms`);
     
     res.json({
       success: true,

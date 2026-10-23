@@ -1,12 +1,10 @@
 const db = require('../database/db');
-const { createLogger, transports } = require('winston');
 const fs = require('fs');
 const path = require('path');
 const api = require('../api/internal'); // 内部API调用
 
-const logger = createLogger({
-  transports: [new transports.Console()]
-});
+const { createModuleLogger } = require('./loggerService');
+const logger = createModuleLogger('workflow-engine');
 
 // 活动的执行实例
 const activeExecutions = new Map();
