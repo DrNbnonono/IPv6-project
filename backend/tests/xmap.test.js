@@ -42,6 +42,12 @@ afterAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   db.query.mockResolvedValue([{}]);
+  // 不真正打开日志文件，避免测试目录清理后异步报错
+  jest.spyOn(fs, 'createWriteStream').mockReturnValue({ write: jest.fn(), end: jest.fn(), on: jest.fn() });
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 const scan = async (body) => {
