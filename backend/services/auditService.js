@@ -15,7 +15,9 @@ const logger = createModuleLogger('audit');
 
 const MAX_DETAIL_BYTES = 4096;
 const MAX_STRING = 300;
-const MAX_FIELD = 64;
+const MAX_ACTION = 64; // 与 audit_logs 的列宽一致：action 64、resource_type 32、resource_id 64
+const MAX_RESOURCE_TYPE = 32;
+const MAX_RESOURCE_ID = 64;
 
 const clip = (value, max) => (value === undefined || value === null ? null : String(value).slice(0, max));
 
@@ -47,7 +49,7 @@ const record = async ({ userId = null, action, resourceType = null, resourceId =
     await db.query(
       `INSERT INTO audit_logs (user_id, action, resource_type, resource_id, success, detail, ip)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId || null, clip(action, MAX_FIELD), clip(resourceType, MAX_FIELD), clip(resourceId, MAX_FIELD), success ? 1 : 0, serializeDetail(detail), clip(ip, 45)]
+      [userId || null, clip(action, MAX_ACTION), clip(resourceType, MAX_RESOURCE_TYPE), clip(resourceId, MAX_RESOURCE_ID), success ? 1 : 0, serializeDetail(detail), clip(ip, 45)]
     );
     return true;
   } catch (error) {
