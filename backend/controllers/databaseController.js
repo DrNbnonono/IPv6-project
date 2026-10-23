@@ -1309,16 +1309,22 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
 
     logger.debug('存储过程执行完成:', result[0]);
 
+    // 迁移 12 之后存储过程会写 scan_batches；读出批次信息放进任务结果。未迁移的库没有这张表，忽略即可
+    let batchInfo = null;
+    try {
+      const [batchRows] = await connection.query(
+        'SELECT batch_id, seen_count, skipped_count FROM scan_batches WHERE task_id = ? ORDER BY batch_id DESC LIMIT 1',
+        [taskId]
+      );
+      if (batchRows && batchRows[0]) batchInfo = batchRows[0];
+    } catch (batchError) {
+      logger.debug('未找到批次记录（可能尚未执行迁移 12）:', batchError.message);
+    }
+
     await connection.query('COMMIT');
 
     // 更新任务状态为完成，包含更详细的结果信息
-    await connection.query(`
-      UPDATE tasks 
-      SET status = 'completed',
-          completed_at = NOW(),
-          output_path = ?
-      WHERE id = ?
-    `, [JSON.stringify({
+    const summary = {
       imp: result[0].imported_count,
       err: result[0].error_count,
       pid: result[0].prefix_id,
@@ -1331,7 +1337,20 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
       pfx: prefix,
       fid: fileId,
       fn: files[0].file_name,
-    }), taskId]);
+      ...(batchInfo ? { bid: batchInfo.batch_id, seen: batchInfo.seen_count, skip: batchInfo.skipped_count } : {}),
+    };
+    // tasks.output_path 是 varchar(255)，超长会让已提交的导入被误标为失败：依次丢掉次要字段
+    for (const key of ['fn', 'pfx', 'ctot', 'atot']) {
+      if (JSON.stringify(summary).length <= 255) break;
+      delete summary[key];
+    }
+    await connection.query(`
+      UPDATE tasks 
+      SET status = 'completed',
+          completed_at = NOW(),
+          output_path = ?
+      WHERE id = ?
+    `, [JSON.stringify(summary), taskId]);
 
     logger.debug('导入任务处理完成:', {
       taskId,
