@@ -54,6 +54,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: runtime  # Dockerfile 末尾还有可选的 scanner 目标，不指定会默认构建最后一个阶段
     image: observ6-backend
     restart: "no"
     environment: *backend-env
@@ -66,6 +67,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: runtime  # Dockerfile 末尾还有可选的 scanner 目标，不指定会默认构建最后一个阶段
     image: observ6-backend
     restart: unless-stopped
     environment: *backend-env
