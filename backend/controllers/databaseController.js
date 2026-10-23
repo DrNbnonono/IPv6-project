@@ -1,5 +1,4 @@
 const db = require('../database/db');
-const addressModel = require('../models/addressModels');
 const { DIRS } = require('../services/storageService');
 const { buildAdvancedQuery, QueryValidationError } = require('../services/queryBuilderService');
 const readline = require('readline');
@@ -305,51 +304,6 @@ exports.getProtocolTypes = async (req, res) => {
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-// 获取IID类型列表
-exports.getIIDTypes = async (req, res) => {
-  try {
-    const connection = await pool.getConnection();
-    
-    const [rows] = await connection.query(`
-      SELECT 
-        type_id, 
-        type_name, 
-        description, 
-        is_risky, 
-        example
-      FROM 
-        address_types
-      ORDER BY 
-        type_name
-    `);
-    
-    connection.release();
-    
-    res.json({
-      success: true,
-      data: rows
-    });
-  } catch (error) {
-    logger.error('获取IID类型失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '获取IID类型失败',
-      error: error.message
-    });
-  }
-};
-
-
 
 /**
  * 获取地址类型列表
@@ -772,72 +726,6 @@ exports.updatePrefix = async (req, res) => {
     res.status(500).json({ success: false, message: '更新前缀信息失败', error: error.message });
   }
 };
-/*
-exports.deletePrefix = async (req, res) => {
-  try {
-    const { id } = req.params;
-    logger.debug(`[deletePrefix] 尝试删除前缀ID: ${id}`);
-
-    // 先检查前缀是否存在
-    const [prefixCheck] = await db.query(
-      'SELECT prefix_id, prefix, active_ipv6_count FROM ip_prefixes WHERE prefix_id = ? OR prefix = ?',
-      [id, id]
-    );
-
-    if (prefixCheck.length === 0) {
-      logger.warn(`[deletePrefix] 前缀不存在: ${id}`);
-      return res.status(404).json({
-        success: false,
-        message: '前缀不存在'
-      });
-    }
-
-    const prefix = prefixCheck[0];
-    logger.debug(`[deletePrefix] 找到前缀: ${prefix.prefix}, 活跃IPv6地址数量: ${prefix.active_ipv6_count}`);
-
-    // 使用active_ipv6_count字段检查是否有关联地址，而不是查询active_addresses表
-    if (prefix.active_ipv6_count > 0) {
-      logger.debug(`[deletePrefix] 前缀 ${prefix.prefix} 下存在 ${prefix.active_ipv6_count} 个活跃地址，无法删除`);
-      return res.status(400).json({
-        success: false,
-        message: `该前缀下存在${prefix.active_ipv6_count}个活跃地址数据，无法删除`
-      });
-    }
-
-    // 删除前缀
-    const [deleteResult] = await db.query(
-      'DELETE FROM ip_prefixes WHERE prefix_id = ? OR prefix = ?', 
-      [id, id]
-    );
-    
-    logger.debug(`[deletePrefix] 删除结果: 影响行数=${deleteResult.affectedRows}`);
-    
-    if (deleteResult.affectedRows > 0) {
-      res.json({ 
-        success: true, 
-        message: '前缀删除成功',
-        details: {
-          prefix: prefix.prefix,
-          prefix_id: prefix.prefix_id,
-          affectedRows: deleteResult.affectedRows
-        }
-      });
-    } else {
-      res.status(500).json({ 
-        success: false, 
-        message: '前缀删除失败，数据库未返回影响行数' 
-      });
-    }
-  } catch (error) {
-    logger.error('[deletePrefix] 删除前缀失败:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '删除前缀失败', 
-      error: error.message 
-    });
-  }
-};
-*/
 exports.deletePrefix = async (req, res) => {
   let connection;
   try {
