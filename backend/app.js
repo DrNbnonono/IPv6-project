@@ -20,6 +20,12 @@ const agentRouter = require('./routes/agent'); // Agent路由
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
+// 启动前检查必需的环境变量：JWT 密钥不再提供默认值
+if (!process.env.JWT_SECRET) {
+  console.error('❌ 未配置 JWT_SECRET，请在 .env 中设置后再启动');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

@@ -28,10 +28,13 @@ CREATE TABLE `tasks` (
   FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务记录表';
 
+-- 初始管理员账号：请替换为你自己的手机号，并用 backend/scripts/hashPassword.js 生成 bcrypt 哈希后填入
+-- 用法: node scripts/hashPassword.js '你的密码'
+-- 不要把真实手机号和明文密码提交到仓库
 INSERT INTO users (phone, password_hash, role)
 VALUES (
-  '13526656040',  -- 替换为管理员手机号
-  'admin',  -- 替换为步骤 2 生成的 hash
+  '<管理员手机号>',
+  '<bcrypt哈希>',
   'admin'
 );
 
