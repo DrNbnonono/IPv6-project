@@ -51,6 +51,18 @@
       "lcov"
     ],
     "coverageThreshold": {
+      "./services/auditService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/cidrService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/scanPolicyService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/agentService.js": {
         "lines": 85,
         "statements": 85
