@@ -249,7 +249,7 @@ exports.createTask = async (req, res) => {
     const fileVerdict = await scanPolicy.validateTargetFile({ user: req.user, filePath: inputFilePathResolved });
     if (!fileVerdict.allowed) {
       logger.warn(`用户 ${userId} 的 zgrab2 输入文件未通过扫描策略: ${fileVerdict.reason}`);
-      return res.status(403).json({ success: false, message: `输入文件 ${fileVerdict.reason}` });
+      return res.status(403).json({ success: false, message: `输入${fileVerdict.reason}` });
     }
 
     let command;

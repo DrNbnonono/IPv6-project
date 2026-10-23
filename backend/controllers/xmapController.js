@@ -454,7 +454,7 @@ const applyScanPolicy = async (user, body) => {
     const whitelistPath = safeJoin(WHITELIST_DIR, String(body.whitelistFile));
     if (!fs.existsSync(whitelistPath)) throw new Error('白名单文件不存在');
     const fileVerdict = await scanPolicy.validateTargetFile({ user, filePath: whitelistPath });
-    if (!fileVerdict.allowed) throw denied(`白名单文件 ${fileVerdict.reason}`);
+    if (!fileVerdict.allowed) throw denied(`白名单${fileVerdict.reason}`);
   }
 
   const next = { ...body, rate: verdict.normalized.rate };
