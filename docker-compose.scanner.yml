@@ -1,0 +1,36 @@
+# 可选叠加层：让 backend 具备 xmap / zgrab2 扫描能力。
+#
+#   docker compose -f docker-compose.yml -f docker-compose.scanner.yml up -d --build
+#
+# 做法（Linux file capabilities）：
+#   - 镜像的 `scanner` 构建目标把你提供的 scanner-bin/xmap、scanner-bin/zgrab2 拷入 /opt/scanner，
+#     并只给 xmap 设置 cap_net_raw、cap_net_admin；
+#   - 容器的 bounding set 只额外放开 NET_RAW、NET_ADMIN（cap_add），仍以非 root 用户运行，
+#     不使用 privileged，也不需要 sudo（XMAP_USE_SUDO=false）。
+#
+# 取舍与限制（请阅读 DEPLOYMENT.md 的"扫描能力"一节）：
+#   - 这会让应用容器持有原始套接字权限；阶段 2 引入独立的 worker 后，应改为只有 worker 持有；
+#   - xmap 需要能收发 IPv6 原始报文：Docker 守护进程和网络必须启用 IPv6（见下方 networks）；
+#   - 开发阶段不要对外部网络扫描。
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: scanner
+    image: observ6-backend-scanner
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      XMAP_BIN: /opt/scanner/xmap
+      XMAP_USE_SUDO: "false"
+      ZGRAB2_BIN: /opt/scanner/zgrab2
+
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${SCANNER_IPV6_SUBNET:-fd00:6:6:6::/64}

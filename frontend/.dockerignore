@@ -1,0 +1,5 @@
+node_modules
+dist
+nohup.out
+*.log
+.env.local
