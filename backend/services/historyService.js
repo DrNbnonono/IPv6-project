@@ -120,7 +120,7 @@ const conditionFor = (kind, a, b) => {
 
 /**
  * 两个批次的差异：三类数量 + 指定类别的地址（按 address_id 键集分页）。
- * kind 省略时只返回数量。after 为上一页最后一个 address_id。
+ * kind 省略时只返回数量。after 为上一页最后一个 address_id；带 after 的翻页请求不再统计数量（counts 为 null）。
  */
 const diffBatches = async ({ batchA, batchB, kind, after, pageSize } = {}) => {
   await requireHistory();
@@ -135,17 +135,21 @@ const diffBatches = async ({ batchA, batchB, kind, after, pageSize } = {}) => {
   }
   const prefixId = first.prefix_id;
 
-  const counts = {};
-  for (const k of KINDS) {
-    const cond = conditionFor(k, a, b);
-    const [{ n }] = rows(await db.query(`SELECT COUNT(*) AS n FROM active_addresses WHERE prefix_id = ? AND ${cond.sql}`, [prefixId, ...cond.args]));
-    counts[k] = Number(n);
+  // 翻页（带 after）时不再重算数量：大前缀上每次统计都要扫很多行，数量在第一页已经给过
+  const afterId = after === undefined || after === '' ? 0 : toId(after, 'after');
+  let counts = null;
+  if (!afterId) {
+    counts = {};
+    for (const k of KINDS) {
+      const cond = conditionFor(k, a, b);
+      const [{ n }] = rows(await db.query(`SELECT COUNT(*) AS n FROM active_addresses WHERE prefix_id = ? AND ${cond.sql}`, [prefixId, ...cond.args]));
+      counts[k] = Number(n);
+    }
   }
 
   const result = { prefixId: Number(prefixId), batchA: first, batchB: second, counts };
   if (kind) {
     const size = Math.min(Math.max(parseInt(pageSize, 10) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
-    const afterId = after === undefined || after === '' ? 0 : toId(after, 'after');
     const cond = conditionFor(kind, a, b);
     const list = rows(await db.query(
       `SELECT address_id, address, first_batch_id, last_batch_id FROM active_addresses

@@ -135,6 +135,9 @@ describe('diffBatches', () => {
     const [sql, params] = calls(/SELECT address_id, address/)[0];
     expect(sql).toMatch(/address_id > \?/);
     expect(params.slice(-2)).toEqual([99, 3]); // after, size+1
+    // 翻页请求不重算数量
+    expect(r.counts).toBeNull();
+    expect(calls(/COUNT\(\*\) AS n FROM active_addresses/)).toHaveLength(0);
   });
 
   test('最后一页 next 为 null；pageSize 上限 200', async () => {
