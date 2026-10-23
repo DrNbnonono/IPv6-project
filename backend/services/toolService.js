@@ -5,6 +5,8 @@
 
 const db = require('../database/db');
 const storageService = require('./storageService');
+const queryBuilder = require('./queryBuilderService');
+const tgaAlgorithms = require('./tgaAlgorithms');
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('tool');
 
@@ -25,6 +27,15 @@ const RATE_PATTERN = /^\d{1,6}[KkMmGg]?$/;
 // Agent 一次最多处理的目标数（需要更多请上传输入文件）
 const AGENT_MAX_TARGETS = 1000;
 const INPUT_FILE_PATTERN = /^[\w.\-\u4e00-\u9fa5]{1,128}$/;
+const AGENT_MAX_PREFIXES = 200;
+const AGENT_MAX_BUDGET = 100000;
+const QUERY_TOOL_FIELDS = ['address', 'prefix', 'asn', 'iid_type'];
+const QUERY_TOOL_DEFAULT_LIMIT = 100;
+const QUERY_TOOL_MAX_LIMIT = 1000;
+const QUERY_TOOL_PREVIEW = 20;
+const TASK_STATUS_TEXT = { pending: '等待中', running: '运行中', completed: '已完成', failed: '失败', canceled: '已取消' };
+
+const splitList = (value) => (Array.isArray(value) ? value : String(value || '').split(/[\s,;]+/)).map((item) => String(item).trim()).filter(Boolean);
 
 const toBoundedInt = (value, label, min, max) => {
   const text = String(value).trim();
@@ -221,6 +232,272 @@ const TOOL_REGISTRY = {
           tool: 'zgrab2',
           error: error.message
         };
+      }
+    }
+  },
+
+  query_database: {
+    name: '数据库查询',
+    description: '只读查询平台已收集的活跃 IPv6 地址（按国家、AS、前缀、协议、在线率、首次/最近发现日期筛选）。只返回地址、所属前缀、AS 与 IID 类型，最多 1000 条',
+    category: 'analysis',
+    parameters: {
+      country: { type: 'number', description: '国家 ID（countries 表的 country_id）' },
+      asn: { type: 'number', description: 'AS 号，如 4134' },
+      prefix: { type: 'string', description: '前缀（与库里的前缀完全一致），如 2001:db8::/32' },
+      protocolType: { type: 'number', description: '协议 ID（protocols 表的 protocol_id），只返回支持该协议的地址' },
+      minUptime: { type: 'number', description: '最低在线率（0–100）' },
+      hasVulnerability: { type: 'string', description: "是否有漏洞记录：'true' 或 'false'" },
+      firstSeenAfter: { type: 'string', description: '首次发现不早于该日期（YYYY-MM-DD）' },
+      lastSeenAfter: { type: 'string', description: '最近发现不早于该日期（YYYY-MM-DD）' },
+      limit: { type: 'number', default: 100, description: `最多返回条数（1–${QUERY_TOOL_MAX_LIMIT}，默认 100）` }
+    },
+    validate: (params) => {
+      const filters = {};
+      for (const key of ['country', 'asn', 'prefix', 'protocolType', 'minUptime', 'hasVulnerability', 'firstSeenAfter', 'lastSeenAfter']) {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') filters[key] = params[key];
+      }
+      if (filters.protocolType !== undefined) filters.protocolSupport = 'true';
+      const limit = toBoundedInt(params.limit ?? QUERY_TOOL_DEFAULT_LIMIT, 'limit', 1, QUERY_TOOL_MAX_LIMIT);
+      // 先用构建器校验一遍，字段错误就在确认/执行之前报出
+      try {
+        queryBuilder.buildAdvancedQuery({ ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit });
+      } catch (error) {
+        if (error instanceof queryBuilder.QueryValidationError) throw new ToolValidationError(error.message);
+        throw error;
+      }
+      return { ...filters, limit };
+    },
+    execute: async (params) => {
+      try {
+        const { limit, ...filters } = params;
+        const { sql, params: sqlParams } = queryBuilder.buildAdvancedQuery({
+          ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit
+        });
+        const [found] = await db.query(sql, sqlParams);
+        const list = Array.isArray(found) ? found : [];
+        const addresses = list.map((row) => ({
+          address: row.address,
+          prefix: row.prefix,
+          asn: row.asn,
+          asName: row.as_name_zh || row.as_name || null,
+          iidType: row.iid_type || null
+        }));
+        const truncated = addresses.length >= limit;
+        const preview = addresses.slice(0, QUERY_TOOL_PREVIEW).map((item) => `${item.address}（AS${item.asn}${item.iidType ? `，${item.iidType}` : ''}）`).join('\n');
+        return {
+          success: true,
+          tool: 'query_database',
+          result: { count: addresses.length, truncated, addresses },
+          message: addresses.length === 0
+            ? '没有符合条件的地址'
+            : `找到 ${addresses.length}${truncated ? '（已达到上限，可能还有更多）' : ''} 个地址${addresses.length > QUERY_TOOL_PREVIEW ? `，前 ${QUERY_TOOL_PREVIEW} 个：` : '：'}\n${preview}`
+        };
+      } catch (error) {
+        logger.error('query_database 工具执行错误:', error.message);
+        return { success: false, tool: 'query_database', error: '查询失败' };
+      }
+    }
+  },
+
+  apd_detect: {
+    name: '别名前缀检测',
+    description: '对候选前缀做别名前缀检测（每个前缀向 16 个子前缀各探测一个随机地址）。会真实发出探测包，目标必须在扫描白名单内；结果在任务完成后写入已知别名前缀表',
+    category: 'scanner',
+    requiresConfirmation: true,
+    parameters: {
+      prefixes: { type: 'string', required: true, description: `候选前缀列表（逗号或换行分隔，最多 ${AGENT_MAX_PREFIXES} 个），如 2001:db8:1::/64` },
+      rate: { type: 'string', default: '100K', description: '探测速率，如 100K、1M' }
+    },
+    validate: (params) => {
+      const prefixes = splitList(params.prefixes);
+      if (prefixes.length === 0) throw new ToolValidationError('请提供候选前缀');
+      if (prefixes.length > AGENT_MAX_PREFIXES) throw new ToolValidationError(`前缀数量超过 ${AGENT_MAX_PREFIXES}`);
+      for (const item of prefixes) {
+        if (!ADDRESS_PATTERN.test(item) || !item.includes('/')) throw new ToolValidationError(`前缀格式无效: ${item.slice(0, 50)}（应类似 2001:db8::/64）`);
+      }
+      const rate = String(params.rate || '100K').trim();
+      if (!RATE_PATTERN.test(rate)) throw new ToolValidationError('rate 格式无效，应类似 100K、1M');
+      return { prefixes, rate };
+    },
+    execute: async (params, context) => {
+      try {
+        const aliasDetect = require('./aliasDetectService');
+        const created = await aliasDetect.enqueueApdTask({
+          user: context.user,
+          body: { prefixes: params.prefixes, rate: params.rate, description: `Agent 发起的别名前缀检测：${params.prefixes.length} 个前缀` }
+        });
+        return {
+          success: true,
+          tool: 'apd_detect',
+          result: created,
+          message: `别名前缀检测任务已创建（任务 ${created.taskId}）：${created.prefixCount} 个前缀，${created.probeCount} 个探测`
+        };
+      } catch (error) {
+        logger.error('apd_detect 工具执行错误:', error.message);
+        return { success: false, tool: 'apd_detect', error: error.message };
+      }
+    }
+  },
+
+  generate_targets: {
+    name: '目标地址生成',
+    description: `用种子地址生成候选扫描目标（只在本机计算，不发包）。算法：${Object.keys(tgaAlgorithms.ALGORITHMS).join('、')}。种子来自已上传的文件（seedFile），或库里某个前缀 / AS 下的活跃地址（seedPrefix / seedAsn），三者选一；结果保存为输入文件，可用于 zgrab2 / xmap`,
+    category: 'analysis',
+    requiresConfirmation: true,
+    parameters: {
+      algorithm: { type: 'string', required: true, description: `算法：${Object.keys(tgaAlgorithms.ALGORITHMS).join(' / ')}` },
+      seedFile: { type: 'string', description: '已上传的种子文件名（每行一个地址）' },
+      seedPrefix: { type: 'string', description: '用库里该前缀下的活跃地址作种子，如 2001:db8::/32' },
+      seedAsn: { type: 'number', description: '用库里该 AS 下的活跃地址作种子' },
+      budget: { type: 'number', default: 10000, description: '最多生成的目标数' }
+    },
+    validate: (params) => {
+      const algorithm = String(params.algorithm || '').trim();
+      if (!Object.prototype.hasOwnProperty.call(tgaAlgorithms.ALGORITHMS, algorithm)) {
+        throw new ToolValidationError(`未知算法: ${algorithm.slice(0, 40)}，可选：${Object.keys(tgaAlgorithms.ALGORITHMS).join('、')}`);
+      }
+      const given = ['seedFile', 'seedPrefix', 'seedAsn'].filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== '');
+      if (given.length !== 1) throw new ToolValidationError('seedFile、seedPrefix、seedAsn 必须且只能提供一个');
+      const normalized = { algorithm };
+      if (params.seedFile !== undefined && params.seedFile !== '') {
+        const seedFile = String(params.seedFile).trim();
+        if (!INPUT_FILE_PATTERN.test(seedFile)) throw new ToolValidationError('种子文件名无效');
+        normalized.seedFile = seedFile;
+      }
+      if (params.seedPrefix !== undefined && params.seedPrefix !== '') {
+        const seedPrefix = String(params.seedPrefix).trim();
+        if (!ADDRESS_PATTERN.test(seedPrefix)) throw new ToolValidationError('种子前缀格式无效');
+        normalized.seedPrefix = seedPrefix;
+      }
+      if (params.seedAsn !== undefined && params.seedAsn !== '') normalized.seedAsn = toBoundedInt(params.seedAsn, 'seedAsn', 1, 4294967295);
+      normalized.budget = toBoundedInt(params.budget ?? 10000, 'budget', 1, AGENT_MAX_BUDGET);
+      return normalized;
+    },
+    execute: async (params, context) => {
+      try {
+        const targetGen = require('./targetGenService');
+        const created = await targetGen.enqueueTgaTask({
+          user: context.user,
+          body: { ...params, description: `Agent 发起的目标生成：${params.algorithm}，预算 ${params.budget}` }
+        });
+        return {
+          success: true,
+          tool: 'generate_targets',
+          result: created,
+          message: `目标生成任务已创建（任务 ${created.taskId}）：${params.algorithm}，预算 ${created.budget}`
+        };
+      } catch (error) {
+        logger.error('generate_targets 工具执行错误:', error.message);
+        return { success: false, tool: 'generate_targets', error: error.message };
+      }
+    }
+  },
+
+  enrich: {
+    name: '地址富化',
+    description: '给库里的活跃地址补全 IID 类型分类与所属前缀，需要指定范围（asn、countryId、prefixId 三选一）。会修改数据库，仅管理员可用',
+    category: 'analysis',
+    requiresConfirmation: true,
+    authorize: (context) => context.user?.role === 'admin',
+    parameters: {
+      asn: { type: 'number', description: '只处理该 AS 下的地址' },
+      countryId: { type: 'number', description: '只处理该国家（country_id）下的地址' },
+      prefixId: { type: 'number', description: '只处理该前缀（prefix_id）下的地址' },
+      limit: { type: 'number', description: '最多处理的地址数（可选）' }
+    },
+    validate: (params) => {
+      const scope = {};
+      if (params.asn !== undefined && params.asn !== '') scope.asn = toBoundedInt(params.asn, 'asn', 1, 4294967295);
+      if (params.countryId !== undefined && params.countryId !== '') scope.countryId = toBoundedInt(params.countryId, 'countryId', 1, 4294967295);
+      if (params.prefixId !== undefined && params.prefixId !== '') scope.prefixId = toBoundedInt(params.prefixId, 'prefixId', 1, 4294967295);
+      if (Object.keys(scope).length !== 1) throw new ToolValidationError('asn、countryId、prefixId 必须且只能提供一个（不支持通过 Agent 处理全表）');
+      if (params.limit !== undefined && params.limit !== '') scope.limit = toBoundedInt(params.limit, 'limit', 1, 100000000);
+      return scope;
+    },
+    execute: async (params, context) => {
+      try {
+        const enrichTasks = require('./enrichTaskService');
+        const created = await enrichTasks.enqueueEnrichTask({
+          user: context.user,
+          body: { ...params, description: 'Agent 发起的地址富化' }
+        });
+        return {
+          success: true,
+          tool: 'enrich',
+          result: created,
+          message: `地址富化任务已创建（任务 ${created.taskId}）`
+        };
+      } catch (error) {
+        logger.error('enrich 工具执行错误:', error.message);
+        return { success: false, tool: 'enrich', error: error.message };
+      }
+    }
+  },
+
+  task_status: {
+    name: '任务状态',
+    description: '查询任务的状态（等待中、运行中、已完成、失败、已取消）。给出 taskId 查单个任务；不给则列出最近的几个任务。普通用户只能看到自己的任务',
+    category: 'analysis',
+    parameters: {
+      taskId: { type: 'number', description: '任务 ID（创建任务时返回的 taskId）' },
+      limit: { type: 'number', default: 5, description: '不给 taskId 时列出最近多少个任务（1–20，默认 5）' }
+    },
+    validate: (params) => {
+      const normalized = {};
+      if (params.taskId !== undefined && params.taskId !== null && params.taskId !== '') {
+        // 任务 ID 是毫秒时间戳（13 位），超出 toBoundedInt 的 9 位限制
+        const text = String(params.taskId).trim();
+        if (!/^\d{1,16}$/.test(text) || Number(text) < 1 || !Number.isSafeInteger(Number(text))) {
+          throw new ToolValidationError('taskId 必须是正整数');
+        }
+        normalized.taskId = Number(text);
+      } else {
+        normalized.limit = toBoundedInt(params.limit ?? 5, 'limit', 1, 20);
+      }
+      return normalized;
+    },
+    execute: async (params, context) => {
+      try {
+        if (!context.user?.id) return { success: false, tool: 'task_status', error: '未登录' };
+        const isAdmin = context.user.role === 'admin';
+        const columns = 'id, task_type, status, description, error_message, exit_code, created_at, started_at, completed_at';
+        const conditions = [];
+        const args = [];
+        if (params.taskId !== undefined) {
+          conditions.push('id = ?');
+          args.push(params.taskId);
+        }
+        if (!isAdmin) {
+          conditions.push('user_id = ?');
+          args.push(context.user.id);
+        }
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const limit = params.taskId !== undefined ? 1 : params.limit;
+        const [found] = await db.query(`SELECT ${columns} FROM tasks ${where} ORDER BY id DESC LIMIT ?`, [...args, limit]);
+        const tasks = (Array.isArray(found) ? found : []).map((row) => ({
+          taskId: row.id,
+          type: row.task_type,
+          status: row.status,
+          description: row.description,
+          error: row.error_message ? String(row.error_message).slice(0, 300) : null,
+          exitCode: row.exit_code,
+          createdAt: row.created_at,
+          startedAt: row.started_at,
+          completedAt: row.completed_at
+        }));
+        if (params.taskId !== undefined && tasks.length === 0) {
+          return { success: false, tool: 'task_status', error: `没有找到任务 ${params.taskId}` };
+        }
+        const statusText = (task) => `${task.taskId}：${task.type || '未知类型'} ${TASK_STATUS_TEXT[task.status] || task.status}${task.error ? `（${task.error.slice(0, 80)}）` : ''}`;
+        return {
+          success: true,
+          tool: 'task_status',
+          result: { tasks },
+          message: tasks.length === 0 ? '还没有任务' : tasks.map(statusText).join('\n')
+        };
+      } catch (error) {
+        logger.error('task_status 工具执行错误:', error.message);
+        return { success: false, tool: 'task_status', error: '查询任务状态失败' };
       }
     }
   },
