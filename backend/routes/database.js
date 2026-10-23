@@ -2,9 +2,12 @@ const express = require('express');
 const router = express.Router();
 const databaseController = require('../controllers/databaseController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { auditWrites } = require('../middleware/audit');
 
 // 所有数据库操作路由都需要认证；写操作额外需要管理员权限（后端强制，不依赖前端 adminOnly）
 router.use(authenticate);
+// 写操作与 advanced-query 记入审计日志
+router.use(auditWrites('db'));
 
 // 获取数据库统计信息
 router.get('/stats', databaseController.getDatabaseStats);
