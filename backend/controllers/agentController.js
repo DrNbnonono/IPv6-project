@@ -8,6 +8,8 @@ const toolService = require('../services/toolService');
 const llmService = require('../services/llmService');
 const memoryService = require('../services/memoryService');
 const terminalService = require('../services/terminalService');
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('agent');
 
 const ensureTerminalAdmin = (req, res) => {
   if (req.user?.role === 'admin') {
@@ -29,7 +31,7 @@ const ensureTerminalAdmin = (req, res) => {
 exports.chat = async (req, res) => {
   const { message, history, sessionId } = req.body;
 
-  console.log('收到Agent对话请求:', {
+  logger.debug('收到Agent对话请求:', {
     message: message?.substring(0, 50) + '...',
     historyLength: history?.length || 0
   });
@@ -58,7 +60,7 @@ exports.chat = async (req, res) => {
     // 添加AI响应到短期记忆
     session.addMessage('assistant', result.message);
 
-    console.log('Agent响应成功:', {
+    logger.debug('Agent响应成功:', {
       type: result.type,
       preview: result.message?.substring(0, 100)
     });
@@ -69,7 +71,7 @@ exports.chat = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Agent对话错误:', error.message);
+    logger.error('Agent对话错误:', error.message);
 
     let errorMessage = 'Agent服务暂时不可用，请稍后再试。';
     let statusCode = 500;
@@ -107,7 +109,7 @@ exports.getTools = async (req, res) => {
   try {
     const tools = toolService.getTools();
 
-    console.log('获取工具列表:', { count: tools.length });
+    logger.debug('获取工具列表:', { count: tools.length });
 
     res.json({
       success: true,
@@ -118,7 +120,7 @@ exports.getTools = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取工具列表错误:', error.message);
+    logger.error('获取工具列表错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -135,7 +137,7 @@ exports.getTools = async (req, res) => {
 exports.executeTool = async (req, res) => {
   const { toolName, params, confirmed } = req.body;
 
-  console.log('收到工具执行请求:', { toolName });
+  logger.debug('收到工具执行请求:', { toolName });
 
   // 参数验证
   if (!toolName || typeof toolName !== 'string') {
@@ -150,7 +152,7 @@ exports.executeTool = async (req, res) => {
     const context = { user: req.user, confirmed: confirmed === true };
     const result = await toolService.executeTool(toolName, params || {}, context);
 
-    console.log('工具执行完成:', { toolName, success: result.success });
+    logger.debug('工具执行完成:', { toolName, success: result.success });
 
     if (result.needsConfirmation) {
       return res.status(409).json({
@@ -175,7 +177,7 @@ exports.executeTool = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('工具执行错误:', error.message);
+    logger.error('工具执行错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -192,7 +194,7 @@ exports.executeTool = async (req, res) => {
 exports.generateWorkflow = async (req, res) => {
   const { goal, constraints } = req.body;
 
-  console.log('收到工作流生成请求:', { goal, constraints });
+  logger.debug('收到工作流生成请求:', { goal, constraints });
 
   // 参数验证
   if (!goal || typeof goal !== 'string' || goal.trim() === '') {
@@ -206,12 +208,12 @@ exports.generateWorkflow = async (req, res) => {
     const context = { user: req.user };
     const result = await agentService.generateWorkflow(goal.trim(), constraints || '', context);
 
-    console.log('工作流生成完成:', { success: result.success });
+    logger.debug('工作流生成完成:', { success: result.success });
 
     res.json(result);
 
   } catch (error) {
-    console.error('工作流生成错误:', error.message);
+    logger.error('工作流生成错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -249,7 +251,7 @@ exports.getStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取Agent状态错误:', error.message);
+    logger.error('获取Agent状态错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -268,7 +270,7 @@ exports.getWelcome = async (req, res) => {
     const welcome = agentService.getWelcomeMessage();
     res.json(welcome);
   } catch (error) {
-    console.error('获取欢迎消息错误:', error.message);
+    logger.error('获取欢迎消息错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -291,7 +293,7 @@ exports.getMemorySummary = async (req, res) => {
 
     res.json(summary);
   } catch (error) {
-    console.error('获取记忆摘要错误:', error.message);
+    logger.error('获取记忆摘要错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -321,7 +323,7 @@ exports.savePreferences = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('保存偏好错误:', error.message);
+    logger.error('保存偏好错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -342,7 +344,7 @@ exports.getPreferences = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('获取偏好错误:', error.message);
+    logger.error('获取偏好错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -363,7 +365,7 @@ exports.clearMemory = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('清空记忆错误:', error.message);
+    logger.error('清空记忆错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -394,7 +396,7 @@ exports.createTerminal = async (req, res) => {
       res.status(400).json(result);
     }
   } catch (error) {
-    console.error('创建终端错误:', error.message);
+    logger.error('创建终端错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -427,7 +429,7 @@ exports.executeCommand = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('执行命令错误:', error.message);
+    logger.error('执行命令错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -457,7 +459,7 @@ exports.getTerminal = async (req, res) => {
       res.status(404).json(result);
     }
   } catch (error) {
-    console.error('获取终端信息错误:', error.message);
+    logger.error('获取终端信息错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -483,7 +485,7 @@ exports.closeTerminal = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('关闭终端错误:', error.message);
+    logger.error('关闭终端错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -507,7 +509,7 @@ exports.getAllTerminals = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('获取终端列表错误:', error.message);
+    logger.error('获取终端列表错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -537,7 +539,7 @@ exports.getTerminalHistory = async (req, res) => {
       res.status(404).json(result);
     }
   } catch (error) {
-    console.error('获取命令历史错误:', error.message);
+    logger.error('获取命令历史错误:', error.message);
 
     res.status(500).json({
       success: false,
@@ -561,7 +563,7 @@ exports.getAllowedCommands = async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('获取允许命令列表错误:', error.message);
+    logger.error('获取允许命令列表错误:', error.message);
 
     res.status(500).json({
       success: false,

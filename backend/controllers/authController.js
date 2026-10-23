@@ -3,6 +3,8 @@ const bcrypt = require('bcrypt')
 const crypto = require('crypto')
 const db = require('../database/db')
 const { getJwtSecret } = require('../middleware/auth')
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('auth');
 
 // bcrypt 只处理前 72 字节，过长的密码直接拒绝
 const MAX_PASSWORD_LENGTH = 128
@@ -77,7 +79,7 @@ exports.login = async (req, res) => {
     // 用户不存在：做一次占位比较后返回与密码错误相同的提示
     if (rows.length === 0) {
       await bcrypt.compare(password, DUMMY_HASH)
-      console.warn('登录失败: 账号不存在', maskPhone(phone))
+      logger.warn('登录失败: 账号不存在', maskPhone(phone))
       return res.status(401).json({
         success: false,
         message: '手机号或密码错误'
@@ -88,7 +90,7 @@ exports.login = async (req, res) => {
     const { ok, legacy } = await verifyPassword(password, user.password_hash)
 
     if (!ok) {
-      console.warn('登录失败: 密码错误', maskPhone(phone))
+      logger.warn('登录失败: 密码错误', maskPhone(phone))
       return res.status(401).json({
         success: false,
         message: '手机号或密码错误'
@@ -100,9 +102,9 @@ exports.login = async (req, res) => {
       try {
         const newHash = await bcrypt.hash(password, getBcryptRounds())
         await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, user.id])
-        console.warn('已将明文密码升级为哈希，用户ID:', user.id)
+        logger.warn('已将明文密码升级为哈希，用户ID:', user.id)
       } catch (upgradeError) {
-        console.error('密码哈希升级失败，用户ID:', user.id, upgradeError.message)
+        logger.error('密码哈希升级失败，用户ID:', user.id, upgradeError.message)
       }
     }
 
@@ -121,7 +123,7 @@ exports.login = async (req, res) => {
     })
 
   } catch (error) {
-    console.error('登录过程错误:', error.message)
+    logger.error('登录过程错误:', error.message)
     res.status(500).json({
       success: false,
       message: '服务器内部错误'
