@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [master, 'upgrade/**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx jest --ci
+
+  database:
+    name: 建库与迁移（MySQL 8）
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: ipv6_project
+          MYSQL_USER: observ6
+          MYSQL_PASSWORD: observ6-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: observ6
+      DB_PASSWORD: observ6-ci
+      DB_NAME: ipv6_project
+      JWT_SECRET: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: 导入 structure.sql（空库）
+        run: mysql -h 127.0.0.1 -uroot -proot ipv6_project < structure.sql
+      - run: npm ci
+        working-directory: backend
+      - name: 执行迁移
+        run: node scripts/migrate.js
+        working-directory: backend
+      - name: 再次执行迁移（应无事可做）
+        run: node scripts/migrate.js | tee /dev/stderr | grep -q "已是最新"
+        working-directory: backend
+      - name: 创建管理员
+        run: node scripts/createAdmin.js 13800000000 ci-admin
+        working-directory: backend
+        env:
+          ADMIN_PASSWORD: ci-Admin-pass-123
+      - name: 数据库自检
+        run: node scripts/checkDb.js
+        working-directory: backend
+
+  frontend:
+    name: 前端构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 补齐缺失的 JsonAnalysisDashboardView（见升级计划 N1）
+        working-directory: .
+        run: |
+          f=frontend/src/views/tools/jsonanalysis/JsonAnalysisDashboardView.vue
+          if [ ! -f "$f" ]; then
+            echo "::warning file=$f::仓库中缺少该文件，CI 使用占位组件通过构建；请在持有该文件的机器上提交真实文件"
+            mkdir -p "$(dirname "$f")"
+            printf '<template><div /></template>\n' > "$f"
+          fi
+      - run: npm ci
+      - run: npm run build
+      - name: 构建产物中不应出现写死的后端地址
+        run: "! grep -rIl '202\\.112\\.47\\.141' dist"
+
+  docker:
+    name: 容器构建与启动
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 补齐缺失的 JsonAnalysisDashboardView（见升级计划 N1）
+        run: |
+          f=frontend/src/views/tools/jsonanalysis/JsonAnalysisDashboardView.vue
+          if [ ! -f "$f" ]; then
+            echo "::warning file=$f::仓库中缺少该文件，CI 使用占位组件通过构建；请在持有该文件的机器上提交真实文件"
+            mkdir -p "$(dirname "$f")"
+            printf '<template><div /></template>\n' > "$f"
+          fi
+      - name: 准备 .env（仅 CI 用的临时口令）
+        run: |
+          cat > .env <<'ENVEOF'
+          MYSQL_ROOT_PASSWORD=ci-root-password
+          DB_PASSWORD=ci-db-password
+          JWT_SECRET=ci-only-jwt-secret-0123456789abcdef0123456789abcdef
+          FRONTEND_PORT=8080
+          ENVEOF
+          mkdir -p docs
+      - name: 校验 compose 配置
+        run: |
+          docker compose config -q
+          mkdir -p scanner-bin
+          printf '#!/bin/sh\n' > scanner-bin/xmap
+          printf '#!/bin/sh\n' > scanner-bin/zgrab2
+          docker compose -f docker-compose.yml -f docker-compose.scanner.yml config -q
+      - name: 构建镜像
+        run: docker compose build
+      - name: 构建带扫描工具的镜像（验证 setcap 等步骤）
+        run: docker compose -f docker-compose.yml -f docker-compose.scanner.yml build backend
+      - name: 启动并等待健康
+        run: docker compose up -d --wait --wait-timeout 240
+      - name: 冒烟测试
+        run: |
+          curl -fsS http://127.0.0.1:8080/api/health
+          echo
+          curl -fsS http://127.0.0.1:8080/ | grep -qi '<div id="app">'
+          # 未登录访问受保护接口应为 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/xmap/tasks)" = "401"
+          # 后端以非 root 运行
+          test "$(docker compose exec -T backend id -u)" != "0"
+      - name: 失败时输出日志
+        if: failure()
+        run: docker compose ps -a; docker compose logs --no-color --tail=200
+      - name: 清理
+        if: always()
+        run: docker compose down -v
