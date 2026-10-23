@@ -58,4 +58,4 @@ node scripts/migrate.js --status   # 查看已应用 / 待应用
 
 - 加列用 `ALGORITHM=INSTANT`（只改元数据，不拷贝数据、不长时间锁表）。数据库不支持时语句会直接报错，而不是悄悄重建整张表；
 - 加索引放进 `sql/optional/`，用 `ALGORITHM=INPLACE, LOCK=NONE`，由维护者选低峰期执行，并先在副本上记录耗时；
-- 迁移 12 之后，导入存储过程 `batch_import_ipv6_addresses` 把已存在的地址记为“再次观察”而不是整批失败；这个存储过程的最新定义以迁移文件为准（`structure.sql` 里是旧版本，新库跑完迁移后会被替换）。
+- 迁移 12 新建导入存储过程 `batch_import_ipv6_addresses_v2`，把已存在的地址记为“再次观察”而不是整批失败；后端在迁移之后自动改调 v2，原来的 `batch_import_ipv6_addresses` 原样保留。不直接替换原过程，是因为它的 DEFINER 通常是 root，MySQL 8 要求 `SYSTEM_USER` 权限才能删除或修改，普通应用账号做不到。

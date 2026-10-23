@@ -5,8 +5,11 @@
 --                                 地址首次 / 最近一次被批次观察到。NULL 表示“追踪开始之前就存在”，
 --                                 不会被当成某个批次的新增。用批次 ID 而不是时间戳：同一秒内的两个批次也能分清，
 --                                 且每行只多 8 字节；时间通过 scan_batches 关联得到。
---   batch_import_ipv6_addresses   重新定义：地址已存在时不再因唯一键冲突让整个导入失败，而是记为再次观察到
+--   batch_import_ipv6_addresses_v2  新的导入存储过程：地址已存在时不再因唯一键冲突让整个导入失败，而是记为再次观察到
 --                                 （同一前缀下）或跳过（属于别的前缀）；新地址写入 first/last_batch_id；写批次行。
+--                                 另建 v2 而不是替换原来的 batch_import_ipv6_addresses：原过程的 DEFINER 通常是 root，
+--                                 MySQL 8 要求 SYSTEM_USER 权限才能删除/修改它，应用账号做不到；新建不需要。
+--                                 迁移之后后端自动改调 v2（historyService.importProcedure），原过程原样保留，可随时回退。
 --
 -- 对约 7500 万行的 active_addresses 加列：使用 ALGORITHM=INSTANT（只改元数据，不拷贝、不长时间锁表）。
 -- 如果数据库版本不支持 INSTANT，语句会直接报错而不是悄悄重建整张表——此时请联系维护者。
@@ -43,9 +46,9 @@ PREPARE history_stmt FROM @history_ddl;
 EXECUTE history_stmt;
 DEALLOCATE PREPARE history_stmt;
 
-DROP PROCEDURE IF EXISTS `batch_import_ipv6_addresses`;
+DROP PROCEDURE IF EXISTS `batch_import_ipv6_addresses_v2`;
 DELIMITER ;;
-CREATE PROCEDURE `batch_import_ipv6_addresses`(
+CREATE PROCEDURE `batch_import_ipv6_addresses_v2`(
     IN p_country_id CHAR(2),
     IN p_asn INT,
     IN p_prefix VARCHAR(64),

@@ -2,6 +2,7 @@
  * 地址时间维度与批次差异（P3-4）。
  *
  * 数据模型（迁移 sql/12-address-history.sql）：
+ *   batch_import_ipv6_addresses_v2    迁移 12 新建的导入存储过程（importProcedure() 选择调用哪个）
  *   scan_batches                      每次导入一个批次（任务、前缀、起止时间、新增/再次观察/跳过数量）
  *   active_addresses.first_batch_id   地址首次被批次观察到（NULL = 追踪开始前就存在）
  *   active_addresses.last_batch_id    地址最近一次被批次观察到
@@ -29,6 +30,8 @@ const rows = (result) => (Array.isArray(result) && Array.isArray(result[0]) ? re
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 50;
 const KINDS = ['new', 'gone', 'persisted'];
+const IMPORT_PROCEDURE = 'batch_import_ipv6_addresses';
+const IMPORT_PROCEDURE_V2 = 'batch_import_ipv6_addresses_v2';
 
 // 迁移是否已应用：true 可以长期缓存，false 只缓存很短时间（管理员刚执行完迁移不必重启服务）
 let availability = { value: null, at: 0 };
@@ -46,12 +49,22 @@ const historyAvailable = async () => {
            OR (TABLE_NAME = 'scan_batches' AND COLUMN_NAME = 'batch_id'))`
     ));
     ok = found.length === 3;
+    if (ok) {
+      const procs = rows(await db.query(
+        'SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = ?',
+        [IMPORT_PROCEDURE_V2]
+      ));
+      ok = procs.length === 1;
+    }
   } catch (error) {
     ok = false;
   }
   availability = { value: ok, at: Date.now() };
   return ok;
 };
+
+/** 导入用哪个存储过程：迁移 12 已应用用 v2（会写批次、允许重复导入），否则用原来的。 */
+const importProcedure = async () => ((await historyAvailable()) ? IMPORT_PROCEDURE_V2 : IMPORT_PROCEDURE);
 
 const resetAvailabilityCache = () => {
   availability = { value: null, at: 0 };
@@ -169,4 +182,4 @@ const diffBatches = async ({ batchA, batchB, kind, after, pageSize } = {}) => {
   return result;
 };
 
-module.exports = { HistoryError, KINDS, historyAvailable, resetAvailabilityCache, listBatches, diffBatches };
+module.exports = { HistoryError, KINDS, historyAvailable, importProcedure, resetAvailabilityCache, listBatches, diffBatches };

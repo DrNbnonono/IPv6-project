@@ -24,6 +24,7 @@ const BATCHES = {
 };
 
 let available;
+let procAvailable;
 let handlers;
 const installDb = (extra = {}) => {
   handlers = extra;
@@ -35,6 +36,7 @@ const installDb = (extra = {}) => {
       if (available instanceof Error) throw available;
       return [available ? [{}, {}, {}] : [{}]];
     }
+    if (/information_schema\.ROUTINES/.test(sql)) return [procAvailable ? [{ ROUTINE_NAME: params[0] }] : []];
     for (const [pattern, fn] of Object.entries(handlers)) if (new RegExp(pattern).test(sql)) return fn(sql, params);
     if (/FROM scan_batches WHERE batch_id = \?/.test(sql)) return [BATCHES[params[0]] ? [BATCHES[params[0]]] : []];
     return [[]];
@@ -46,6 +48,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   history.resetAvailabilityCache();
   available = true;
+  procAvailable = true;
   installDb();
 });
 
@@ -53,7 +56,7 @@ describe('historyAvailable', () => {
   test('三列都存在才算可用；可用后不再重复查询', async () => {
     expect(await history.historyAvailable()).toBe(true);
     expect(await history.historyAvailable()).toBe(true);
-    expect(calls(/information_schema/)).toHaveLength(1);
+    expect(calls(/information_schema/)).toHaveLength(2); // 列表检查 + 存储过程检查各一次
   });
 
   test('缺列返回 false，短时间内缓存；重置缓存后重新检测', async () => {
@@ -64,6 +67,16 @@ describe('historyAvailable', () => {
     available = true;
     history.resetAvailabilityCache();
     expect(await history.historyAvailable()).toBe(true);
+  });
+
+  test('列和表都在但存储过程 v2 缺失 → 不可用（回退到原过程）', async () => {
+    procAvailable = false;
+    expect(await history.historyAvailable()).toBe(false);
+    expect(await history.importProcedure()).toBe('batch_import_ipv6_addresses');
+  });
+
+  test('importProcedure：可用时用 v2', async () => {
+    expect(await history.importProcedure()).toBe('batch_import_ipv6_addresses_v2');
   });
 
   test('查询出错按不可用处理', async () => {

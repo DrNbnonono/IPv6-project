@@ -1,6 +1,7 @@
 const db = require('../database/db');
 const { DIRS } = require('../services/storageService');
 const { buildAdvancedQuery, QueryValidationError } = require('../services/queryBuilderService');
+const history = require('../services/historyService');
 const readline = require('readline');
 
 
@@ -1282,8 +1283,10 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     `);
 
     // 调用存储过程
+    // 迁移 12 之后用 v2（会写批次、允许重复导入）；之前用原来的过程。名字来自固定常量，不是用户输入
+    const importProcedure = await history.importProcedure();
     await connection.query(`
-      CALL batch_import_ipv6_addresses(
+      CALL ${importProcedure}(
         ?, ?, ?, ?,
         @p_imported_count,
         @p_error_count,
