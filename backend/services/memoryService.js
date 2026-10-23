@@ -8,6 +8,23 @@ const db = require('../database/db');
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('memory');
 
+// 单个用户最多保留多少条工具历史；单条记录序列化后的最大长度（表字段是 TEXT，上限 64KB）
+const MAX_TOOL_HISTORY = 200;
+const MAX_VALUE_LENGTH = 16 * 1024;
+
+// agent_memory 对 (user_id, memory_type, memory_key) 有唯一索引。
+// 工具历史和知识库允许同一工具/分类下有多条，所以 key 末尾追加 #时间戳_随机串 保证唯一；
+// 读取时去掉这个后缀（兼容没有后缀的旧数据）。
+const uniqueKey = (base) => `${base}#${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const stripKeySuffix = (key) => key.replace(/#[^#]*$/, '');
+
+// 序列化为 JSON；过长时只保留预览，避免超出 TEXT 字段上限导致写入失败
+const serializeValue = (value) => {
+  const json = JSON.stringify(value);
+  if (json.length <= MAX_VALUE_LENGTH) return json;
+  return JSON.stringify({ truncated: true, preview: json.slice(0, MAX_VALUE_LENGTH - 100) });
+};
+
 // 记忆配置
 const MEMORY_CONFIG = {
   // 短期记忆配置
@@ -181,7 +198,7 @@ const longTermMemory = {
 
     try {
       // 存储到数据库
-      const [rows] = await db.query(
+      await db.query(
         `INSERT INTO agent_memory (user_id, memory_type, memory_key, memory_value, created_at, updated_at)
          VALUES (?, 'preference', ?, ?, NOW(), NOW())
          ON DUPLICATE KEY UPDATE memory_value = ?, updated_at = NOW()`,
@@ -222,10 +239,24 @@ const longTermMemory = {
    */
   async addToolHistory(userId, toolName, params, result) {
     try {
-      const [rows] = await db.query(
+      await db.query(
         `INSERT INTO agent_memory (user_id, memory_type, memory_key, memory_value, created_at, updated_at)
          VALUES (?, 'tool_history', ?, ?, NOW(), NOW())`,
-        [userId, `${MEMORY_CONFIG.longTerm.toolHistoryKey}${toolName}`, JSON.stringify({ params, result, timestamp: Date.now() })]
+        [userId, uniqueKey(`${MEMORY_CONFIG.longTerm.toolHistoryKey}${toolName}`), serializeValue({ params, result, timestamp: Date.now() })]
+      );
+
+      // 只保留最近 MAX_TOOL_HISTORY 条，防止表无限增长
+      await db.query(
+        `DELETE FROM agent_memory
+         WHERE user_id = ? AND memory_type = 'tool_history'
+           AND id NOT IN (
+             SELECT id FROM (
+               SELECT id FROM agent_memory
+               WHERE user_id = ? AND memory_type = 'tool_history'
+               ORDER BY created_at DESC, id DESC LIMIT ?
+             ) AS recent
+           )`,
+        [userId, userId, MAX_TOOL_HISTORY]
       );
 
       return { success: true };
@@ -244,11 +275,13 @@ const longTermMemory = {
       const params = [userId, 'tool_history'];
 
       if (toolName) {
-        sql += ' AND memory_key LIKE ?';
-        params.push(`${MEMORY_CONFIG.longTerm.toolHistoryKey}${toolName}%`);
+        // 精确匹配该工具：新数据是 前缀+工具名#后缀，旧数据没有后缀
+        const base = `${MEMORY_CONFIG.longTerm.toolHistoryKey}${toolName}`;
+        sql += ' AND (memory_key = ? OR memory_key LIKE ?)';
+        params.push(base, `${base.replace(/[\\%_]/g, '\\$&')}#%`);
       }
 
-      sql += ' ORDER BY created_at DESC LIMIT ?';
+      sql += ' ORDER BY created_at DESC, id DESC LIMIT ?';
       params.push(limit);
 
       const [rows] = await db.query(sql, params);
@@ -256,7 +289,7 @@ const longTermMemory = {
       return {
         success: true,
         data: rows.map(row => ({
-          toolName: row.memory_key.replace(MEMORY_CONFIG.longTerm.toolHistoryKey, ''),
+          toolName: stripKeySuffix(row.memory_key).replace(MEMORY_CONFIG.longTerm.toolHistoryKey, ''),
           ...JSON.parse(row.memory_value)
         }))
       };
@@ -271,12 +304,12 @@ const longTermMemory = {
    */
   async saveKnowledge(userId, category, content, metadata = {}) {
     try {
-      const key = `${MEMORY_CONFIG.longTerm.knowledgeKey}${category}`;
+      const key = uniqueKey(`${MEMORY_CONFIG.longTerm.knowledgeKey}${category}`);
 
-      const [rows] = await db.query(
+      await db.query(
         `INSERT INTO agent_memory (user_id, memory_type, memory_key, memory_value, created_at, updated_at)
          VALUES (?, 'knowledge', ?, ?, NOW(), NOW())`,
-        [userId, key, JSON.stringify({ content, metadata, timestamp: Date.now() })]
+        [userId, key, serializeValue({ content, metadata, timestamp: Date.now() })]
       );
 
       return { success: true };
@@ -300,7 +333,7 @@ const longTermMemory = {
         params.push(`${MEMORY_CONFIG.longTerm.knowledgeKey}${category}%`);
       }
 
-      sql += ' ORDER BY created_at DESC LIMIT 20';
+      sql += ' ORDER BY created_at DESC, id DESC LIMIT 20';
 
       const [rows] = await db.query(sql, params);
 
@@ -309,7 +342,7 @@ const longTermMemory = {
         .map(row => {
           const data = JSON.parse(row.memory_value);
           const content = typeof data === 'string' ? data : data.content;
-          const category = row.memory_key.replace(MEMORY_CONFIG.longTerm.knowledgeKey, '');
+          const category = stripKeySuffix(row.memory_key).replace(MEMORY_CONFIG.longTerm.knowledgeKey, '');
 
           // 简单的相关性评分
           let score = 0;
@@ -416,5 +449,6 @@ module.exports = {
   cleanupExpiredSessions,
   longTermMemory,
   buildContextualPrompt,
-  MEMORY_CONFIG
+  MEMORY_CONFIG,
+  MAX_TOOL_HISTORY
 };
