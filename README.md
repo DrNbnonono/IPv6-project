@@ -50,7 +50,7 @@ ObserV6 把 IPv6 的**主动探测**（XMap 活跃性扫描、ZGrab2 服务探�
 │   ├── services/               业务与基础设施（见下表）
 │   ├── middleware/             auth（authenticate / requireAdmin）、rateLimit
 │   ├── database/db.js          mysql2 连接池
-│   ├── scripts/                migrate、createAdmin、checkDb、migratePasswords、rebaseStoredPaths
+│   ├── scripts/                migrate、createAdmin、checkDb、migratePasswords、rebaseStoredPaths、benchAddressStorage
 │   ├── tests/                  jest + supertest
 │   └── Dockerfile
 ├── frontend/
@@ -112,6 +112,7 @@ mysql -u root -p ipv6_project < ../structure.sql      # 只能用于新库
 npm run db:migrate                                    # 增量迁移（sql/NN-*.sql，NN ≥ 08）
 ADMIN_PASSWORD='至少8位的强密码' node scripts/createAdmin.js 13800000000 管理员
 npm run db:check                                      # 自检
+npm run db:bench-storage -- --yes --rows 1000000      # 可选：对比 varchar(45) 与 BINARY(16) 的地址存储（只在测试库/副本库运行）
 
 # 3. 启动
 npm run dev                      # 后端，默认 3000
