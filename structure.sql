@@ -339,6 +339,29 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
+-- Table structure for table `agent_memory`
+--
+
+DROP TABLE IF EXISTS `agent_memory`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `agent_memory` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户ID',
+  `memory_type` enum('preference','tool_history','knowledge') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '记忆类型',
+  `memory_key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '记忆键',
+  `memory_value` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '记忆值（JSON格式）',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_type_key` (`user_id`,`memory_type`,`memory_key`(100)),
+  KEY `idx_user_type` (`user_id`,`memory_type`),
+  KEY `idx_memory_type` (`memory_type`),
+  KEY `idx_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent记忆表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `asn_protocol_stats`
 --
 
