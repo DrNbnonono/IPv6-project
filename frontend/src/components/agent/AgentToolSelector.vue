@@ -123,7 +123,13 @@ const getToolIcon = (toolId) => {
     xmap: '🔍',
     zgrab2: '🌐',
     knowledge: '📚',
-    workflow: '⚙️'
+    workflow: '⚙️',
+    query_database: '🗄️',
+    apd_detect: '🛡️',
+    generate_targets: '🎯',
+    enrich: '🏷️',
+    task_status: '📋',
+    terminal: '💻'
   }
   return icons[toolId] || '🔧'
 }
@@ -132,7 +138,8 @@ const getCategoryLabel = (category) => {
   const labels = {
     scanner: '扫描器',
     assistant: '助手',
-    analysis: '分析'
+    analysis: '分析',
+    system: '系统'
   }
   return labels[category] || category
 }
