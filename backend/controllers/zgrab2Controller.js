@@ -1,5 +1,5 @@
 const db = require('../database/db');
-const { exec, spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
@@ -12,6 +12,14 @@ const logger = createLogger({
 const ITEMS_PER_PAGE = 20;
 // 数据目录统一由 storageService 提供（根目录见 PROJECT_ROOT），启动时由 ensureDirs() 创建
 const { PROJECT_ROOT, DIRS, resolveStoredPath } = require('../services/storageService');
+const {
+  ZGRAB2_BIN,
+  Zgrab2ArgsError,
+  validatePort,
+  buildSingleModuleArgs,
+  buildMultipleArgs,
+  formatCommand
+} = require('../services/zgrab2CommandService');
 const ZGRAB2_RESULTS_DIR = DIRS.zgrab2Results;
 const ZGRAB2_LOGS_DIR = DIRS.zgrab2Logs;
 const ZGRAB2_INPUTS_DIR = DIRS.zgrab2Inputs;
@@ -47,6 +55,34 @@ const SUPPORTED_MODULES = {
   ssh: { defaultPort: 22, description: 'SSH Banner Grab' },
   telnet: { defaultPort: 23, description: 'Telnet' },
   tls: { defaultPort: 443, description: 'TLS Banner Grab' }
+};
+
+/**
+ * 校验请求里直接给出的输入文件路径（工作流使用）。
+ * 通过条件：位于项目目录内，并且是该用户名下的上传文件或任务输出；否则返回 null。
+ */
+const resolveOwnedInputPath = async (userId, candidatePath) => {
+  if (!candidatePath || typeof candidatePath !== 'string') {
+    return null;
+  }
+
+  let resolved;
+  try {
+    resolved = resolveStoredPath(candidatePath);
+  } catch (error) {
+    return null;
+  }
+
+  const candidates = [...new Set([candidatePath, resolved])];
+  const [owned] = await db.query(
+    `SELECT 1 AS ok FROM whitelists WHERE user_id = ? AND is_deleted = 0 AND file_path IN (?)
+     UNION
+     SELECT 1 AS ok FROM tasks WHERE user_id = ? AND output_path IN (?)
+     LIMIT 1`,
+    [userId, candidates, userId, candidates]
+  );
+
+  return owned.length > 0 && fs.existsSync(resolved) ? resolved : null;
 };
 
 /**
@@ -96,13 +132,19 @@ exports.createTask = async (req, res) => {
     }
 
     // 验证模块是否有效
-    if (!SUPPORTED_MODULES[module]) {
+    if (typeof module !== 'string' || !Object.prototype.hasOwnProperty.call(SUPPORTED_MODULES, module)) {
       console.log('错误: 无效的模块', module);
       return res.status(400).json({
         success: false,
         message: `无效的zgrab2模块，支持的模块: ${Object.keys(SUPPORTED_MODULES).join(', ')}`
       });
     }
+
+    // 端口与额外参数在拼装命令前先校验（命令不经过 shell，这里同时防止选项注入）
+    const validatedPort = validatePort(port);
+    buildSingleModuleArgs({
+      module, port: validatedPort || 0, inputFile: '-', outputFile: '-', logFile: '-', additionalParams
+    });
 
     console.log('参数验证通过');
 
@@ -144,9 +186,11 @@ exports.createTask = async (req, res) => {
 
     let inputFilePathResolved;
 
-    // 如果工作流传递了完整的文件路径，直接使用
-    if (inputFilePath && fs.existsSync(inputFilePath)) {
-      inputFilePathResolved = inputFilePath;
+    // 工作流传递的完整路径：必须位于项目数据目录内，且是当前用户名下的文件
+    // （上传文件或自己的任务输出），否则忽略并继续按 fileId/文件名查找
+    const ownedInputPath = await resolveOwnedInputPath(userId, inputFilePath);
+    if (ownedInputPath) {
+      inputFilePathResolved = ownedInputPath;
       console.log('使用工作流传递的文件路径:', inputFilePathResolved);
     } else if (fileId) {
       // 如果有文件ID，通过ID查询
@@ -156,7 +200,7 @@ exports.createTask = async (req, res) => {
       );
 
       if (fileRecords.length > 0) {
-        inputFilePathResolved = fileRecords[0].file_path;
+        inputFilePathResolved = resolveStoredPath(fileRecords[0].file_path);
         console.log('通过文件ID查询到路径:', inputFilePathResolved);
       }
     }
@@ -178,7 +222,7 @@ exports.createTask = async (req, res) => {
         });
       }
 
-      inputFilePathResolved = inputFileRecords[0].file_path;
+      inputFilePathResolved = resolveStoredPath(inputFileRecords[0].file_path);
     }
 
     console.log('最终输入文件路径:', inputFilePathResolved);
@@ -195,6 +239,7 @@ exports.createTask = async (req, res) => {
     console.log('输入文件验证通过');
 
     let command;
+    let commandArgs;
 
     if (configFile) {
       console.log('使用配置文件模式，查找配置文件路径...', configFile);
@@ -214,7 +259,7 @@ exports.createTask = async (req, res) => {
         });
       }
 
-      const configFilePath = configFileRecords[0].file_path;
+      const configFilePath = resolveStoredPath(configFileRecords[0].file_path);
       console.log('配置文件路径:', configFilePath);
 
       if (!fs.existsSync(configFilePath)) {
@@ -225,25 +270,40 @@ exports.createTask = async (req, res) => {
         });
       }
 
-      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 multiple -c ${configFilePath} -f ${inputFilePathResolved} -o ${outputFile} -l ${logFile}`;
+      commandArgs = buildMultipleArgs({
+        configFile: configFilePath,
+        inputFile: inputFilePathResolved,
+        outputFile,
+        logFile
+      });
+      command = formatCommand(commandArgs);
       console.log('配置文件模式命令:', command);
     } else {
       console.log('使用单模块模式');
       // 单模块模式
-      const scanPort = port || SUPPORTED_MODULES[module].defaultPort;
+      const scanPort = validatedPort || SUPPORTED_MODULES[module].defaultPort;
       console.log('扫描端口:', scanPort);
 
-      command = `/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2 ${module} --port ${scanPort} -f ${inputFilePathResolved} -o ${outputFile} -l ${logFile}`;
-
-      // 添加额外参数
-      Object.entries(additionalParams).forEach(([key, value]) => {
-        if (value) {
-          command += ` --${key}=${value}`;
-          console.log('添加额外参数:', `--${key}=${value}`);
-        }
+      commandArgs = buildSingleModuleArgs({
+        module,
+        port: scanPort,
+        inputFile: inputFilePathResolved,
+        outputFile,
+        logFile,
+        additionalParams
       });
+      command = formatCommand(commandArgs);
 
       console.log('单模块模式命令:', command);
+    }
+
+    // 先确认 zgrab2 可执行文件存在，再写任务记录，避免留下永远处于 running 的记录
+    if (!fs.existsSync(ZGRAB2_BIN)) {
+      console.log('错误: zgrab2二进制文件不存在:', ZGRAB2_BIN);
+      return res.status(500).json({
+        success: false,
+        message: 'zgrab2工具未安装或路径不正确'
+      });
     }
 
     // 在数据库中创建任务记录
@@ -259,20 +319,10 @@ exports.createTask = async (req, res) => {
 
     console.log('数据库任务记录创建成功');
 
-    // 检查zgrab2二进制文件是否存在
-    const zgrab2Path = '/home/ipv6/go/bin/src/zmap/zgrab2/zgrab2';
-    if (!fs.existsSync(zgrab2Path)) {
-      console.log('错误: zgrab2二进制文件不存在:', zgrab2Path);
-      return res.status(500).json({
-        success: false,
-        message: 'zgrab2工具未安装或路径不正确'
-      });
-    }
-
     console.log('开始执行zgrab2命令:', command);
 
     // 异步执行zgrab2命令
-    const childProcess = exec(command, (error, stdout, stderr) => {
+    const childProcess = execFile(ZGRAB2_BIN, commandArgs, (error, stdout, stderr) => {
       let status = 'completed';
       let errorMessage = null;
 
@@ -319,6 +369,12 @@ exports.createTask = async (req, res) => {
     console.log('=== ZGrab2 任务创建失败 ===');
     console.log('错误详情:', error);
     console.log('错误堆栈:', error.stack);
+    if (error instanceof Zgrab2ArgsError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
     logger.error('创建zgrab2任务失败:', error);
     res.status(500).json({
       success: false,
