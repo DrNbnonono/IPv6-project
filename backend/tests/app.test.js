@@ -21,6 +21,29 @@ beforeAll(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
 });
 
+describe('健康检查', () => {
+  const db = require('../database/db');
+
+  test('数据库可用时返回 200', async () => {
+    db.query.mockResolvedValueOnce([[{ 1: 1 }]]);
+    const res = await request(app).get('/api/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok' });
+  });
+
+  test('数据库不可用时返回 503，且不泄露错误细节', async () => {
+    db.query.mockRejectedValueOnce(new Error('connect ECONNREFUSED 10.0.0.5:3306'));
+    const res = await request(app).get('/api/health');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ status: 'error' });
+  });
+
+  test('无需登录', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.status).not.toBe(401);
+  });
+});
+
 describe('安全响应头', () => {
   test('helmet 头已设置，且不暴露 x-powered-by', async () => {
     const res = await request(app).get('/api/test');
