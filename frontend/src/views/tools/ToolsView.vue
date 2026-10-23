@@ -155,6 +155,7 @@
     { path: '/tools/jsonanalysis', name: 'JSON分析', icon: 'icon-json', badge: '新' },
     { path: '/tools/addr6', name: 'addr6', icon: 'icon-addr6' },
     { path: '/tools/nmap', name: 'nmap', icon: 'icon-nmap'},
+    { path: '/tools/apd', name: '别名前缀检测', icon: 'icon-apd' },
     { path: '/tools/admin', name: '扫描策略与审计', icon: 'icon-admin', adminOnly: true }
   ])
 
@@ -726,6 +727,7 @@
 .icon-empty:before { content: "📭"; }
 .icon-database:before { content: "🗄️"; }
 .icon-admin:before { content: "🛡️"; }
+.icon-apd:before { content: "🧩"; }
 .icon-zgrab2:before { content: "🛰️"; } // 添加zgrab2图标示例
 .icon-addr6:before { content: "🌐"; } // 添加addr6图标示例
 .icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例
