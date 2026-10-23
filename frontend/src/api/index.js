@@ -472,6 +472,37 @@ export default {
   }, 
   
   
+  // 别名前缀检测（APD）
+  apd: {
+    createTask(data) {
+      return apiClient.post('/apd', data);
+    },
+    getTasks(params) {
+      return apiClient.get('/apd/tasks', { params });
+    },
+    getTaskDetails(taskId) {
+      return apiClient.get(`/apd/task/${taskId}`);
+    },
+    cancelTask(taskId) {
+      return apiClient.post(`/apd/cancel/${taskId}`);
+    },
+    deleteTask(taskId) {
+      return apiClient.delete(`/apd/${taskId}`);
+    },
+    downloadResult(taskId) {
+      return apiClient.get(`/apd/result/${taskId}`, { responseType: 'blob' });
+    },
+    getAliasedPrefixes(params) {
+      return apiClient.get('/apd/aliased', { params });
+    },
+    removeAliasedPrefix(id) {
+      return apiClient.delete(`/apd/aliased/${id}`);
+    },
+    filterAddresses(data) {
+      return apiClient.post('/apd/filter', data);
+    }
+  },
+
   // 文件管理API
   // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
   admin: {
