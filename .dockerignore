@@ -23,4 +23,4 @@ jsonanalysis
 uploads
 reports
 docs
-scanner-bin
+# scanner-bin 需要进入构建上下文（docker-compose.scanner.yml 的 scanner 目标会 COPY 它），不要在此忽略
