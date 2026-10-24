@@ -17,6 +17,7 @@ npm run demo:snapshot -- restore before-demo --confirm-db ipv6_project
 要点：
 - 还原前会自动再留一个 `auto-before-restore-*` 安全快照，输出里会给出撤销命令；
 - **含触发器的快照要求能建触发器**：MySQL 8 默认开二进制日志，普通账号建触发器需要服务器设置 `log_bin_trust_function_creators=1`（`docker-compose.yml` 的 mysql 已加 `--log-bin-trust-function-creators=1`；已有的数据库容器需要重建/重启才生效）或使用有 SUPER 权限的账号。不满足时脚本在动手前就拒绝，数据库不被改动——因为还原是先删表再重建，中途失败会留下半截数据库（CI 在 MySQL 8 上抓到过这个问题）；真失败时脚本会提示用 `auto-before-restore-*` 安全快照退回；
+- **快照不含视图**（视图不是数据；MySQL 8 里普通账号无法替换 root 创建的视图，会报 ERROR 1227）：还原时现有视图保持不动，表重建后继续可用；
 - 只还原快照里有的表和文件；快照之后新增的表、结果文件不会被删除；
 - 若当前账号没有权限读存储过程（过程由 root 创建、你用普通账号），快照会不含存储过程，还原时现有过程不受影响；
 - 快照目录 `demo_snapshots/` 已 gitignore，里面有用户表（密码哈希）和 API 密钥哈希，**不要提交或外传**；
