@@ -62,4 +62,15 @@ npm run demo:snapshot -- restore before-demo --confirm-db ipv6_project
 ## 5. 代码冻结与安全回归（阶段 6 末尾）
 
 最后一周只修 bug，不合新功能。每次修改后重跑：
-`npm test`（含 P0 安全用例与覆盖率门槛）、`npm run db:check`，并按 `scripts/loadtest/README.md` 复测一次吞吐，确认没有明显回退。
+
+```bash
+npm test                                   # 单元测试（含 P0 安全用例与覆盖率门槛）
+npm run db:check
+# 黑盒安全回归（对运行中的后端；令牌用测试账号登录得到，不要用生产账号）
+npm run security:regression -- --base http://127.0.0.1:3000 \
+  --user-token <普通用户JWT> --admin-token <管理员JWT> --other-user-id <另一个用户ID> --strict
+```
+
+回归脚本 `scripts/securityRegression.js` 共 20 项，覆盖 P0 全部安全用例以及开放 API、报告、扫描策略（认证、分权、注入、路径穿越、限流、错误不泄露堆栈、终端收紧、API 密钥生命周期等）；没给令牌的项标记 SKIP（没有被验证）。CI 的 MySQL 8 任务里也会起后端跑一遍（`--strict --include-ratelimit`）。
+部署前务必设置 `CORS_ORIGINS`，否则 SR-05 在 `--strict` 下失败。
+再按 `scripts/loadtest/README.md` 复测一次吞吐，确认没有明显回退。
