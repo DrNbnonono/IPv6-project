@@ -187,7 +187,11 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 cd backend && npm test               # jest + supertest
 cd backend && npm run test:coverage  # 附覆盖率；services/ 按文件设有下限门槛
 cd frontend && npm run build
+cd backend && npm run eval:agent                 # Agent 评测集（录制回复，检验管线）
+cd backend && npm run eval:agent -- --live --out report.json   # 用真实模型跑，发版前留存报告
 ```
+
+**Agent 评测集**（`backend/tests/agent/cases.json`，64 条“用户语句 → 期望工具 / 关键参数 / 结果类型”，含 10 条模型出错的对抗用例）输出四项指标：工具选择准确率、参数准确率、结果类型准确率、危险操作拦截率。CI 用录制的回复回归——它只能说明校验 / 权限 / 确认 / 调用上限这条管线没退化，**不衡量模型本身**；要得到模型的数字，在配置了密钥的环境里加 `--live` 跑一次。
 
 GitHub Actions（`.github/workflows/ci.yml`）每次推送运行四项检查：
 
