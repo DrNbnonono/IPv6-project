@@ -26,6 +26,7 @@ const adminRouter = require('./routes/admin'); // 管理员路由（扫描策略
 const apdRouter = require('./routes/apd'); // 别名前缀检测
 const tgaRouter = require('./routes/tga'); // 目标生成
 const reportRouter = require('./routes/report'); // 任务报告
+const openRouter = require('./routes/open'); // 开放只读 API（API 密钥）
 const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
@@ -65,8 +66,8 @@ if (corsOrigins.length === 0) {
 
 app.use(cors({
   origin: corsOrigins.length > 0 ? corsOrigins : true,
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Disposition'] // 允许前端访问Content-Disposition
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  exposedHeaders: ['Content-Disposition', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Retry-After'] // 允许前端访问Content-Disposition 与开放 API 的限流头
 }));
 
 app.use('/api', apiLimiter);
@@ -93,6 +94,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/apd', apdRouter);
 app.use('/api/tga', tgaRouter);
 app.use('/api/reports', reportRouter);
+app.use('/api/open/v1', openRouter);
 app.use('/api/docs', docRouter)
 // 测试接口
 app.get('/api/test', (req, res) => {

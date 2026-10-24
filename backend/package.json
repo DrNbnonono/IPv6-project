@@ -166,6 +166,18 @@
       "./services/reportService.js": {
         "lines": 90,
         "statements": 90
+      },
+      "./services/apiKeyService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./middleware/apiKey.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/openApiService.js": {
+        "lines": 90,
+        "statements": 90
       }
     }
   }
