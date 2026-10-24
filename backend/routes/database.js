@@ -1,11 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const databaseController = require('../controllers/databaseController');
+const enrichController = require('../controllers/enrichController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { auditWrites } = require('../middleware/audit');
 
 // 所有数据库操作路由都需要认证；写操作额外需要管理员权限（后端强制，不依赖前端 adminOnly）
 router.use(authenticate);
+
+// 纯计算、不写库：放在审计中间件之前，避免记成 db.write
+router.post('/classify-iid', enrichController.classifyIid);
+// 只会为当前用户生成自己的输入文件（不写共享数据）
+router.post('/filter-iid', enrichController.filterIid);
+
 // 写操作与 advanced-query 记入审计日志
 router.use(auditWrites('db'));
 
@@ -40,6 +47,12 @@ router.get('/address-types', databaseController.getAddressTypes);
 
 // 更新地址 IID 类型
 router.post('/update-iid-types', requireAdmin, databaseController.updateIIDTypes);
+
+// IID 分类与来源补全（后台任务；写共享的 active_addresses，因此都需要管理员）
+router.post('/enrich-iid', requireAdmin, enrichController.createEnrichTask);
+router.get('/enrich-iid/tasks', requireAdmin, enrichController.getEnrichTasks);
+router.get('/enrich-iid/task/:taskId', requireAdmin, enrichController.getEnrichTaskDetails);
+router.post('/enrich-iid/cancel/:taskId', requireAdmin, enrichController.cancelEnrichTask);
 
 
 //---------------国家管理相关的API----------------//

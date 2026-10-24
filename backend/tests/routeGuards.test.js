@@ -25,10 +25,14 @@ const collect = (router) =>
 describe('/api/database 路由权限', () => {
   const routes = collect(databaseRouter);
 
-  test('所有 POST/PUT/DELETE（除高级查询）都要求管理员', () => {
+  // 不改共享数据的 POST：高级查询（只读，另有 SQL 防护）、IID 分类（纯计算）、
+  // 按 IID 类型过滤（只为当前用户生成自己的输入文件），登录即可
+  const READ_ONLY_POSTS = ['/advanced-query', '/classify-iid', '/filter-iid'];
+
+  test('所有 POST/PUT/DELETE（除上面三个不改共享数据的接口）都要求管理员', () => {
     const unguarded = routes.filter(
       (r) =>
-        r.path !== '/advanced-query' &&
+        !READ_ONLY_POSTS.includes(r.path) &&
         r.methods.some((m) => ['post', 'put', 'delete'].includes(m)) &&
         !r.guarded
     );

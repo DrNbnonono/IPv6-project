@@ -534,6 +534,7 @@ module.exports = {
   derivePrefixes,
   filterAddresses,
   filterWithKnownAliases,
+  readAddressFile,
   parseResponders,
   enqueueApdTask,
   runApdTask,

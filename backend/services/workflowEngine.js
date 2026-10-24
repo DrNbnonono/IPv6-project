@@ -4,6 +4,7 @@ const path = require('path');
 const api = require('../api/internal'); // 内部API调用
 const aliasDetect = require('./aliasDetectService');
 const targetGen = require('./targetGenService');
+const enrich = require('./enrichService');
 
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('workflow-engine');
@@ -124,6 +125,9 @@ async function executeNode(context, node) {
         break;
       case 'tga_generate':
         outputData = await executeTgaGenerateNode(node, inputData, userId);
+        break;
+      case 'iid_filter':
+        outputData = await executeIidFilterNode(node, inputData, userId);
         break;
       case 'json_custom_extract':
         outputData = await executeJsonCustomExtractNode(node, inputData, userId);
@@ -466,6 +470,37 @@ async function executeApdFilterNode(node, inputData, userId) {
     fileName: result.savedFile.fileName,
     fileType: 'txt',
     apdFilter: { total: result.total, kept: result.kept, removed: result.removed, aliasedPrefixesKnown: result.aliasedPrefixesKnown }
+  };
+}
+
+/**
+ * IID 类型过滤节点：按 IID 类型保留/剔除输入文件里的地址，输出过滤后的地址文件（已登记）。
+ */
+async function executeIidFilterNode(node, inputData, userId) {
+  const inputFile = inputData.default || inputData.file;
+  if (!inputFile || !inputFile.fileName) {
+    throw new Error('IID类型过滤节点缺少输入文件');
+  }
+  const config = node.config || {};
+
+  const result = await enrich.filterByIidType({
+    user: { id: userId },
+    body: {
+      addressFile: inputFile.fileName,
+      mode: config.mode || 'drop',
+      types: String(config.types === undefined || config.types === '' ? 'random' : config.types).split(/[\s,;]+/).filter(Boolean),
+      save: true,
+      tool: config.outputTool || 'zgrab2'
+    }
+  });
+
+  return {
+    type: 'file',
+    fileId: result.savedFile.fileId,
+    filePath: result.savedFile.filePath,
+    fileName: result.savedFile.fileName,
+    fileType: 'txt',
+    iidFilter: { total: result.total, kept: result.kept, removed: result.removed, invalid: result.invalid, counts: result.counts }
   };
 }
 
@@ -913,6 +948,7 @@ async function resumeExecution(executionId, userId) {
 module.exports = {
   executeApdFilterNode,
   executeTgaGenerateNode,
+  executeIidFilterNode,
   waitForTaskCompletion,
   executeWorkflow,
   cancelExecution,
