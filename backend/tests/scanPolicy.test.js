@@ -14,10 +14,11 @@ const policy = require('../services/scanPolicyService');
 const USER = { id: 7 };
 
 /** 按 SQL 内容返回策略数据：{ allow, block, quota, used } */
-const setPolicy = ({ allow = [], block = [], quota = null, used = 0 } = {}) => {
+const setPolicy = ({ allow = [], block = [], optOut = [], quota = null, used = 0 } = {}) => {
   db.query.mockImplementation(async (sql) => {
     if (sql.includes('FROM scan_allowlist')) return [allow.map((cidr) => ({ cidr }))];
     if (sql.includes('FROM scan_blacklist')) return [block.map((cidr) => ({ cidr }))];
+    if (sql.includes('FROM opt_out_requests')) return [optOut.map((cidr) => ({ cidr }))];
     if (sql.includes('FROM user_quotas')) return [quota ? [quota] : []];
     if (sql.includes('FROM tasks')) return [[{ count: used }]];
     throw new Error(`未预期的 SQL: ${sql}`);
@@ -146,6 +147,26 @@ describe('目标：内置与黑名单拒绝优先于白名单', () => {
     expect(inside.reason).toMatch(/黑名单/);
     const covering = await xmap('2001:db8::/32'); // 目标包含黑名单
     expect(covering.allowed).toBe(false);
+  });
+
+  test('待审核的退出请求与黑名单同样生效，原因里能看出来', async () => {
+    setPolicy({ allow: ['2001:db8::/32'], optOut: ['2001:db8:abcd::/48'] });
+    expect((await xmap('2001:db8:1::/48')).allowed).toBe(true);
+    const verdict = await xmap('2001:db8:abcd::1');
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.reason).toMatch(/待审核的退出请求 2001:db8:abcd::\/48/);
+  });
+
+  test('退出请求表还不存在（迁移 17 未执行）时不影响扫描策略', async () => {
+    db.query.mockImplementation(async (sql) => {
+      if (sql.includes('FROM opt_out_requests')) throw Object.assign(new Error('no table'), { code: 'ER_NO_SUCH_TABLE' });
+      if (sql.includes('FROM scan_allowlist')) return [[{ cidr: '2001:db8::/32' }]];
+      if (sql.includes('FROM scan_blacklist')) return [[]];
+      if (sql.includes('FROM user_quotas')) return [[]];
+      if (sql.includes('FROM tasks')) return [[{ count: 0 }]];
+      throw new Error(sql);
+    });
+    expect((await xmap('2001:db8::1')).allowed).toBe(true);
   });
 
   test('黑名单或白名单里有无法解析的条目时忽略该条，不抛出', async () => {

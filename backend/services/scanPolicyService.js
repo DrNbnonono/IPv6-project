@@ -8,7 +8,8 @@
  * - 表 scan_allowlist，管理员在 /api/admin/scan-allowlist 维护。
  * 拒绝规则（优先于白名单）：
  * - 内置的保留/特殊地址：回环、未指定、组播、链路本地（含云元数据 169.254.0.0/16）、IPv4 映射、NAT64 等；
- * - 表 scan_blacklist 中的网段——只要目标与黑名单有任何交集就拒绝。
+ * - 表 scan_blacklist 中的网段——只要目标与黑名单有任何交集就拒绝；
+ * - 表 opt_out_requests 中待审核（pending）的退出请求网段，效果相同（审核通过后转入 scan_blacklist）。
  * 要开放更大的范围，需要管理员显式添加白名单条目（例如 ::/0），该操作会写入审计日志。
  *
  * 速率与配额（环境变量给默认值，user_quotas 表按用户覆盖）：
@@ -25,6 +26,7 @@ const readline = require('readline');
 const db = require('../database/db');
 const { parseTarget, contains, overlaps } = require('./cidrService');
 const { createModuleLogger } = require('./loggerService');
+const optOut = require('./optOutService');
 const logger = createModuleLogger('scan-policy');
 
 // 内置禁止扫描的范围（与白名单无关，任何情况下都拒绝）
@@ -81,9 +83,10 @@ const parseEntries = (list, source) => {
 /** 读取当前生效的策略：白名单、黑名单、该用户的速率与每日上限。 */
 const loadPolicy = async (userId) => {
   const envAllowed = String(process.env.SCAN_ALLOWED_TARGETS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const [allowRows, blockRows, quotaRows] = await Promise.all([
+  const [allowRows, blockRows, pendingOptOut, quotaRows] = await Promise.all([
     db.query('SELECT cidr FROM scan_allowlist'),
     db.query('SELECT cidr FROM scan_blacklist'),
+    optOut.pendingCidrs(),
     userId ? db.query('SELECT max_rate_bps, daily_scan_limit FROM user_quotas WHERE user_id = ?', [userId]) : Promise.resolve([[]])
   ]);
 
@@ -97,7 +100,11 @@ const loadPolicy = async (userId) => {
       ...parseEntries(envAllowed, 'SCAN_ALLOWED_TARGETS'),
       ...parseEntries(rows(allowRows).map((r) => r.cidr), 'scan_allowlist')
     ],
-    block: parseEntries(rows(blockRows).map((r) => r.cidr), 'scan_blacklist'),
+    // 待审核的退出请求与黑名单同样生效：对方提出退出后，不等审核就先停止扫描
+    block: [
+      ...parseEntries(rows(blockRows).map((r) => r.cidr), 'scan_blacklist'),
+      ...parseEntries(pendingOptOut, 'opt_out_requests').map((entry) => ({ ...entry, optOut: true }))
+    ],
     maxRateBps,
     defaultRateBps,
     dailyLimit: quota.daily_scan_limit ? Number(quota.daily_scan_limit) : toPositiveInt(process.env.SCAN_DAILY_LIMIT, 100)
@@ -110,7 +117,11 @@ const checkRange = (range, policy) => {
   if (builtin) return `目标 ${range.text} 属于不允许扫描的${builtin.label}范围 ${builtin.range.text}`;
 
   const blocked = policy.block.find((item) => overlaps(item.range, range));
-  if (blocked) return `目标 ${range.text} 与黑名单 ${blocked.text} 重叠`;
+  if (blocked) {
+    return blocked.optOut
+      ? `目标 ${range.text} 与待审核的退出请求 ${blocked.text} 重叠`
+      : `目标 ${range.text} 与黑名单 ${blocked.text} 重叠`;
+  }
 
   if (!policy.allow.some((item) => contains(item.range, range))) {
     return `目标 ${range.text} 不在允许扫描的范围内（默认拒绝）；请联系管理员把已获授权的网段加入白名单`;
