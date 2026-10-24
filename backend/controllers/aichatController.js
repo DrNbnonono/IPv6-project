@@ -81,6 +81,10 @@ const getAPIConfig = () => {
  * 避免向 DeepSeek/OpenAI 发送无效的 assistant 消息（否则会触发
  * “Invalid assistant message: content or tool calls must be set” 错误）。
  */
+// 单条问题与单条历史消息的长度上限：该接口对未登录访客开放，避免用超长输入消耗模型额度
+const MAX_MESSAGE_CHARS = parseInt(process.env.AI_MESSAGE_MAX_CHARS, 10) || 2000;
+const MAX_HISTORY_ITEM_CHARS = 4000;
+
 const buildMessages = (userMessage, history = []) => {
   const messages = [
     { role: 'system', content: IPV6_EXPERT_SYSTEM_PROMPT }
@@ -94,7 +98,7 @@ const buildMessages = (userMessage, history = []) => {
       if (!msg) return;
 
       const role = msg.role === 'assistant' ? 'assistant' : (msg.role === 'user' ? 'user' : null);
-      const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+      const content = typeof msg.content === 'string' ? msg.content.trim().slice(0, MAX_HISTORY_ITEM_CHARS) : '';
 
       // 只保留 user / assistant 且 content 为非空字符串的消息
       if (!role || !content) return;
@@ -164,6 +168,13 @@ exports.detectionChat = async (req, res) => {
     return res.status(400).json({
       success: false,
       message: '请提供有效的问题内容'
+    });
+  }
+
+  if (message.length > MAX_MESSAGE_CHARS) {
+    return res.status(400).json({
+      success: false,
+      message: `问题过长，请控制在 ${MAX_MESSAGE_CHARS} 字以内`
     });
   }
 
