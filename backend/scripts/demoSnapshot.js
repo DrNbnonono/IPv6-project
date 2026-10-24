@@ -18,6 +18,7 @@
  *  - 当前账号无权读取存储过程定义时（过程由 root 创建而你用的是普通账号），快照会自动退为不含存储过程，并在输出和元数据（routines:false）里说明。
  *  - 含触发器的快照还原需要建触发器：二进制日志开启（MySQL 8 默认）且账号无 SUPER 时服务器会拒绝（ERROR 1419）。
  *    DDL 不能回滚，所以还原前先预检，不满足就拒绝并说明做法，数据库不被改动；真失败时提示用安全快照退回。
+ *  - 快照不含视图（视图不是数据；MySQL 8 里普通账号无法替换 root 创建的视图，ERROR 1227）：还原时现有视图保持不动。
  *  - 导出时去掉 DEFINER 子句，否则用权限较低的账号还原触发器/存储过程会失败。
  *  - 还原只覆盖快照里有的表（DROP TABLE + 重建 + 灌数据）；快照之后新建的表（例如之后才执行的迁移）不会被删除。
  *    文件还原是覆盖解压：快照之后新增的结果文件不会被删除。
@@ -89,7 +90,7 @@ const buildConnArgs = (env = process.env) => {
 
 const getDbName = (env = process.env) => env.DB_NAME || 'ipv6_project';
 
-const buildDumpArgs = (env = process.env, { routines = true } = {}) => [
+const buildDumpArgs = (env = process.env, { routines = true, views = [] } = {}) => [
   ...buildConnArgs(env),
   '--default-character-set=utf8mb4',
   '--single-transaction', // InnoDB 一致性快照，不锁表
@@ -97,6 +98,9 @@ const buildDumpArgs = (env = process.env, { routines = true } = {}) => [
   '--triggers',
   '--no-tablespaces', // MySQL 8 下普通账号没有 PROCESS 权限
   '--hex-blob',
+  // 视图不是数据，而且 MySQL 8 里普通账号无法替换别的账号（如导入 structure.sql 的 root）创建的视图（ERROR 1227 需要 SYSTEM_USER），
+  // 所以快照不含视图，还原时现有视图保持不动（它们按表名读取，表重建后继续可用）
+  ...views.map((v) => `--ignore-table=${getDbName(env)}.${v}`),
   getDbName(env)
 ];
 
@@ -153,13 +157,13 @@ const runCommand = (bin, args, { env = process.env, stdin, stdout } = {}) => new
   if (stdout) stdout(child.stdout);
 });
 
-const dumpDatabase = async (outFile, env, { routines = true } = {}) => {
+const dumpDatabase = async (outFile, env, { routines = true, views = [] } = {}) => {
   const bin = env.MYSQLDUMP_BIN || 'mysqldump';
   const partial = `${outFile}.partial`; // 写完并确认 mysqldump 成功后才改名，失败不会留下半截快照
   const out = fs.createWriteStream(partial, { mode: 0o600 });
   let piped = Promise.resolve();
   const stripper = createDefinerStripper();
-  const result = await runCommand(bin, buildDumpArgs(env, { routines }), {
+  const result = await runCommand(bin, buildDumpArgs(env, { routines, views }), {
     env,
     stdout: (stream) => {
       piped = new Promise((resolve, reject) => {
@@ -237,14 +241,21 @@ const untarFiles = async (file, env) => {
   if (result.code !== 0) throw new CliError(`解压数据目录失败：${result.stderr}`, 2);
 };
 
-const countTables = async (env) => {
+/** 当前库里的基础表与视图名称。 */
+const listObjects = async (env) => {
   const bin = env.MYSQL_BIN || 'mysql';
   let out = '';
   const result = await runCommand(bin, [...buildConnArgs(env), '--batch', '--skip-column-names', '-e', 'SHOW FULL TABLES', getDbName(env)], {
     env, stdout: (s) => s.on('data', (d) => { out += d; })
   });
   if (result.code !== 0) throw new CliError(`无法连接数据库：${result.stderr}`, 2);
-  return out.split('\n').filter(Boolean).length;
+  const tables = [];
+  const views = [];
+  for (const line of out.split('\n').filter(Boolean)) {
+    const [name, type] = line.split('\t');
+    (/VIEW/i.test(type || '') ? views : tables).push(name);
+  }
+  return { tables, views };
 };
 
 const createSnapshot = async (name, { withFiles = false } = {}, env = process.env, log = console.log) => {
@@ -253,18 +264,18 @@ const createSnapshot = async (name, { withFiles = false } = {}, env = process.en
   const p = snapshotPaths(dir, name);
   if (fs.existsSync(p.meta) || fs.existsSync(p.sql)) throw new CliError(`快照 ${name} 已存在；换个名字，或先手动删除 ${dir} 下的同名文件`);
 
-  const tables = await countTables(env);
-  log(`正在备份数据库 ${getDbName(env)}（${tables} 张表/视图）…`);
+  const { tables, views } = await listObjects(env);
+  log(`正在备份数据库 ${getDbName(env)}（${tables.length} 张表；${views.length} 个视图不进快照）…`);
   let routines = true;
   let dumped;
   try {
-    dumped = await dumpDatabase(p.sql, env, { routines: true });
+    dumped = await dumpDatabase(p.sql, env, { routines: true, views });
   } catch (err) {
     // 存储过程由别的账号（如 root）创建时，普通账号没有权限读取其定义；过程不是数据，不阻塞快照
     if (!/insufficient privileges/i.test(err.message)) throw err;
     routines = false;
     log('提示：当前账号无权读取部分存储过程的定义，快照不含存储过程（只含表、视图、触发器和数据）。还原时现有存储过程不会被改动。');
-    dumped = await dumpDatabase(p.sql, env, { routines: false });
+    dumped = await dumpDatabase(p.sql, env, { routines: false, views });
   }
 
   let dirs = [];
@@ -277,7 +288,8 @@ const createSnapshot = async (name, { withFiles = false } = {}, env = process.en
     name,
     createdAt: new Date().toISOString(),
     db: getDbName(env),
-    tables,
+    tables: tables.length,
+    views: views.length,
     routines,
     triggers: dumped.triggers,
     sqlFile: path.basename(p.sql),

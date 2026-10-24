@@ -31,6 +31,7 @@ describe('demoSnapshot 纯函数', () => {
     expect(args).toEqual(expect.arrayContaining(['--host=h', '--user=u', '--port=3307', '--single-transaction', '--routines', '--triggers', 'd']));
     expect(args.join(' ')).not.toContain('secret');
     expect(demo.buildDumpArgs(env, { routines: false })).not.toContain('--routines');
+    expect(demo.buildDumpArgs(env, { views: ['v1', 'v2'] })).toEqual(expect.arrayContaining(['--ignore-table=d.v1', '--ignore-table=d.v2']));
   });
 
   test('stripDefinerLine 只处理建对象的行，数据行不动', () => {
@@ -81,7 +82,7 @@ echo "/*!50017 DEFINER=\\\`root\\\`@\\\`localhost\\\`*/ trigger-line"
 [ -n "$FAKE_TRIGGERS" ] && echo "/*!50003 CREATE*/ /*!50017 DEFINER=\\\`root\\\`@\\\`localhost\\\`*/ /*!50003 TRIGGER trg AFTER INSERT ON t FOR EACH ROW BEGIN"
 echo "INSERT INTO t VALUES (1);"`);
     const mysql = writeBin('fake-mysql', `case "$*" in
-*"SHOW FULL TABLES"*) printf 't1\\tBASE TABLE\\nt2\\tBASE TABLE\\n';;
+*"SHOW FULL TABLES"*) printf 't1\\tBASE TABLE\\nt2\\tBASE TABLE\\nv1\\tVIEW\\n';;
 *log_bin*) printf '%s\\t%s\\n' "\${FAKE_LOG_BIN:-0}" "\${FAKE_TRUST:-0}";;
 *"SHOW GRANTS"*) echo "\${FAKE_GRANTS:-GRANT USAGE ON *.* TO u}";;
 *) cat > "${restoredSql}"; if [ -n "$FAKE_RESTORE_FAIL" ]; then echo "ERROR 1419 boom" >&2; exit 1; fi;; esac`);
@@ -94,7 +95,7 @@ echo "INSERT INTO t VALUES (1);"`);
 
   test('create：生成 gz、元数据、数据目录包；DEFINER 被去掉；权限 0600', async () => {
     const meta = await demo.createSnapshot('s1', { withFiles: true }, env, silent);
-    expect(meta).toMatchObject({ name: 's1', db: 'demo_db', tables: 2, routines: true });
+    expect(meta).toMatchObject({ name: 's1', db: 'demo_db', tables: 2, views: 1, routines: true });
     expect(meta.files.dirs).toEqual(['reports']);
     const dir = demo.getSnapshotDir(env);
     const sql = zlib.gunzipSync(fs.readFileSync(path.join(dir, 's1.sql.gz'))).toString();
