@@ -109,3 +109,63 @@ describe('登录限流', () => {
     expect(statuses.slice(3)).toEqual([429, 429]);
   });
 });
+
+describe('统一错误出口', () => {
+  test('请求体不是合法 JSON：400 + JSON，不含堆栈与文件路径', async () => {
+    const res = await request(app).post('/api/auth/login').set('Content-Type', 'application/json').send('{bad');
+    expect(res.status).toBe(400);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.body).toEqual({ success: false, message: '请求体不是合法的 JSON' });
+    expect(res.text).not.toMatch(/node_modules|body-parser|\.js:\d+/);
+  });
+
+  test('请求体过大：413 + JSON', async () => {
+    const res = await request(app).post('/api/auth/login').send({ phone: 'x', password: 'y'.repeat(20000) });
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({ success: false, message: '请求体过大' });
+  });
+
+  test('未知的 /api 路径：404 + JSON', async () => {
+    const res = await request(app).get('/api/no-such-route');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ success: false, message: '接口不存在' });
+  });
+
+  test('URL 编码错误：不回传内部错误信息', async () => {
+    const res = await request(app).get('/api/addresses/%E0%A4%A');
+    expect([400, 404]).toContain(res.status);
+    expect(res.text).not.toMatch(/URIError|decodeURIComponent|node_modules/);
+  });
+
+  // 错误出口是 app 栈里的最后一层，直接调用它来覆盖路由里不容易构造的情形
+  const errorHandler = () => app._router.stack[app._router.stack.length - 1].handle;
+  const fakeRes = () => {
+    const res = { headersSent: false };
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  };
+
+  test('未预期的异常：500 + 通用文案，不回传错误信息', () => {
+    const res = fakeRes();
+    errorHandler()(new Error('connect ECONNREFUSED 10.0.0.5:3306'), { method: 'GET', path: '/x' }, res, jest.fn());
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: '服务器内部错误' });
+  });
+
+  test('其他 4xx 错误：保留状态码，文案通用', () => {
+    const res = fakeRes();
+    errorHandler()(Object.assign(new Error('Bad escape /etc/x'), { status: 431 }), { method: 'GET', path: '/x' }, res, jest.fn());
+    expect(res.status).toHaveBeenCalledWith(431);
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: '请求无效' });
+  });
+
+  test('响应已发出时交给 Express 默认处理', () => {
+    const res = fakeRes();
+    res.headersSent = true;
+    const next = jest.fn();
+    const err = new Error('late');
+    errorHandler()(err, { method: 'GET', path: '/x' }, res, next);
+    expect(next).toHaveBeenCalledWith(err);
+  });
+});

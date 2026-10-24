@@ -15,6 +15,7 @@
     "eval:agent": "node scripts/evalAgent.js",
     "demo:snapshot": "node scripts/demoSnapshot.js",
     "loadtest": "node scripts/loadTest.js",
+    "security:regression": "node scripts/securityRegression.js",
     "test:coverage": "jest --coverage"
   },
   "keywords": [],
