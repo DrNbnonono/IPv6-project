@@ -274,7 +274,7 @@ const createSnapshot = async (name, { withFiles = false } = {}, env = process.en
     // 存储过程由别的账号（如 root）创建时，普通账号没有权限读取其定义；过程不是数据，不阻塞快照
     if (!/insufficient privileges/i.test(err.message)) throw err;
     routines = false;
-    log('提示：当前账号无权读取部分存储过程的定义，快照不含存储过程（只含表、视图、触发器和数据）。还原时现有存储过程不会被改动。');
+    log('提示：当前账号无权读取部分存储过程的定义，快照不含存储过程（只含表、触发器和数据）。还原时现有存储过程不会被改动。');
     dumped = await dumpDatabase(p.sql, env, { routines: false, views });
   }
 
