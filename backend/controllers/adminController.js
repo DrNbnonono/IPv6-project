@@ -1,5 +1,5 @@
 /**
- * 管理员接口：扫描白名单/黑名单、用户配额、审计日志查询。
+ * 管理员接口：扫描白名单/黑名单、用户配额、审计日志查询、开放 API 密钥。
  * 路由挂在 /api/admin，需要 authenticate + requireAdmin。
  * 所有修改都会写审计日志（action 以 admin. 开头）。
  */
@@ -8,6 +8,7 @@ const db = require('../database/db');
 const { parseTarget } = require('../services/cidrService');
 const scanPolicy = require('../services/scanPolicyService');
 const auditService = require('../services/auditService');
+const apiKeys = require('../services/apiKeyService');
 const { createModuleLogger } = require('../services/loggerService');
 const logger = createModuleLogger('admin');
 
@@ -199,5 +200,53 @@ exports.listUsers = async (req, res) => {
     res.json({ success: true, data: rows });
   } catch (error) {
     serverError(res, '获取用户列表', error);
+  }
+};
+
+// ---------- 开放 API 密钥（P5-3）----------
+
+const keyFail = (res, label, error) => {
+  if (error instanceof apiKeys.ApiKeyError) return fail(res, error.status, error.message);
+  return serverError(res, label, error);
+};
+
+/** GET /api/admin/api-keys：所有密钥（只含前缀，不含明文） */
+exports.listApiKeys = async (req, res) => {
+  try {
+    res.json({ success: true, data: { scopes: apiKeys.SCOPES, items: await apiKeys.listKeys() } });
+  } catch (error) {
+    keyFail(res, '获取 API 密钥', error);
+  }
+};
+
+/**
+ * POST /api/admin/api-keys  body: { name, scopes?: ['stats'], rateLimitPerMin?, expiresAt? }
+ * 明文密钥只在这个响应里出现一次。
+ */
+exports.createApiKey = async (req, res) => {
+  const body = req.body || {};
+  try {
+    const { key, record } = await apiKeys.createKey({
+      name: body.name,
+      scopes: body.scopes,
+      rateLimitPerMin: body.rateLimitPerMin,
+      expiresAt: body.expiresAt,
+      createdBy: req.user.id
+    });
+    await audited(req, 'admin.api_key.create', 'api_key', record.id, { name: record.name, scopes: record.scopes, rateLimitPerMin: record.rateLimitPerMin });
+    res.status(201).json({ success: true, message: '密钥已创建，明文只显示这一次，请妥善保存', data: { key, ...record } });
+  } catch (error) {
+    keyFail(res, '创建 API 密钥', error);
+  }
+};
+
+/** DELETE /api/admin/api-keys/:id：吊销（不可恢复） */
+exports.revokeApiKey = async (req, res) => {
+  try {
+    await apiKeys.revokeKey(req.params.id);
+    await audited(req, 'admin.api_key.revoke', 'api_key', req.params.id, {});
+    res.json({ success: true, message: '密钥已吊销' });
+  } catch (error) {
+    keyFail(res, '吊销 API 密钥', error);
   }
 };

@@ -1,5 +1,5 @@
 /**
- * 管理员路由（/api/admin）：扫描策略、用户配额、审计日志。
+ * 管理员路由（/api/admin）：扫描策略、用户配额、审计日志、开放 API 密钥。
  * 后端强制要求管理员，不依赖前端的 adminOnly。
  */
 
@@ -19,6 +19,10 @@ router.delete('/scan-blacklist/:id', adminController.removeBlacklistEntry);
 router.get('/quotas', adminController.listQuotas);
 router.put('/quotas/:userId', adminController.setQuota);
 router.delete('/quotas/:userId', adminController.clearQuota);
+
+router.get('/api-keys', adminController.listApiKeys);
+router.post('/api-keys', adminController.createApiKey);
+router.delete('/api-keys/:id', adminController.revokeApiKey);
 
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/users', adminController.listUsers);
