@@ -9,6 +9,7 @@
     "test": "jest",
     "db:migrate": "node scripts/migrate.js",
     "db:check": "node scripts/checkDb.js",
+    "db:bench-storage": "node scripts/benchAddressStorage.js",
     "test:coverage": "jest --coverage"
   },
   "keywords": [],
