@@ -12,7 +12,8 @@ ObserV6 把 IPv6 的**主动探测**（XMap 活跃性扫描、ZGrab2 服务探�
 | 高级查询 | 按条件组合查询地址库（经 SQL 守卫与查询构建器，参数化） | `/detection/query` |
 | XMap 扫描 | 创建 / 取消 / 查看扫描任务，白名单管理，日志与结果下载 | `/tools/xmap` |
 | ZGrab2 探测 | 多模块服务探测，支持地址列表或已上传输入文件 | `/tools/zgrab2` |
-| 工作流 | 可视化编排 XMap → ZGrab2 的探测流程，执行 / 暂停 / 恢复 / 取消 | `/tools/workflows` |
+| 别名前缀检测 | 对候选前缀做 16 子前缀探测，识别并管理别名前缀，按已知别名前缀过滤地址 | `/tools/apd` |
+| 工作流 | 可视化编排 XMap →（别名过滤）→ ZGrab2 的探测流程，执行 / 暂停 / 恢复 / 取消 | `/tools/workflows` |
 | 数据库管理 | 国家、ASN、前缀、协议、漏洞的增删改与批量导入（管理员） | `/tools/database` |
 | 文件与 JSON 分析 | 上传扫描输出，解析并提取字段 | `/tools/files`、`/tools/jsonanalysis` |
 | Agent | 多厂商 LLM + 工具调用 + 受限终端 + 记忆 | `/tools/agent` |

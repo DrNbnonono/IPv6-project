@@ -2,6 +2,7 @@ const db = require('../database/db');
 const fs = require('fs');
 const path = require('path');
 const api = require('../api/internal'); // 内部API调用
+const aliasDetect = require('./aliasDetectService');
 
 const { createModuleLogger } = require('./loggerService');
 const logger = createModuleLogger('workflow-engine');
@@ -116,6 +117,9 @@ async function executeNode(context, node) {
         break;
       case 'zgrab2_json_extract':
         outputData = await executeZgrab2JsonExtractNode(node, inputData, userId);
+        break;
+      case 'apd_filter':
+        outputData = await executeApdFilterNode(node, inputData, userId);
         break;
       case 'json_custom_extract':
         outputData = await executeJsonCustomExtractNode(node, inputData, userId);
@@ -429,6 +433,35 @@ async function executeXmapJsonExtractNode(node, inputData, userId) {
     fileName: saveResponse.data.fileName,
     fileType: outputFormat || 'txt',
     extractedData: extractedData
+  };
+}
+
+/**
+ * 别名前缀过滤节点：用 aliased_prefixes 表里已知的别名前缀剔除输入文件中的地址，
+ * 把剩余地址存成新文件（可作为 ZGrab2 / XMap 的输入）。不发送任何探测包。
+ */
+async function executeApdFilterNode(node, inputData, userId) {
+  const inputFile = inputData.default || inputData.file;
+  if (!inputFile || !inputFile.fileName) {
+    throw new Error('别名前缀过滤节点缺少输入文件');
+  }
+
+  const result = await aliasDetect.filterWithKnownAliases({
+    user: { id: userId },
+    body: {
+      addressFile: inputFile.fileName,
+      save: true,
+      tool: (node.config && node.config.outputTool) || 'zgrab2'
+    }
+  });
+
+  return {
+    type: 'file',
+    fileId: result.savedFile.fileId,
+    filePath: result.savedFile.filePath,
+    fileName: result.savedFile.fileName,
+    fileType: 'txt',
+    apdFilter: { total: result.total, kept: result.kept, removed: result.removed, aliasedPrefixesKnown: result.aliasedPrefixesKnown }
   };
 }
 
@@ -825,6 +858,7 @@ async function resumeExecution(executionId, userId) {
 }
 
 module.exports = {
+  executeApdFilterNode,
   waitForTaskCompletion,
   executeWorkflow,
   cancelExecution,

@@ -361,7 +361,7 @@ const filterWithKnownAliases = async ({ user, body = {} }) => {
     const tool = body.tool === 'xmap' ? 'xmap' : 'zgrab2';
     const { saveTargetsFile } = require('./storageService');
     const saved = await saveTargetsFile(user.id, kept, tool, `别名前缀过滤后的地址（剔除 ${removed.length} 个）`);
-    result.savedFile = { fileName: saved.fileName, count: saved.count, tool };
+    result.savedFile = { fileId: saved.fileId, fileName: saved.fileName, filePath: saved.filePath, count: saved.count, tool };
   }
   return result;
 };

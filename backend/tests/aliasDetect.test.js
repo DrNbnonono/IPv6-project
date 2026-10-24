@@ -345,13 +345,15 @@ describe('filterWithKnownAliases', () => {
     db.query.mockImplementation(async (sql) => {
       if (/FROM aliased_prefixes/.test(sql)) return [[{ prefix: '2001:db8:1:2::/64' }]];
       if (/FROM tools/.test(sql)) return [[{ id: 3 }]];
+      if (/INSERT INTO whitelists/.test(sql)) return [{ insertId: 77 }];
       return [{ affectedRows: 1 }];
     });
     const result = await apd.filterWithKnownAliases({
       user: USER,
       body: { addresses: ['2001:db8:1:2::1', '2001:db8:7::1', '2001:db8:8::1'], save: true }
     });
-    expect(result.savedFile).toMatchObject({ count: 2, tool: 'zgrab2' });
+    expect(result.savedFile).toMatchObject({ fileId: 77, count: 2, tool: 'zgrab2' });
+    expect(result.savedFile.filePath).toContain('zgrab2_input_5_');
     const insert = db.query.mock.calls.find(([sql]) => /INSERT INTO whitelists/.test(sql));
     expect(insert[1][0]).toBe(5);
     const content = fs.readFileSync(insert[1][3], 'utf8').trim().split('\n');

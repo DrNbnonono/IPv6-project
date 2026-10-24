@@ -96,6 +96,15 @@ const routes = [
         meta: { title: '工作流管理' }
       },
       {
+        path: '/tools/apd',
+        name: 'apd',
+        component: () => import('@/views/tools/apd/ApdDashboardView.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '别名前缀检测'
+        }
+      },
+      {
         path: '/tools/admin',
         name: 'admin',
         component: () => import('@/views/tools/admin/AdminDashboardView.vue'),
