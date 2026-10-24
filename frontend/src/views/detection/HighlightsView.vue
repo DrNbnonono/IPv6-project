@@ -12,10 +12,8 @@
       </nav>
     </header>
 
-    <p v-if="state === 'loading'" class="status">加载中…</p>
-    <div v-else-if="state === 'error'" class="status error">
-      数据加载失败。<button type="button" class="link-btn" @click="load">重试</button>
-    </div>
+    <state-block v-if="state === 'loading'" state="loading" />
+    <state-block v-else-if="state === 'error'" state="error" @retry="load" />
 
     <template v-else>
       <section class="kpis" aria-label="规模">
@@ -34,25 +32,25 @@
         <section class="card">
           <h2>国家 / 地区 Top 10</h2>
           <EChart v-if="topCountries.length" :option="countryOption" height="340px" aria-label="活跃地址数前十的国家" />
-          <p v-else class="empty">暂无数据</p>
+          <state-block v-else state="empty" compact />
         </section>
 
         <section class="card">
           <h2>区域分布</h2>
           <EChart v-if="regions.length" :option="regionOption" height="340px" aria-label="各区域活跃地址占比" />
-          <p v-else class="empty">暂无数据</p>
+          <state-block v-else state="empty" compact />
         </section>
 
         <section class="card">
           <h2>协议分布 Top 10</h2>
           <EChart v-if="protocols.length" :option="protocolOption" height="340px" aria-label="受影响地址最多的协议" />
-          <p v-else class="empty">暂无协议数据</p>
+          <state-block v-else state="empty" :message="t('state.noProtocol')" compact />
         </section>
 
         <section class="card">
           <h2>漏洞分布 Top 10</h2>
           <EChart v-if="vulnerabilities.length" :option="vulnerabilityOption" height="340px" aria-label="受影响地址最多的漏洞" />
-          <p v-else class="empty">暂无漏洞数据</p>
+          <state-block v-else state="empty" :message="t('state.noVulnerability')" compact />
         </section>
       </div>
 
@@ -69,9 +67,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useDetectionStore } from '@/stores/detection'
 import TrendPanel from '@/components/detection/TrendPanel.vue'
 import EChart from '@/components/detection/EChart.vue'
+import StateBlock from '@/components/common/StateBlock.vue'
+import { useI18n } from 'vue-i18n'
 
 const store = useDetectionStore()
 
+const { t } = useI18n()
 const state = ref('loading') // loading | ready | error
 const stats = ref({})
 const topCountries = ref([])

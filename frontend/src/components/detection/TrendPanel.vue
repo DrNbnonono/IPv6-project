@@ -13,12 +13,10 @@
       </div>
     </header>
 
-    <p v-if="state === 'loading'" class="trend-hint">加载中…</p>
-    <p v-else-if="state === 'disabled'" class="trend-hint">趋势数据尚未启用（管理员需要先执行数据库迁移 15）。</p>
-    <p v-else-if="state === 'error'" class="trend-hint error">
-      趋势加载失败，<button type="button" class="link-btn" @click="load">重试</button>
-    </p>
-    <p v-else-if="state === 'empty'" class="trend-hint">还没有这个范围的快照数据。快照每天记录一次，几天后这里会出现曲线。</p>
+    <state-block v-if="state === 'loading'" state="loading" compact />
+    <state-block v-else-if="state === 'disabled'" state="empty" :message="t('state.trendDisabled')" compact />
+    <state-block v-else-if="state === 'error'" state="error" :message="t('state.error')" compact @retry="load" />
+    <state-block v-else-if="state === 'empty'" state="empty" :message="t('state.trendEmpty')" compact />
 
     <template v-else>
       <ul v-if="summary" class="trend-summary">
@@ -45,7 +43,9 @@ import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { useI18n } from 'vue-i18n'
 import { useDetectionStore } from '@/stores/detection'
+import StateBlock from '@/components/common/StateBlock.vue'
 
 echarts.use([LineChart, TooltipComponent, LegendComponent, GridComponent, CanvasRenderer])
 
@@ -61,6 +61,7 @@ const rangeOptions = [7, 30, 90]
 const store = useDetectionStore()
 
 const days = ref(rangeOptions.includes(props.initialDays) ? props.initialDays : 30)
+const { t } = useI18n()
 const state = ref('loading') // loading | ready | empty | disabled | error
 const points = ref([])
 const summary = ref(null)

@@ -51,6 +51,12 @@
         <div class="panel-container">
           <h2>国家/地区排名</h2>
           <div class="ranking-list" ref="countryRankingList" @mouseenter="pauseCountryScroll" @mouseleave="resumeCountryScroll">
+            <state-block
+              v-if="detectionStore.countryRanking.length === 0"
+              :state="detectionStore.isLoading ? 'loading' : (detectionStore.error ? 'error' : 'empty')"
+              compact
+              @retry="reloadData"
+            />
             <div 
               v-for="country in detectionStore.countryRanking" 
               :key="country.country_id"
@@ -107,6 +113,12 @@
         <div class="panel-container">
           <h2>ASN排名</h2>
           <div class="ranking-list" ref="asnRankingList" @mouseenter="pauseAsnScroll" @mouseleave="resumeAsnScroll">
+            <state-block
+              v-if="detectionStore.asnRanking.length === 0"
+              :state="detectionStore.isLoading ? 'loading' : (detectionStore.error ? 'error' : 'empty')"
+              compact
+              @retry="reloadData"
+            />
             <div 
               v-for="asn in detectionStore.asnRanking" 
               :key="asn.asn"
@@ -352,6 +364,7 @@ import ProtocolAnalysisPanel from '@/components/detection/ProtocolAnalysisPanel.
 import VulnerabilityAnalysisPanel from '@/components/detection/VulnerabilityAnalysisPanel.vue'
 import AIChatPanel from '@/components/detection/AIChatPanel.vue'
 import TrendPanel from '@/components/detection/TrendPanel.vue'
+import StateBlock from '@/components/common/StateBlock.vue'
 // 路由和状态管理
 const router = useRouter()
 const authStore = useAuthStore()
