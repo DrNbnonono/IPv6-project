@@ -1,5 +1,6 @@
 const db = require('../database/db');
 const history = require('../services/historyService');
+const statsSnapshot = require('../services/statsSnapshotService');
 const { performance } = require('perf_hooks');
 
 
@@ -375,12 +376,8 @@ exports.getAddressDetail = async (req, res) => {
         t.type_name as iid_type_name,
         t.description as iid_description,
         t.is_risky as iid_risky,
-        a.is_router,
-        a.is_dns_server,
-        a.is_web_server,
-        a.first_seen,
-        a.last_seen,
-        a.uptime_percentage,
+        (SELECT MIN(x.first_seen) FROM address_protocols x WHERE x.address_id = a.address_id) AS first_seen,
+        (SELECT MAX(x.last_seen) FROM address_protocols x WHERE x.address_id = a.address_id) AS last_seen,
         p.prefix,
         p.prefix_length,
         p.version as prefix_version,
@@ -1856,5 +1853,21 @@ exports.getBatchDiff = async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     historyFail(res, '获取批次差异', error);
+  }
+};
+
+// ---------- 趋势（P5-1）----------
+
+/** GET /api/addresses/trends?scope=global|country|asn&id=&days= —— 每日前缀数 / 地址数序列（来自每日快照） */
+exports.getTrends = async (req, res) => {
+  try {
+    const data = await statsSnapshot.getTrend({ scope: req.query.scope, id: req.query.id, days: req.query.days });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error instanceof statsSnapshot.StatsError) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    logger.error('获取趋势失败:', error.message);
+    res.status(500).json({ success: false, message: '获取趋势失败' });
   }
 };

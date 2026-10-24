@@ -218,6 +218,10 @@ export default {
     getGlobalStats(params = {}) {
       return apiClient.get('/addresses/global-stats', { params });
     },
+    // 每日快照趋势：params = { scope: 'global'|'country'|'asn', id, days }
+    getTrends(params = {}) {
+      return apiClient.get('/addresses/trends', { params });
+    },
 
     // 前缀相关API
     getPrefixDetail(prefixId) {

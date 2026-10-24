@@ -32,10 +32,9 @@ describe('buildAdvancedQuery 基本行为', () => {
   test('条件通过占位符传参，取值不进入 SQL 文本', () => {
     const { sql, params } = buildAdvancedQuery({
       fields: ['address', 'prefix'],
-      country: '86',
+      country: 'cn',
       asn: 4134,
       prefix: '2001:db8::/32',
-      minUptime: '50.5',
       firstSeenAfter: '2026-01-01',
       lastSeenBefore: '2026-06-30',
       orderBy: 'last_seen',
@@ -43,9 +42,9 @@ describe('buildAdvancedQuery 基本行为', () => {
       limit: 50
     });
     expect(sql).toContain('c.country_id = ?');
-    expect(sql).toContain('ORDER BY aa.last_seen DESC');
+    expect(sql).toContain('ORDER BY (SELECT MAX(x.last_seen) FROM address_protocols x WHERE x.address_id = aa.address_id) DESC');
     expect(sql).not.toContain('2001:db8');
-    expect(params).toEqual([86, 4134, '2001:db8::/32', 50.5, '2026-01-01', '2026-06-30 23:59:59', 50]);
+    expect(params).toEqual(['CN', 4134, '2001:db8::/32', '2026-01-01', '2026-06-30 23:59:59', 50]);
   });
 
   test('漏洞筛选会 JOIN 漏洞表并带修复状态', () => {
@@ -78,13 +77,14 @@ describe('buildAdvancedQuery 拒绝非法输入', () => {
     ['未知输出字段', { fields: ['address; DROP TABLE x'] }],
     ['未知排序字段', { orderBy: 'aa.address; DROP TABLE x' }],
     ['非法排序方向', { orderDirection: 'asc; DROP' }],
-    ['country 注入', { country: '1 OR 1=1' }],
+    ['country 注入', { country: "CN' OR 1=1" }],
+    ['country 不是两位字母', { country: '86' }],
     ['asn 注入', { asn: "1' OR '1'='1" }],
     ['前缀注入', { prefix: "2001::' OR 1=1 --" }],
     ['limit 过大', { limit: 100000 }],
     ['limit 为 0', { limit: 0 }],
     ['日期格式错误', { firstSeenAfter: "2026-01-01' OR 1=1" }],
-    ['在线率越界', { minUptime: 101 }],
+    ['在线率条件（库中无此数据）', { minUptime: 50 }],
     ['三态非法值', { hasVulnerability: 'maybe' }],
     ['filters 非对象', 'SELECT 1'],
     ['filters 为数组', []],
@@ -106,10 +106,9 @@ describe('生成的 SQL 恒为只读', () => {
         vulnerabilityFixed: 'true',
         protocolSupport: 'true',
         protocolType: 1,
-        country: 1,
+        country: 'CN',
         asn: 1,
         prefix: '2001:db8::/32',
-        minUptime: 1,
         firstSeenAfter: '2026-01-01',
         firstSeenBefore: '2026-02-01',
         lastSeenAfter: '2026-01-01',
@@ -151,10 +150,10 @@ describe('advancedQuery 控制器', () => {
   test('合法条件执行查询并返回数据与 SQL 文本', async () => {
     db.query.mockResolvedValueOnce([[{ address: '2001:db8::1' }]]);
     const res = createRes();
-    await advancedQuery({ body: { filters: { fields: ['address'], country: 86, limit: 10 } } }, res);
+    await advancedQuery({ body: { filters: { fields: ['address'], country: 'CN', limit: 10 } } }, res);
 
     const [sql, params] = db.query.mock.calls[0];
-    expect(params).toEqual([86, 10]);
+    expect(params).toEqual(['CN', 10]);
     const body = res.json.mock.calls[0][0];
     expect(body.success).toBe(true);
     expect(body.data).toEqual([{ address: '2001:db8::1' }]);
@@ -167,5 +166,23 @@ describe('advancedQuery 控制器', () => {
     await advancedQuery({ body: { filters: {} } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('secret');
+  });
+});
+
+describe('不引用 active_addresses 上不存在的列', () => {
+  test('SQL 中没有 aa.first_seen / aa.last_seen / aa.uptime_percentage', () => {
+    const { sql } = buildAdvancedQuery({
+      fields: Object.keys(FIELD_SELECTS),
+      firstSeenAfter: '2026-01-01',
+      lastSeenBefore: '2026-06-30',
+      orderBy: 'first_seen'
+    });
+    expect(sql).not.toMatch(/aa\.(first_seen|last_seen|uptime_percentage|is_router|is_dns_server|is_web_server)/);
+    expect(sql).toContain('FROM address_protocols x WHERE x.address_id = aa.address_id');
+  });
+
+  test('在线率既不能作为输出字段也不能作为排序字段', () => {
+    expect(() => buildAdvancedQuery({ fields: ['uptime_percentage'] })).toThrow(QueryValidationError);
+    expect(() => buildAdvancedQuery({ orderBy: 'uptime_percentage' })).toThrow(QueryValidationError);
   });
 });

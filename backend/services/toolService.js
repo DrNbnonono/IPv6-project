@@ -242,14 +242,13 @@ const TOOL_REGISTRY = {
 
   query_database: {
     name: '数据库查询',
-    description: '只读查询平台已收集的活跃 IPv6 地址（按国家、AS、前缀、协议、在线率、首次/最近发现日期筛选）。只返回地址、所属前缀、AS 与 IID 类型，最多 1000 条',
+    description: '只读查询平台已收集的活跃 IPv6 地址（按国家、AS、前缀、协议、漏洞、首次/最近发现日期筛选）。只返回地址、所属前缀、AS 与 IID 类型，最多 1000 条',
     category: 'analysis',
     parameters: {
-      country: { type: 'number', description: '国家 ID（countries 表的 country_id）' },
+      country: { type: 'string', description: '国家代码（ISO 两位字母，如 CN、US）' },
       asn: { type: 'number', description: 'AS 号，如 4134' },
       prefix: { type: 'string', description: '前缀（与库里的前缀完全一致），如 2001:db8::/32' },
       protocolType: { type: 'number', description: '协议 ID（protocols 表的 protocol_id），只返回支持该协议的地址' },
-      minUptime: { type: 'number', description: '最低在线率（0–100）' },
       hasVulnerability: { type: 'string', description: "是否有漏洞记录：'true' 或 'false'" },
       firstSeenAfter: { type: 'string', description: '首次发现不早于该日期（YYYY-MM-DD）' },
       lastSeenAfter: { type: 'string', description: '最近发现不早于该日期（YYYY-MM-DD）' },
@@ -257,14 +256,14 @@ const TOOL_REGISTRY = {
     },
     validate: (params) => {
       const filters = {};
-      for (const key of ['country', 'asn', 'prefix', 'protocolType', 'minUptime', 'hasVulnerability', 'firstSeenAfter', 'lastSeenAfter']) {
+      for (const key of ['country', 'asn', 'prefix', 'protocolType', 'hasVulnerability', 'firstSeenAfter', 'lastSeenAfter']) {
         if (params[key] !== undefined && params[key] !== null && params[key] !== '') filters[key] = params[key];
       }
       if (filters.protocolType !== undefined) filters.protocolSupport = 'true';
       const limit = toBoundedInt(params.limit ?? QUERY_TOOL_DEFAULT_LIMIT, 'limit', 1, QUERY_TOOL_MAX_LIMIT);
       // 先用构建器校验一遍，字段错误就在确认/执行之前报出
       try {
-        queryBuilder.buildAdvancedQuery({ ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit });
+        queryBuilder.buildAdvancedQuery({ ...filters, fields: QUERY_TOOL_FIELDS, limit });
       } catch (error) {
         if (error instanceof queryBuilder.QueryValidationError) throw new ToolValidationError(error.message);
         throw error;
@@ -275,7 +274,7 @@ const TOOL_REGISTRY = {
       try {
         const { limit, ...filters } = params;
         const { sql, params: sqlParams } = queryBuilder.buildAdvancedQuery({
-          ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit
+          ...filters, fields: QUERY_TOOL_FIELDS, limit
         });
         const [found] = await db.query(sql, sqlParams);
         const list = Array.isArray(found) ? found : [];
@@ -405,14 +404,18 @@ const TOOL_REGISTRY = {
     authorize: (context) => context.user?.role === 'admin',
     parameters: {
       asn: { type: 'number', description: '只处理该 AS 下的地址' },
-      countryId: { type: 'number', description: '只处理该国家（country_id）下的地址' },
+      countryId: { type: 'string', description: '只处理该国家下的地址（ISO 两位国家代码，如 CN）' },
       prefixId: { type: 'number', description: '只处理该前缀（prefix_id）下的地址' },
       limit: { type: 'number', description: '最多处理的地址数（可选）' }
     },
     validate: (params) => {
       const scope = {};
       if (params.asn !== undefined && params.asn !== '') scope.asn = toBoundedInt(params.asn, 'asn', 1, 4294967295);
-      if (params.countryId !== undefined && params.countryId !== '') scope.countryId = toBoundedInt(params.countryId, 'countryId', 1, 4294967295);
+      if (params.countryId !== undefined && params.countryId !== '') {
+        const code = String(params.countryId).trim().toUpperCase();
+        if (!/^[A-Z]{2}$/.test(code)) throw new ToolValidationError('countryId 必须是两位国家代码（如 CN）');
+        scope.countryId = code;
+      }
       if (params.prefixId !== undefined && params.prefixId !== '') scope.prefixId = toBoundedInt(params.prefixId, 'prefixId', 1, 4294967295);
       if (Object.keys(scope).length !== 1) throw new ToolValidationError('asn、countryId、prefixId 必须且只能提供一个（不支持通过 Agent 处理全表）');
       if (params.limit !== undefined && params.limit !== '') scope.limit = toBoundedInt(params.limit, 'limit', 1, 100000000);

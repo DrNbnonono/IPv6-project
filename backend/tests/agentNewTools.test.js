@@ -52,7 +52,7 @@ describe('query_database', () => {
       { address: '2001:db8::1', prefix: '2001:db8::/32', asn: 64500, as_name_zh: '示例网络', as_name: 'Example', iid_type: 'low-byte' },
       { address: '2001:db8::2', prefix: '2001:db8::/32', asn: 64500, as_name_zh: null, as_name: 'Example', iid_type: null }
     ]]);
-    const result = await toolService.executeTool('query_database', { asn: 64500, minUptime: 50, limit: 10 }, { user });
+    const result = await toolService.executeTool('query_database', { asn: 64500, firstSeenAfter: '2026-01-01', limit: 10 }, { user });
     expect(result.success).toBe(true);
     expect(result.result.count).toBe(2);
     expect(result.result.truncated).toBe(false);
@@ -61,7 +61,13 @@ describe('query_database', () => {
     const [sql, args] = db.query.mock.calls[0];
     expect(sql).toMatch(/^SELECT /);
     expect(sql).toMatch(/LIMIT \?$/);
-    expect(args).toEqual([64500, 50, 10]);
+    expect(args).toEqual([64500, '2026-01-01', 10]);
+  });
+
+  test('库中没有在线率数据：minUptime 已不是该工具的参数，会被参数校验拒绝', () => {
+    const check = toolService.validateToolParams('query_database', { asn: 64500, minUptime: 50 });
+    expect(check.valid).toBe(false);
+    expect(check.errors.join(' ')).toMatch(/minUptime/);
   });
 
   test('默认 limit 为 100，结果数达到 limit 时标记可能被截断', async () => {
@@ -84,7 +90,7 @@ describe('query_database', () => {
 
   test('没有结果', async () => {
     db.query.mockResolvedValue([[]]);
-    const result = await toolService.executeTool('query_database', { country: 1 }, { user });
+    const result = await toolService.executeTool('query_database', { country: 'CN' }, { user });
     expect(result.success).toBe(true);
     expect(result.message).toBe('没有符合条件的地址');
   });
@@ -103,7 +109,6 @@ describe('query_database', () => {
     [{ limit: 'abc' }, /limit/],
     [{ asn: 'abc' }, /asn/],
     [{ prefix: "x'; DROP TABLE users;--" }, /前缀/],
-    [{ minUptime: 101 }, /minUptime/],
     [{ hasVulnerability: 'maybe' }, /hasVulnerability/],
     [{ firstSeenAfter: '昨天' }, /firstSeenAfter/]
   ])('非法参数 %j 被拒绝，不查询数据库', async (params, pattern) => {
@@ -233,7 +238,8 @@ describe('enrich', () => {
 
   test.each([
     [{}, /必须且只能提供一个/],
-    [{ asn: 1, countryId: 2 }, /必须且只能提供一个/],
+    [{ asn: 1, countryId: 'CN' }, /必须且只能提供一个/],
+    [{ countryId: '86' }, /countryId/],
     [{ asn: 'x' }, /asn/],
     [{ prefixId: 1, limit: 0 }, /limit/]
   ])('非法参数 %j 被拒绝', async (params, pattern) => {

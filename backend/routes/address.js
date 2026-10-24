@@ -22,6 +22,9 @@ router.get('/diff', authenticate, addressController.getBatchDiff);
 // 通用搜索
 router.get('/search', addressController.searchIPv6);
 
+// 趋势（每日快照；迁移 15 未应用时返回 503）
+router.get('/trends', addressController.getTrends);
+
 // 获取全球统计
 router.get('/global-stats', addressController.getGlobalStats);
 router.get('/addresses/global-stats', addressController.getGlobalStats);

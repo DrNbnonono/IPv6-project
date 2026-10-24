@@ -193,6 +193,12 @@ export const useDetectionStore = defineStore('detection', () => {
     }
   }
 
+  // 趋势（每日快照）。返回 { scope, id, days, points, summary }；接口 503 表示迁移 15 尚未执行
+  const fetchTrends = async ({ scope = 'global', id, days = 30 } = {}) => {
+    const response = await api.detection.getTrends({ scope, id, days })
+    return response.data
+  }
+
   // 添加协议相关方法
   const fetchProtocols = async () => {
     try {
@@ -439,6 +445,7 @@ export const useDetectionStore = defineStore('detection', () => {
   fetchCountryRanking,
   fetchAsnRanking,
   fetchCountryDetail,
+  fetchTrends,
   fetchAsnDetail,
   searchIPv6Data,
   fetchPrefixDetail,

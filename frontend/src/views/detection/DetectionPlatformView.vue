@@ -12,6 +12,7 @@
         <button @click="goToAdvancedQuery" class="nav-btn query-btn">高级查询</button>
         <button @click="showProtocolAnalysis = true" class="nav-btn protocol-btn">协议分析</button>
         <button @click="showVulnerabilityAnalysis = true" class="nav-btn vulnerability-btn">漏洞分析</button>
+        <button @click="showTrends = !showTrends" class="nav-btn trend-btn">趋势</button>
         <button @click="goToTools" class="nav-btn tools-btn">工具平台</button>
         <span v-if="authStore.isAuthenticated">欢迎，{{ authStore.username }}</span>
         <button v-if="authStore.isAuthenticated" @click="handleLogout" class="logout-btn">退出</button>
@@ -163,6 +164,13 @@
               </ul>
               <p v-else>暂无ASN数据</p>
             </div>
+
+            <TrendPanel
+              :key="'country-' + selectedCountry.country_id"
+              scope="country"
+              :id="selectedCountry.country_id"
+              :label="selectedCountry.country_name_zh || selectedCountry.country_name"
+            />
             
             <div class="detail-actions">
               <button @click="viewFullCountryDetails(selectedCountry)" class="detail-btn">
@@ -217,6 +225,13 @@
                   </p>
                 </div>
                 <p v-else class="no-data">暂无前缀数据</p>
+
+                <TrendPanel
+                  :key="'asn-' + selectedAsn.asn"
+                  scope="asn"
+                  :id="selectedAsn.asn"
+                  :label="'AS' + selectedAsn.asn"
+                />
                 
                 <div class="detail-actions">
                   <button @click="viewFullAsnDetails(selectedAsn)" class="detail-btn">查看完整详情</button>
@@ -304,6 +319,17 @@
       </div>
     </div>
 
+    <!-- 全球趋势面板 -->
+    <div class="analysis-panel trend-analysis-panel" :class="{ 'visible': showTrends }">
+      <div class="panel-header">
+        <h3>全球趋势</h3>
+        <button @click="showTrends = false" class="close-btn">×</button>
+      </div>
+      <div class="panel-content">
+        <TrendPanel v-if="showTrends" scope="global" label="全球" :initial-days="90" />
+      </div>
+    </div>
+
     <footer class="platform-footer">
       <p>ObserV6 | 最后数据更新: {{ lastDataUpdate }}</p>
     </footer>
@@ -324,6 +350,7 @@ import SearchResultsPanel from '@/components/detection/SearchResultsPanel.vue';
 import ProtocolAnalysisPanel from '@/components/detection/ProtocolAnalysisPanel.vue'
 import VulnerabilityAnalysisPanel from '@/components/detection/VulnerabilityAnalysisPanel.vue'
 import AIChatPanel from '@/components/detection/AIChatPanel.vue'
+import TrendPanel from '@/components/detection/TrendPanel.vue'
 // 路由和状态管理
 const router = useRouter()
 const authStore = useAuthStore()
@@ -357,6 +384,7 @@ const isZoomedIn = ref(false)
 // 添加协议分析和漏洞分析状态变量
 const showProtocolAnalysis = ref(false)
 const showVulnerabilityAnalysis = ref(false)
+const showTrends = ref(false)
 
 const countryRankingList = ref(null)
 const asnRankingList = ref(null)
@@ -2080,6 +2108,15 @@ onMounted(() => {
   background: rgba(244, 67, 54, 0.4);
 }
 
+.trend-btn {
+  background: rgba(129, 199, 132, 0.2);
+  border: 1px solid rgba(129, 199, 132, 0.5);
+}
+
+.trend-btn:hover {
+  background: rgba(129, 199, 132, 0.4);
+}
+
 /* 分析面板样式 */
 .analysis-panel {
   position: fixed;
@@ -2127,6 +2164,16 @@ onMounted(() => {
   flex: 1;
   overflow: auto;
   padding: 15px;
+}
+
+.trend-analysis-panel {
+  height: auto;
+  max-height: 80%;
+  max-width: 900px;
+}
+
+.trend-analysis-panel :deep(.trend-chart) {
+  height: 360px;
 }
 
 .protocol-analysis-panel .panel-header {
