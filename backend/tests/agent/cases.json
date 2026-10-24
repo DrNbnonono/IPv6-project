@@ -678,12 +678,12 @@
    "id": "enrich-02",
    "category": "enrich",
    "role": "admin",
-   "utterance": "给国家 ID 3 的地址补全分类",
+   "utterance": "给中国（CN）的地址补全分类",
    "expect": {
     "tool": "enrich",
     "outcome": "confirmation_required",
     "params": {
-     "countryId": 3
+     "countryId": "CN"
     }
    },
    "recorded": {
@@ -691,7 +691,7 @@
      {
       "name": "enrich",
       "arguments": {
-       "countryId": 3
+       "countryId": "CN"
       }
      }
     ],
@@ -838,12 +838,12 @@
    "id": "query-05",
    "category": "query",
    "role": "user",
-   "utterance": "国家 ID 为 5 的、有漏洞记录的地址",
+   "utterance": "美国（US）下有漏洞记录的地址",
    "expect": {
     "tool": "query_database",
     "outcome": "tool_execution",
     "params": {
-     "country": 5,
+     "country": "US",
      "hasVulnerability": "true"
     },
     "executedTools": [
@@ -855,7 +855,7 @@
      {
       "name": "query_database",
       "arguments": {
-       "country": 5,
+       "country": "US",
        "hasVulnerability": "true"
       }
      }

@@ -48,7 +48,7 @@ describe('resolveParams', () => {
 
   test('范围三选一或明确 all=true；默认 overwrite=false、fillPrefix=true', () => {
     expect(resolveParams({ asn: '4134' })).toEqual({ scope: { asn: 4134 }, overwrite: false, fillPrefix: true, limit: null });
-    expect(resolveParams({ countryId: 86, overwrite: 'true', fillPrefix: false, limit: 50 })).toEqual({ scope: { countryId: 86 }, overwrite: true, fillPrefix: false, limit: 50 });
+    expect(resolveParams({ countryId: 'cn', overwrite: 'true', fillPrefix: false, limit: 50 })).toEqual({ scope: { countryId: 'CN' }, overwrite: true, fillPrefix: false, limit: 50 });
     expect(resolveParams({ prefixId: 3 }).scope).toEqual({ prefixId: 3 });
     expect(resolveParams({ all: true }).scope).toEqual({});
   });
@@ -59,7 +59,7 @@ describe('resolveParams', () => {
     [{ asn: 1, all: true }, '不能与'],
     [{ asn: 0 }, 'asn'],
     [{ asn: 'x' }, 'asn'],
-    [{ countryId: -1 }, 'countryId'],
+    [{ countryId: 86 }, 'countryId'],
     [{ prefixId: 1.5 }, 'prefixId'],
     [{ all: true, limit: 0 }, 'limit'],
     [{ all: true, overwrite: 'maybe' }, '布尔']
@@ -104,7 +104,7 @@ describe('scanAndEnrich', () => {
   test('countryId / prefixId / 全表 的范围条件；overwrite 时不加“待处理”过滤；fillPrefix 时载入前缀并加 prefix_id IS NULL', async () => {
     installDb({ 'FROM tasks WHERE id': () => [[{ status: 'running' }]], 'FROM active_addresses': () => [[]] });
 
-    await enrichTasks.scanAndEnrich(task({ scope: { countryId: 86 }, overwrite: true, fillPrefix: false }));
+    await enrichTasks.scanAndEnrich(task({ scope: { countryId: 'CN' }, overwrite: true, fillPrefix: false }));
     expect(selects()[0][0]).toMatch(/WHERE country_id = \?\)|ip_prefixes WHERE country_id = \?/);
     expect(selects()[0][0]).not.toMatch(/iid_type IS NULL/);
 

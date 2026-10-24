@@ -90,7 +90,7 @@ describe('query_database', () => {
 
   test('没有结果', async () => {
     db.query.mockResolvedValue([[]]);
-    const result = await toolService.executeTool('query_database', { country: 1 }, { user });
+    const result = await toolService.executeTool('query_database', { country: 'CN' }, { user });
     expect(result.success).toBe(true);
     expect(result.message).toBe('没有符合条件的地址');
   });
@@ -238,7 +238,8 @@ describe('enrich', () => {
 
   test.each([
     [{}, /必须且只能提供一个/],
-    [{ asn: 1, countryId: 2 }, /必须且只能提供一个/],
+    [{ asn: 1, countryId: 'CN' }, /必须且只能提供一个/],
+    [{ countryId: '86' }, /countryId/],
     [{ asn: 'x' }, /asn/],
     [{ prefixId: 1, limit: 0 }, /limit/]
   ])('非法参数 %j 被拒绝', async (params, pattern) => {

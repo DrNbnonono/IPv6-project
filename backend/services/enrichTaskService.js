@@ -46,6 +46,12 @@ const toInt = (value, label, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) =>
   if (!Number.isInteger(n) || n < min || n > max) throw new EnrichError(`${label} 必须是 ${min}–${max} 之间的整数`);
   return n;
 };
+// countries.country_id 是 ISO 两位字母代码（如 CN）
+const toCountryCode = (value, label) => {
+  const text = String(value).trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(text)) throw new EnrichError(`${label} 必须是两位国家代码（如 CN）`);
+  return text;
+};
 const isSet = (value) => value !== undefined && value !== null && value !== '';
 const toBool = (value, fallback) => {
   if (value === undefined || value === null || value === '') return fallback;
@@ -58,7 +64,7 @@ const toBool = (value, fallback) => {
 const resolveParams = (body = {}) => {
   const scope = {};
   if (isSet(body.asn)) scope.asn = toInt(body.asn, 'asn', { max: 4294967295 });
-  if (isSet(body.countryId)) scope.countryId = toInt(body.countryId, 'countryId');
+  if (isSet(body.countryId)) scope.countryId = toCountryCode(body.countryId, 'countryId');
   if (isSet(body.prefixId)) scope.prefixId = toInt(body.prefixId, 'prefixId');
   const all = toBool(body.all, false);
   if (Object.keys(scope).length === 0 && !all) {

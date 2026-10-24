@@ -53,6 +53,15 @@ const toInt = (value, label) => {
   return Number(text);
 };
 
+// countries.country_id 是 ISO 两位字母代码（如 CN），不是数字
+const toCountryCode = (value, label) => {
+  const text = String(value).trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(text)) {
+    throw new QueryValidationError(`${label} 必须是两位国家代码（如 CN）`);
+  }
+  return text;
+};
+
 const toTriState = (value, label) => {
   if (isBlank(value)) return '';
   const text = String(value);
@@ -125,7 +134,7 @@ const normalizeFilters = (filters) => {
     protocolSupport: toTriState(filters.protocolSupport, 'protocolSupport')
   };
 
-  if (!isBlank(filters.country)) normalized.country = toInt(filters.country, 'country');
+  if (!isBlank(filters.country)) normalized.country = toCountryCode(filters.country, 'country');
   if (!isBlank(filters.asn)) normalized.asn = toInt(filters.asn, 'asn');
   if (!isBlank(filters.prefix)) normalized.prefix = toPrefix(filters.prefix);
   if (!isBlank(filters.vulnerabilityType)) normalized.vulnerabilityType = toInt(filters.vulnerabilityType, 'vulnerabilityType');
@@ -253,6 +262,7 @@ module.exports = {
   buildAdvancedQuery,
   normalizeFilters,
   QueryValidationError,
+  toCountryCode,
   FIELD_SELECTS,
   ORDER_COLUMNS,
   MAX_LIMIT
