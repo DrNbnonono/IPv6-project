@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const { createLogger, format, transports } = require('winston');
+const { createLogger, format, transports, config } = require('winston');
 const { DIRS } = require('./storageService');
 
 const MASK = '***';
@@ -111,7 +111,9 @@ function buildRootLogger() {
 
   const list = [
     new transports.Console({
-      format: format.combine(timestamp, format.colorize(), lineFormat)
+      format: format.combine(timestamp, format.colorize(), lineFormat),
+      // stdio 类程序（如 scripts/mcpStdio.js）的 stdout 是协议通道，日志必须走 stderr
+      ...(process.env.LOG_TO_STDERR === '1' ? { stderrLevels: Object.keys(config.npm.levels) } : {})
     })
   ];
 

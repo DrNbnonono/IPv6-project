@@ -149,6 +149,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `SCAN_ORG_NAME` `SCAN_CONTACT_EMAIL` `SCAN_SOURCE_ADDRESSES` `SCAN_PURPOSE` | 空 | 公开说明页 `/about-scanning` 展示的运营单位、联系邮箱、探测来源地址（逗号分隔）与用途说明；未配置的项页面显示“尚未公布”。**对外扫描前务必配置来源地址和联系邮箱** |
 | `OPT_OUT_RATE_MAX` | `5` | 公开退出请求接口（`POST /api/opt-out`，需先执行迁移 `sql/17-opt-out-requests.sql`）每 IP 每小时的提交次数；待审核的网段立即被扫描策略拒绝，管理员在管理页“退出请求”里通过（写入黑名单）或驳回 |
 | `OPEN_API_RATE_PER_MIN` | `60` | 开放只读 API（`/api/open/v1`，需先执行迁移 `sql/16-api-keys.sql`，由管理员在管理页发放密钥）每把密钥每分钟的请求上限；密钥上可单独设置，用法见 `backend/knowledge/platform/open-api.md` |
+| `MCP_STDIO_SCOPES` | `stats` | 本机 MCP 入口（`node backend/scripts/mcpStdio.js`）的权限范围，逗号分隔；远程入口 `POST /api/mcp` 复用开放 API 密钥与限流，只读，用法见 `backend/knowledge/platform/mcp.md` |
 | `REPORT_RETENTION_DAYS` | `30` | 任务报告（`reports/` 目录）保留天数，生成新报告时顺带清理过期的；PDF 导出需额外安装 `puppeteer`，未安装时只提供 HTML（浏览器可直接打印为 PDF） |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |
 | `BCRYPT_ROUNDS` `ALLOW_LEGACY_PASSWORDS` | `10` `true` | 密码哈希强度；执行 `scripts/migratePasswords.js` 后请设为 `false` |

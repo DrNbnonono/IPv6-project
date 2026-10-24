@@ -194,7 +194,7 @@
               <el-button type="primary" native-type="submit" :loading="admin.isLoading" :disabled="!canCreateKey">创建</el-button>
             </el-form-item>
           </el-form>
-          <div class="hint">明文密钥只在创建后显示一次，服务器只保存它的哈希。完整地址权限请只发给确实需要的使用者。接口说明见 backend/knowledge/platform/open-api.md。</div>
+          <div class="hint">明文密钥只在创建后显示一次，服务器只保存它的哈希。完整地址权限请只发给确实需要的使用者。接口说明见 backend/knowledge/platform/open-api.md；同一把密钥也可用于 MCP 入口 /api/mcp（只读，见 mcp.md）。</div>
         </el-card>
 
         <el-table :data="admin.apiKeys.items" size="small" empty-text="还没有创建过密钥（需要先执行迁移 16）">

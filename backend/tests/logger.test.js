@@ -190,3 +190,38 @@ describe('createModuleLogger', () => {
     expect(root.transports[0].silent).toBe(true);
   });
 });
+
+describe('LOG_TO_STDERR（stdio 程序的 stdout 是协议通道）', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  const buildConsoleTransport = (env) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ov6-log-'));
+    const saved = {};
+    const set = { NODE_ENV: 'development', PROJECT_ROOT: root, ...env };
+    for (const [key, value] of Object.entries(set)) {
+      saved[key] = process.env[key];
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    try {
+      let transport;
+      jest.isolateModules(() => {
+        const fresh = require('../services/loggerService');
+        transport = fresh._getRootLogger().transports.find((t) => t.name === 'console');
+        fresh._getRootLogger().close();
+      });
+      return transport;
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  test('设置后所有级别都写 stderr；默认不设置', () => {
+    expect(buildConsoleTransport({ LOG_TO_STDERR: '1' }).stderrLevels).toMatchObject({ error: true, info: true, debug: true });
+    expect(Object.keys(buildConsoleTransport({ LOG_TO_STDERR: undefined }).stderrLevels || {})).toHaveLength(0);
+  });
+});
