@@ -47,6 +47,7 @@
     ],
     "collectCoverageFrom": [
       "services/**/*.js",
+      "middleware/apiKey.js",
       "!services/workflowEngine.js"
     ],
     "coverageDirectory": "coverage",
