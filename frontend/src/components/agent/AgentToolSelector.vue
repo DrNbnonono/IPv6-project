@@ -192,12 +192,12 @@ const getCategoryLabel = (category) => {
     gap: 8px;
 
     &:hover {
-      border-color: #667eea;
+      border-color: var(--ov-accent);
     }
 
     &.active {
-      border-color: #667eea;
-      background: rgba(102, 126, 234, 0.05);
+      border-color: var(--ov-accent);
+      background: rgb(var(--ov-accent-rgb) / 0.05);
     }
 
     .tool-icon {
@@ -256,7 +256,7 @@ const getCategoryLabel = (category) => {
 
         &:focus {
           outline: none;
-          border-color: #667eea;
+          border-color: var(--ov-accent);
         }
       }
 
@@ -291,7 +291,7 @@ const getCategoryLabel = (category) => {
       }
 
       &.btn-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
         border: none;
         color: white;
 

@@ -146,7 +146,7 @@ const chatPanel = ref(null)
 const isDragging = ref(false)
 const dragStartX = ref(0)
 const dragStartY = ref(0)
-const btnPosition = ref({ x: window.innerWidth - 120, y: window.innerHeight - 120 })
+const btnPosition = ref({ x: window.innerWidth - 144, y: window.innerHeight - 96 })
 const panelPosition = ref({ x: window.innerWidth - 420, y: 100 })
 const panelSize = ref({ width: 600, height: 720 })
 
@@ -183,7 +183,7 @@ const startDrag = (e) => {
   const onMouseMove = (e) => {
     if (isDragging.value) {
       btnPosition.value = {
-        x: Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragStartX.value)),
+        x: Math.max(0, Math.min(window.innerWidth - 120, e.clientX - dragStartX.value)),
         y: Math.max(0, Math.min(window.innerHeight - 60, e.clientY - dragStartY.value))
       }
     }
@@ -511,7 +511,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   position: fixed;
   width: 120px;
   height: 44px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
   border: none;
   border-radius: 12px;
   color: #ffffff;
@@ -520,7 +520,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 12px 30px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 12px 30px rgb(var(--ov-accent-rgb) / 0.35);
   transition: transform 0.2s ease;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -542,11 +542,11 @@ watch(() => aiStore.detectionMessages.length, () => {
   position: fixed;
   background: #ffffff;
   border-radius: 18px;
-  box-shadow: 0 30px 70px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 30px 70px rgb(var(--ov-accent-rgb) / 0.35);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(102, 126, 234, 0.24);
+  border: 1px solid rgb(var(--ov-accent-rgb) / 0.24);
   min-width: 400px;
   min-height: 400px;
 }
@@ -622,7 +622,7 @@ watch(() => aiStore.detectionMessages.length, () => {
 }
 
 .panel-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
   color: #ffffff;
   padding: 12px 18px;
   display: flex;
@@ -630,7 +630,7 @@ watch(() => aiStore.detectionMessages.length, () => {
   align-items: center;
   cursor: move;
   user-select: none;
-  box-shadow: 0 10px 24px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 10px 24px rgb(var(--ov-accent-rgb) / 0.35);
 
   .header-left {
     display: flex;
@@ -750,7 +750,7 @@ watch(() => aiStore.detectionMessages.length, () => {
 
       &:hover {
         background: #f3f4f6;
-        border-color: #667eea;
+        border-color: var(--ov-accent);
         transform: translateX(4px);
       }
     }
@@ -766,7 +766,7 @@ watch(() => aiStore.detectionMessages.length, () => {
     flex-direction: row-reverse;
 
     .message-content {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       color: #ffffff;
       border-radius: 16px 16px 6px 16px;
     }
@@ -864,14 +864,14 @@ watch(() => aiStore.detectionMessages.length, () => {
       }
 
       a {
-        color: #667eea;
+        color: var(--ov-accent);
         text-decoration: none;
-        border-bottom: 1px solid #667eea;
+        border-bottom: 1px solid var(--ov-accent);
         transition: all 0.2s;
 
         &:hover {
-          color: #764ba2;
-          border-bottom-color: #764ba2;
+          color: var(--ov-accent-2);
+          border-bottom-color: var(--ov-accent-2);
         }
       }
 
@@ -939,7 +939,7 @@ watch(() => aiStore.detectionMessages.length, () => {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #667eea;
+    background: var(--ov-accent);
     animation: typing 1.4s infinite;
 
     &:nth-child(2) {
@@ -986,7 +986,7 @@ watch(() => aiStore.detectionMessages.length, () => {
 
     &:focus {
       outline: none;
-      border-color: #667eea;
+      border-color: var(--ov-accent);
     }
 
     &:disabled {
@@ -997,7 +997,7 @@ watch(() => aiStore.detectionMessages.length, () => {
 
   .send-btn {
     min-width: 96px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
     color: #ffffff;
     border: none;
     border-radius: 999px;
@@ -1012,7 +1012,7 @@ watch(() => aiStore.detectionMessages.length, () => {
     &:hover:not(:disabled) {
       opacity: 0.95;
       transform: translateY(-2px);
-      box-shadow: 0 10px 24px rgba(102, 126, 234, 0.35);
+      box-shadow: 0 10px 24px rgb(var(--ov-accent-rgb) / 0.35);
     }
 
     &:disabled {

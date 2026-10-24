@@ -427,15 +427,21 @@ const clearAllMemory = async () => {
 <style scoped lang="scss">
 .agent-dashboard-view {
   display: flex;
-  height: 100vh;
-  background: #0a0a0f;
-  color: #e0e0e0;
+  // 嵌在工具平台外壳里：不再占满整个视口，而是一块带圆角和边框的“控制台”
+  height: max(640px, calc(100vh - 200px));
+  margin: 16px 0;
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius);
+  box-shadow: var(--ov-shadow-lg);
+  overflow: hidden;
+  background: radial-gradient(900px 400px at 15% -10%, #12324d 0%, var(--ov-bg-panel-2) 55%, var(--ov-bg-deep) 100%);
+  color: var(--ov-text);
 }
 
 // 侧边栏
 .sidebar {
   width: 260px;
-  background: linear-gradient(180deg, #12121a 0%, #0f0f17 100%);
+  background: linear-gradient(180deg, var(--ov-bg-panel) 0%, var(--ov-bg-panel-2) 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
@@ -474,7 +480,7 @@ const clearAllMemory = async () => {
       .logo-text {
         font-size: 16px;
         font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -493,9 +499,9 @@ const clearAllMemory = async () => {
       transition: all 0.2s;
 
       &:hover {
-        background: rgba(102, 126, 234, 0.2);
-        border-color: rgba(102, 126, 234, 0.4);
-        color: #667eea;
+        background: rgb(var(--ov-accent-rgb) / 0.2);
+        border-color: rgb(var(--ov-accent-rgb) / 0.4);
+        color: var(--ov-accent);
       }
     }
   }
@@ -530,13 +536,13 @@ const clearAllMemory = async () => {
       position: relative;
 
       &:hover {
-        background: rgba(102, 126, 234, 0.1);
+        background: rgb(var(--ov-accent-rgb) / 0.1);
         color: #e0e0e0;
       }
 
       &.active {
-        background: rgba(102, 126, 234, 0.15);
-        color: #667eea;
+        background: rgb(var(--ov-accent-rgb) / 0.15);
+        color: var(--ov-accent);
 
         &::before {
           content: '';
@@ -545,7 +551,7 @@ const clearAllMemory = async () => {
           top: 0;
           bottom: 0;
           width: 3px;
-          background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+          background: linear-gradient(180deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
         }
       }
 
@@ -562,10 +568,10 @@ const clearAllMemory = async () => {
       .badge {
         margin-left: auto;
         padding: 2px 8px;
-        background: rgba(102, 126, 234, 0.2);
+        background: rgb(var(--ov-accent-rgb) / 0.2);
         border-radius: 10px;
         font-size: 11px;
-        color: #667eea;
+        color: var(--ov-accent);
       }
     }
   }
@@ -619,13 +625,13 @@ const clearAllMemory = async () => {
         margin: 0;
         font-size: 24px;
         font-weight: 700;
-        color: #ffffff;
+        color: var(--ov-text);
       }
 
       .subtitle {
         margin: 4px 0 0;
         font-size: 13px;
-        color: #6b7280;
+        color: var(--ov-text-dim);
       }
     }
 
@@ -649,7 +655,7 @@ const clearAllMemory = async () => {
         .stat-value {
           font-size: 16px;
           font-weight: 700;
-          color: #667eea;
+          color: var(--ov-accent);
         }
 
         .stat-label {
@@ -676,7 +682,7 @@ const clearAllMemory = async () => {
 // 工具详情侧边栏
 .detail-sidebar {
   width: 320px;
-  background: #12121a;
+  background: var(--ov-bg-panel);
   border-left: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
@@ -738,7 +744,7 @@ const clearAllMemory = async () => {
     .params-section {
       h4 {
         font-size: 13px;
-        color: #667eea;
+        color: var(--ov-accent);
         margin: 0 0 16px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
@@ -761,8 +767,8 @@ const clearAllMemory = async () => {
 
           .param-name {
             font-size: 13px;
-            color: #667eea;
-            background: rgba(102, 126, 234, 0.1);
+            color: var(--ov-accent);
+            background: rgb(var(--ov-accent-rgb) / 0.1);
             padding: 2px 8px;
             border-radius: 4px;
           }
@@ -801,7 +807,7 @@ const clearAllMemory = async () => {
 
           &:focus {
             outline: none;
-            border-color: rgba(102, 126, 234, 0.5);
+            border-color: rgb(var(--ov-accent-rgb) / 0.5);
           }
         }
       }
@@ -810,7 +816,7 @@ const clearAllMemory = async () => {
     .execute-btn {
       width: 100%;
       padding: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       border: none;
       border-radius: 10px;
       color: white;
@@ -821,7 +827,7 @@ const clearAllMemory = async () => {
 
       &:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 8px 20px rgb(var(--ov-accent-rgb) / 0.4);
       }
 
       &:disabled {
@@ -846,7 +852,7 @@ const clearAllMemory = async () => {
 
 .terminal-panel,
 .memory-panel {
-  background: #12121a;
+  background: var(--ov-bg-panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   width: 600px;
@@ -890,7 +896,7 @@ const clearAllMemory = async () => {
       }
 
       &.primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
         border: none;
         color: white;
 
@@ -930,13 +936,13 @@ const clearAllMemory = async () => {
     transition: all 0.2s;
 
     &:hover {
-      background: rgba(102, 126, 234, 0.1);
-      border-color: rgba(102, 126, 234, 0.3);
+      background: rgb(var(--ov-accent-rgb) / 0.1);
+      border-color: rgb(var(--ov-accent-rgb) / 0.3);
     }
 
     &.active {
-      background: rgba(102, 126, 234, 0.15);
-      border-color: rgba(102, 126, 234, 0.5);
+      background: rgb(var(--ov-accent-rgb) / 0.15);
+      border-color: rgb(var(--ov-accent-rgb) / 0.5);
     }
 
     .terminal-icon {
@@ -951,7 +957,7 @@ const clearAllMemory = async () => {
       .terminal-id {
         font-size: 13px;
         font-family: monospace;
-        color: #667eea;
+        color: var(--ov-accent);
       }
 
       .terminal-status {
@@ -1007,7 +1013,7 @@ const clearAllMemory = async () => {
       font-size: 12px;
 
       &:hover {
-        color: #667eea;
+        color: var(--ov-accent);
       }
     }
   }
@@ -1016,7 +1022,7 @@ const clearAllMemory = async () => {
     flex: 1;
     padding: 16px;
     overflow-y: auto;
-    background: #0a0a0f;
+    background: var(--ov-bg-deep);
     font-family: 'Fira Code', 'Consolas', monospace;
     font-size: 13px;
     color: #a5d6ff;
@@ -1046,13 +1052,13 @@ const clearAllMemory = async () => {
 
       &:focus {
         outline: none;
-        border-color: rgba(102, 126, 234, 0.5);
+        border-color: rgb(var(--ov-accent-rgb) / 0.5);
       }
     }
 
     button {
       padding: 10px 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       border: none;
       border-radius: 8px;
       color: white;
@@ -1091,7 +1097,7 @@ const clearAllMemory = async () => {
       .stat-value {
         font-size: 24px;
         font-weight: 700;
-        color: #667eea;
+        color: var(--ov-accent);
         display: block;
       }
 

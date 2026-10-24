@@ -6,7 +6,7 @@
           <span class="page-icon">🤖</span>
           <div class="header-info">
             <h1>AI探测助手</h1>
-            <p class="subtitle">集成LangChain & MCP - 智能辅助网络探测</p>
+            <p class="subtitle">用自然语言描述探测需求，助手给出可执行的命令建议</p>
           </div>
         </div>
         <div class="header-stats">
@@ -42,74 +42,83 @@ const aiStore = useAIStore()
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 300px);
-  background: #f5f7fa;
-  padding-bottom: 10px; // 为footer留出空间
+  background: var(--ov-surface-2);
+  padding-bottom: 10px;
 }
 
 .page-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 24px 32px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: var(--ov-surface);
+  border-bottom: 1px solid var(--ov-border);
+  padding: 20px 32px;
 
   .header-content {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
 
     .page-icon {
-      font-size: 48px;
-      animation: float 3s ease-in-out infinite;
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      font-size: 26px;
+      border-radius: 16px;
+      background: var(--ov-accent-gradient);
+      box-shadow: 0 8px 20px rgb(var(--ov-accent-rgb) / 0.3);
     }
 
     .header-info {
       h1 {
         margin: 0;
-        font-size: 28px;
-        font-weight: 600;
-        color: #333;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: var(--ov-ink);
       }
 
       .subtitle {
         margin: 4px 0 0;
         font-size: 14px;
-        color: #666;
+        color: var(--ov-ink-dim);
       }
     }
   }
 
   .header-stats {
     display: flex;
-    gap: 32px;
+    gap: 12px;
 
     .stat-item {
+      min-width: 92px;
+      padding: 8px 16px;
       display: flex;
       flex-direction: column;
       align-items: center;
+      background: var(--ov-surface-2);
+      border: 1px solid var(--ov-border);
+      border-radius: var(--ov-radius);
 
       .stat-label {
         font-size: 12px;
-        color: #999;
-        margin-bottom: 4px;
+        color: var(--ov-ink-faint);
+        margin-bottom: 2px;
       }
 
       .stat-value {
-        font-size: 20px;
-        font-weight: 600;
-        color: #333;
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--ov-ink);
 
         &.online {
-          color: #4ade80;
+          color: var(--ov-success);
         }
       }
     }
@@ -118,28 +127,23 @@ const aiStore = useAIStore()
 
 .page-content {
   flex: 1;
-  padding: 32px 32px 96px;
+  padding: 28px 24px 72px;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   width: 100%;
-  min-height: calc(100vh - 200px);
+  box-sizing: border-box;
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
+@media (max-width: 720px) {
+  .page-header {
+    padding: 16px;
 
-// 调整ToolsAIChat组件在此页面中的样式
-:deep(.tools-ai-chat) {
-  margin: 0;
-  flex: 1;
-  min-height: 600px;
-  max-height: calc(100vh - 400px);
+    .header-left .page-icon { width: 44px; height: 44px; font-size: 22px; }
+    .header-left .header-info h1 { font-size: 20px; }
+    .header-stats { width: 100%; .stat-item { flex: 1; } }
+  }
+
+  .page-content { padding: 16px 0 56px; }
 }
 </style>

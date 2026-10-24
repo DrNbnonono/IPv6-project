@@ -449,14 +449,14 @@ const toggleHistory = () => {
     font-size: 13px;
 
     &:hover {
-      background: rgba(102, 126, 234, 0.2);
-      border-color: rgba(102, 126, 234, 0.5);
+      background: rgb(var(--ov-accent-rgb) / 0.2);
+      border-color: rgb(var(--ov-accent-rgb) / 0.5);
       color: #ffffff;
       transform: translateY(-2px);
     }
 
     &.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       border-color: transparent;
       color: #ffffff;
     }
@@ -512,7 +512,7 @@ const toggleHistory = () => {
     .orb-ring {
       position: absolute;
       inset: 0;
-      border: 2px solid rgba(102, 126, 234, 0.5);
+      border: 2px solid rgb(var(--ov-accent-rgb) / 0.5);
       border-radius: 50%;
       animation: pulse-ring 2s ease-out infinite;
     }
@@ -520,7 +520,7 @@ const toggleHistory = () => {
     .orb-core {
       position: absolute;
       inset: 15px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -533,7 +533,7 @@ const toggleHistory = () => {
   h2 {
     font-size: 28px;
     font-weight: 700;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -566,10 +566,10 @@ const toggleHistory = () => {
       gap: 8px;
 
       &:hover {
-        background: rgba(102, 126, 234, 0.15);
-        border-color: rgba(102, 126, 234, 0.4);
+        background: rgb(var(--ov-accent-rgb) / 0.15);
+        border-color: rgb(var(--ov-accent-rgb) / 0.4);
         transform: translateY(-4px);
-        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+        box-shadow: 0 8px 24px rgb(var(--ov-accent-rgb) / 0.2);
       }
 
       .cap-icon {
@@ -616,8 +616,8 @@ const toggleHistory = () => {
       transition: all 0.3s ease;
 
       &:hover {
-        background: rgba(102, 126, 234, 0.2);
-        border-color: rgba(102, 126, 234, 0.5);
+        background: rgb(var(--ov-accent-rgb) / 0.2);
+        border-color: rgb(var(--ov-accent-rgb) / 0.5);
         color: #ffffff;
       }
     }
@@ -639,7 +639,7 @@ const toggleHistory = () => {
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(102, 126, 234, 0.3);
+    background: rgb(var(--ov-accent-rgb) / 0.3);
     border-radius: 3px;
   }
 }
@@ -664,7 +664,7 @@ const toggleHistory = () => {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: rgba(102, 126, 234, 0.2);
+    background: rgb(var(--ov-accent-rgb) / 0.2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -680,12 +680,11 @@ const toggleHistory = () => {
     position: relative;
 
     .welcome-badge {
-      position: absolute;
-      top: -10px;
-      left: 14px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 4px 12px;
-      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
+      padding: 3px 12px;
+      border-radius: 999px;
       font-size: 11px;
       font-weight: 600;
       color: white;
@@ -709,15 +708,15 @@ const toggleHistory = () => {
       }
 
       :deep(.inline-code) {
-        background: rgba(102, 126, 234, 0.15);
+        background: rgb(var(--ov-accent-rgb) / 0.15);
         padding: 2px 8px;
         border-radius: 4px;
         font-size: 13px;
-        color: #667eea;
+        color: var(--ov-accent);
       }
 
       :deep(.msg-heading) {
-        color: #667eea;
+        color: var(--ov-accent);
         margin: 12px 0 8px;
       }
 
@@ -733,9 +732,9 @@ const toggleHistory = () => {
       }
 
       :deep(a) {
-        color: #667eea;
+        color: var(--ov-accent);
         text-decoration: none;
-        border-bottom: 1px solid rgba(102, 126, 234, 0.5);
+        border-bottom: 1px solid rgb(var(--ov-accent-rgb) / 0.5);
       }
     }
 
@@ -752,7 +751,7 @@ const toggleHistory = () => {
         border-radius: 12px;
         font-size: 11px;
         font-weight: 600;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
         color: white;
 
         &.xmap { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
@@ -777,17 +776,17 @@ const toggleHistory = () => {
 
       .suggestion-tag {
         padding: 4px 12px;
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        background: rgb(var(--ov-accent-rgb) / 0.1);
+        border: 1px solid rgb(var(--ov-accent-rgb) / 0.2);
         border-radius: 12px;
         font-size: 12px;
-        color: #667eea;
+        color: var(--ov-accent);
         cursor: pointer;
         transition: all 0.2s;
 
         &:hover {
-          background: rgba(102, 126, 234, 0.2);
-          border-color: rgba(102, 126, 234, 0.4);
+          background: rgb(var(--ov-accent-rgb) / 0.2);
+          border-color: rgb(var(--ov-accent-rgb) / 0.4);
         }
       }
     }
@@ -810,7 +809,7 @@ const toggleHistory = () => {
   }
 
   &.user .message-bubble {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
     border: none;
 
     .message-content {
@@ -834,7 +833,7 @@ const toggleHistory = () => {
     span {
       width: 8px;
       height: 8px;
-      background: #667eea;
+      background: var(--ov-accent);
       border-radius: 50%;
       animation: bounce 1.4s ease-in-out infinite;
 
@@ -873,9 +872,9 @@ const toggleHistory = () => {
       transition: all 0.2s;
 
       &:hover {
-        background: rgba(102, 126, 234, 0.2);
-        border-color: rgba(102, 126, 234, 0.4);
-        color: #667eea;
+        background: rgb(var(--ov-accent-rgb) / 0.2);
+        border-color: rgb(var(--ov-accent-rgb) / 0.4);
+        color: var(--ov-accent);
 
         span.active {
           color: #10b981;
@@ -904,7 +903,7 @@ const toggleHistory = () => {
 
       &:focus {
         outline: none;
-        border-color: rgba(102, 126, 234, 0.5);
+        border-color: rgb(var(--ov-accent-rgb) / 0.5);
         background: rgba(255, 255, 255, 0.08);
       }
 
@@ -920,7 +919,7 @@ const toggleHistory = () => {
     .send-button {
       min-width: 80px;
       height: 44px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
       border: none;
       border-radius: 12px;
       color: white;
@@ -934,7 +933,7 @@ const toggleHistory = () => {
 
       &:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 8px 20px rgb(var(--ov-accent-rgb) / 0.4);
       }
 
       &:disabled {
@@ -1035,19 +1034,19 @@ const toggleHistory = () => {
 
         &:focus {
           outline: none;
-          border-color: rgba(102, 126, 234, 0.5);
+          border-color: rgb(var(--ov-accent-rgb) / 0.5);
         }
       }
 
       input[type="range"] {
         flex: 1;
-        accent-color: #667eea;
+        accent-color: var(--ov-accent);
       }
 
       span {
         width: 40px;
         font-size: 13px;
-        color: #667eea;
+        color: var(--ov-accent);
       }
     }
   }
