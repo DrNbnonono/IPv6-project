@@ -21,7 +21,11 @@ router.post('/tools/execute', authenticate, audit('agent.tool', {
   detail: (req, res, body) => ({
     toolName: req.body && req.body.toolName,
     confirmed: Boolean(req.body && req.body.confirmed === true),
-    needsConfirmation: Boolean(body && body.needsConfirmation)
+    needsConfirmation: Boolean(body && body.needsConfirmation),
+    // 参数在审计服务里统一脱敏、截断；结果只记任务号和失败原因，不记正文
+    params: req.body && req.body.params,
+    taskId: body && body.data && body.data.result ? body.data.result.taskId : undefined,
+    error: body && body.success === false && !body.needsConfirmation ? body.message : undefined
   })
 }), agentController.executeTool);
 router.post('/workflow/generate', authenticate, agentController.generateWorkflow);

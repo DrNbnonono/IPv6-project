@@ -19,6 +19,8 @@ const agentService = require('../services/agentService');
 
 const user = { id: 9, role: 'user' };
 const reply = (message, toolCalls = []) => ({ message, toolCalls, model: 'm', provider: 'p' });
+// 审计与工具历史也会走 db.query，这里只数查询任务的次数
+const taskQueries = () => db.query.mock.calls.filter(([sql]) => /FROM tasks/.test(sql));
 const taskCall = (id, taskId = 1) => ({ id, name: 'task_status', arguments: { taskId } });
 
 beforeEach(() => {
@@ -144,13 +146,13 @@ describe('单轮工具调用上限', () => {
 
   test('默认最多处理 3 个，其余不处理并告知', async () => {
     expect(agentService.maxToolCallsPerTurn()).toBe(3);
-    db.query.mockImplementation(async (sql, args) => [[row(args[0])]]);
+    db.query.mockImplementation(async (sql, args) => (/FROM tasks/.test(sql) ? [[row(args[0])]] : [[]]));
     mockChat
       .mockResolvedValueOnce(reply('', [1, 2, 3, 4, 5].map((n) => taskCall(`c${n}`, n))))
       .mockResolvedValueOnce(reply('三个任务都在运行'));
 
     const res = await agentService.processMessage('看看这些任务', [], { user });
-    expect(db.query).toHaveBeenCalledTimes(3);
+    expect(taskQueries()).toHaveLength(3);
     expect(res.type).toBe('tool_execution');
     expect(res.toolCalls).toHaveLength(3);
     expect(res.message).toContain('还有 2 个工具调用没有处理');
@@ -170,7 +172,7 @@ describe('单轮工具调用上限', () => {
     db.query.mockResolvedValue([[row(1)]]);
     mockChat.mockResolvedValueOnce(reply('', [taskCall('a', 1), taskCall('b', 2)])).mockResolvedValueOnce(reply('ok'));
     const res = await agentService.processMessage('x', [], { user });
-    expect(db.query).toHaveBeenCalledTimes(1);
+    expect(taskQueries()).toHaveLength(1);
     expect(res.toolCalls).toBeUndefined();
     expect(res.message).toContain('还有 1 个工具调用没有处理');
   });
@@ -197,7 +199,7 @@ describe('单轮工具调用上限', () => {
     expect(res.toolCalls).toHaveLength(1);
     expect(res.message).toContain('已先完成');
     expect(res.message).toContain('还有 1 个工具调用没有处理');
-    expect(db.query).toHaveBeenCalledTimes(1);
+    expect(taskQueries()).toHaveLength(1);
     expect(mockChat).toHaveBeenCalledTimes(1);
   });
 
@@ -206,7 +208,7 @@ describe('单轮工具调用上限', () => {
     const res = await agentService.processMessage('x', [], { user });
     expect(res.type).toBe('text');
     expect(res.message).toContain('未知参数: confirmed');
-    expect(db.query).not.toHaveBeenCalled();
+    expect(taskQueries()).toHaveLength(0);
   });
 
   test('前面有效、后面无效：有效的执行，无效的说明原因', async () => {
@@ -217,7 +219,7 @@ describe('单轮工具调用上限', () => {
     const res = await agentService.processMessage('x', [], { user });
     expect(res.type).toBe('tool_execution');
     expect(res.message).toContain('未知工具');
-    expect(db.query).toHaveBeenCalledTimes(1);
+    expect(taskQueries()).toHaveLength(1);
   });
 });
 

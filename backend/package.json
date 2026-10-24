@@ -147,6 +147,10 @@
       "./services/schedulerService.js": {
         "lines": 90,
         "statements": 90
+      },
+      "./services/agentAuditService.js": {
+        "lines": 90,
+        "statements": 90
       }
     }
   }
