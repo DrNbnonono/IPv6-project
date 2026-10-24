@@ -1,10 +1,10 @@
 /**
  * AI Chat Controller
  * Detection页面 - IPv6数据分析专家问答
- * 支持OpenAI、DeepSeek、硅基流动等兼容API
+ * 模型调用统一走 llmService（提供商、密钥、模型、日志与 Agent 共用一套配置，P4-7）
  */
 
-const axios = require('axios');
+const llmService = require('../services/llmService');
 const { createModuleLogger } = require('../services/loggerService');
 const logger = createModuleLogger('aichat');
 
@@ -41,115 +41,9 @@ const IPV6_EXPERT_SYSTEM_PROMPT = `你是一位资深的IPv6网络专家和数�
 - 如涉及数据，说明数据来源或估算依据
 - 对于不确定的信息，明确说明`;
 
-// API配置映射
-const API_CONFIGS = {
-  deepseek: {
-    baseURL: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat'
-  },
-  openai: {
-    baseURL: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-3.5-turbo'
-  },
-  siliconflow: {
-    baseURL: 'https://api.siliconflow.cn/v1',
-    defaultModel: 'deepseek-ai/DeepSeek-V2.5'
-  },
-  custom: {
-    baseURL: process.env.AI_API_BASE_URL || 'https://api.deepseek.com/v1',
-    defaultModel: process.env.AI_MODEL || 'deepseek-chat'
-  }
-};
-
-/**
- * 获取AI API配置
- */
-const getAPIConfig = () => {
-  const provider = (process.env.AI_PROVIDER || 'deepseek').toLowerCase();
-  const config = API_CONFIGS[provider] || API_CONFIGS.custom;
-  
-  return {
-    baseURL: process.env.AI_API_BASE_URL || config.baseURL,
-    model: process.env.AI_MODEL || config.defaultModel,
-    apiKey: process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || ''
-  };
-};
-
-/**
- * 构建消息历史
- * 只保留 role 为 user/assistant 且 content 为非空字符串的记录，
- * 避免向 DeepSeek/OpenAI 发送无效的 assistant 消息（否则会触发
- * “Invalid assistant message: content or tool calls must be set” 错误）。
- */
 // 单条问题与单条历史消息的长度上限：该接口对未登录访客开放，避免用超长输入消耗模型额度
 const MAX_MESSAGE_CHARS = parseInt(process.env.AI_MESSAGE_MAX_CHARS, 10) || 2000;
 const MAX_HISTORY_ITEM_CHARS = 4000;
-
-const buildMessages = (userMessage, history = []) => {
-  const messages = [
-    { role: 'system', content: IPV6_EXPERT_SYSTEM_PROMPT }
-  ];
-
-  // 添加历史消息（最多保留最近10轮对话）
-  if (Array.isArray(history) && history.length > 0) {
-    const recentHistory = history.slice(-20); // 最近20条消息（10轮对话）
-
-    recentHistory.forEach((msg) => {
-      if (!msg) return;
-
-      const role = msg.role === 'assistant' ? 'assistant' : (msg.role === 'user' ? 'user' : null);
-      const content = typeof msg.content === 'string' ? msg.content.trim().slice(0, MAX_HISTORY_ITEM_CHARS) : '';
-
-      // 只保留 user / assistant 且 content 为非空字符串的消息
-      if (!role || !content) return;
-
-      messages.push({ role, content });
-    });
-  }
-
-  // 添加当前用户消息（确保为非空字符串）
-  if (typeof userMessage === 'string' && userMessage.trim()) {
-    messages.push({ role: 'user', content: userMessage.trim() });
-  }
-
-  return messages;
-};
-
-/**
- * 调用AI API
- */
-const callAIAPI = async (messages, config) => {
-  const { baseURL, model, apiKey } = config;
-
-  if (!apiKey) {
-    throw new Error('AI API密钥未配置，请在.env文件中设置AI_API_KEY或DEEPSEEK_API_KEY');
-  }
-
-  try {
-    const response = await axios.post(
-      `${baseURL}/chat/completions`,
-      {
-        model: model,
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 2048,
-        stream: false
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        timeout: 60000 // 60秒超时
-      }
-    );
-
-    return response.data;
-  } catch (error) {
-    logger.error('AI API调用失败:', error.response?.data || error.message);
-    throw error;
-  }
-};
 
 /**
  * Detection页面AI问答 - IPv6专家
@@ -179,31 +73,23 @@ exports.detectionChat = async (req, res) => {
   }
 
   try {
-    // 获取API配置
-    const config = getAPIConfig();
-    logger.debug('使用AI配置:', { 
-      baseURL: config.baseURL, 
-      model: config.model,
-      hasKey: !!config.apiKey 
+    // 调用模型：只带用户的问题和（清理过的）历史，不带工具
+    const result = await llmService.chat(message.trim(), history, {
+      systemPrompt: IPV6_EXPERT_SYSTEM_PROMPT,
+      maxHistoryItemChars: MAX_HISTORY_ITEM_CHARS,
+      temperature: 0.7,
+      max_tokens: 2048
     });
 
-    // 构建消息
-    const messages = buildMessages(message.trim(), history);
-
-    // 调用AI API
-    const aiResponse = await callAIAPI(messages, config);
-
-    // 提取回复内容
-    const assistantMessage = aiResponse.choices?.[0]?.message?.content;
-
+    const assistantMessage = result.message;
     if (!assistantMessage) {
       throw new Error('AI返回内容为空');
     }
 
-    logger.debug('AI响应成功:', { 
+    logger.debug('AI响应成功:', {
       preview: assistantMessage.slice(0, 120),
       responseLength: assistantMessage.length,
-      usage: aiResponse.usage 
+      usage: result.usage
     });
 
     // 返回响应
@@ -212,8 +98,8 @@ exports.detectionChat = async (req, res) => {
       message: assistantMessage,
       data: {
         type: 'text',
-        model: config.model,
-        usage: aiResponse.usage
+        model: result.model,
+        usage: result.usage
       }
     });
 
@@ -278,14 +164,14 @@ exports.toolsChat = async (req, res) => {
  * GET /api/ai/status
  */
 exports.getStatus = async (req, res) => {
-  const config = getAPIConfig();
-  
+  const config = llmService.getProviderConfig();
+
   res.json({
     success: true,
     data: {
       detection: {
         enabled: true,
-        provider: process.env.AI_PROVIDER || 'deepseek',
+        provider: config.name,
         model: config.model,
         configured: !!config.apiKey
       },

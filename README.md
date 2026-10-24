@@ -141,7 +141,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `SCAN_ALLOWED_TARGETS` | 空（默认拒绝） | 允许扫描的地址/CIDR，逗号分隔；与管理员在 `/api/admin/scan-allowlist` 维护的表取并集。**不配置则任何扫描都被拒绝** |
 | `SCAN_MAX_RATE` `SCAN_DEFAULT_RATE` `SCAN_DAILY_LIMIT` | `100M` `10M` `100` | xmap 单任务速率上限 / 未指定时的默认速率 / 每用户每天可创建的扫描任务数；可在 `/api/admin/quotas` 按用户覆盖 |
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
-| `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL` | `minimax` | LLM 提供商与密钥，详见 `.env.example` |
+| `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL`；通用的 `AI_API_KEY` `AI_MODEL` `AI_API_BASE_URL` | 第一个配置了密钥的提供商，否则 `minimax` | LLM 提供商与密钥，检测页问答与 Agent 共用，详见 `.env.example` |
 | `AGENT_NATIVE_TOOLS` | `true` | Agent 使用模型原生工具调用；`false` 退回关键词意图识别。有副作用的工具无论哪种方式都需用户确认 |
 | `AGENT_MAX_TOOL_CALLS` | `3` | 模型一次回复里最多处理几个工具调用（1–10），多出的不处理 |
 | `KNOWLEDGE_EXTRA_DIRS` | 空 | 知识库额外索引的目录（逗号分隔，相对项目根目录或绝对路径）；默认索引 `backend/knowledge`、`docs/xmap`、`docs/zgrab2` |
