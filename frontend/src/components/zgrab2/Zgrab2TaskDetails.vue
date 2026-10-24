@@ -9,6 +9,14 @@
           <button @click="downloadResult" class="btn btn-primary">
             下载结果文件
           </button>
+          <button
+            v-if="['completed', 'failed', 'canceled'].includes(task.status)"
+            @click="exportReport"
+            :disabled="reportStore.isExporting"
+            class="btn btn-secondary"
+          >
+            {{ reportStore.isExporting ? '生成中…' : '导出报告' }}
+          </button>
           <button @click="viewLog" class="btn btn-secondary">
             查看日志
           </button>
@@ -158,6 +166,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useZgrab2Store } from '@/stores/zgrab2'
+import { useReportStore } from '@/stores/report'
 import { format } from 'date-fns'
 
 // 定义props
@@ -170,6 +179,7 @@ const props = defineProps({
 
 const router = useRouter()
 const zgrab2Store = useZgrab2Store()
+const reportStore = useReportStore()
 
 const taskId = computed(() => props.task?.id)
 const isLoading = ref(true)
@@ -305,6 +315,15 @@ const downloadResult = async () => {
   } catch (err) {
     console.error('下载结果失败:', err)
     alert(err.message || '下载结果失败')
+  }
+}
+
+const exportReport = async () => {
+  try {
+    const result = await reportStore.exportTaskReport(taskId.value)
+    if (result.warning) alert(result.warning)
+  } catch (err) {
+    alert(err.message)
   }
 }
 

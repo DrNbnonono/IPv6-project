@@ -568,6 +568,16 @@ export default {
     }
   },
 
+  // 任务报告（需登录）：create 生成并保存，download 取回（blob）
+  reports: {
+    create(body) {
+      return apiClient.post('/reports', body);
+    },
+    download(reportId, format = 'html') {
+      return apiClient.get(`/reports/${encodeURIComponent(reportId)}/download`, { params: { format }, responseType: 'blob' });
+    }
+  },
+
   // 导入批次与批次差异（需登录；后端迁移 12 未应用时返回 503）
   history: {
     getBatches(params) {
