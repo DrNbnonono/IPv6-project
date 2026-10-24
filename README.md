@@ -146,6 +146,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `AGENT_MAX_TOOL_CALLS` | `3` | 模型一次回复里最多处理几个工具调用（1–10），多出的不处理 |
 | `KNOWLEDGE_EXTRA_DIRS` | 空 | 知识库额外索引的目录（逗号分隔，相对项目根目录或绝对路径）；默认索引 `backend/knowledge`、`docs/xmap`、`docs/zgrab2` |
 | `STATS_SNAPSHOT_ENABLED` `STATS_SNAPSHOT_HOUR` | `true` `2` | 每日统计快照（趋势图的数据来源，需先执行迁移 `sql/15-stats-snapshots.sql`）：每天本地时间 `STATS_SNAPSHOT_HOUR` 点之后写一次；`npm run stats:snapshot` 可手动补写 |
+| `REPORT_RETENTION_DAYS` | `30` | 任务报告（`reports/` 目录）保留天数，生成新报告时顺带清理过期的；PDF 导出需额外安装 `puppeteer`，未安装时只提供 HTML（浏览器可直接打印为 PDF） |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |
 | `BCRYPT_ROUNDS` `ALLOW_LEGACY_PASSWORDS` | `10` `true` | 密码哈希强度；执行 `scripts/migratePasswords.js` 后请设为 `false` |
 

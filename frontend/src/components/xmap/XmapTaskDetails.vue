@@ -64,6 +64,11 @@
         <div v-else class="no-result">
           <i class="icon icon-warning"></i> 未找到结果文件
         </div>
+        <div v-if="isFinished" class="result-actions">
+          <button @click="handleExportReport" :disabled="reportStore.isExporting" class="btn btn-secondary">
+            {{ reportStore.isExporting ? '生成中…' : '导出报告' }}
+          </button>
+        </div>
       </div>
 
       <!-- 扫描进度部分 -->
@@ -154,8 +159,9 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits, onMounted, onUnmounted, ref } from 'vue'
+import { defineProps, defineEmits, onMounted, onUnmounted, ref, computed } from 'vue'
 import { useXmapStore } from '@/stores/xmap'
+import { useReportStore } from '@/stores/report'
 
 const xmapStore = useXmapStore()
 const props = defineProps({
@@ -190,6 +196,18 @@ const clearAutoRefresh = () => {
   if (refreshInterval.value) {
     clearInterval(refreshInterval.value)
     refreshInterval.value = null
+  }
+}
+
+// 导出任务报告（HTML，可用浏览器打印为 PDF）
+const reportStore = useReportStore()
+const isFinished = computed(() => ['completed', 'failed', 'canceled'].includes(props.task.status))
+const handleExportReport = async () => {
+  try {
+    const result = await reportStore.exportTaskReport(props.task.id)
+    if (result.warning) alert(result.warning)
+  } catch (error) {
+    alert(error.message)
   }
 }
 

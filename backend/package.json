@@ -162,6 +162,10 @@
       "./services/statsSnapshotService.js": {
         "lines": 90,
         "statements": 90
+      },
+      "./services/reportService.js": {
+        "lines": 90,
+        "statements": 90
       }
     }
   }
