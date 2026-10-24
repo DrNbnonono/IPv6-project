@@ -223,6 +223,37 @@ const NODE_TYPES = {
       }
     }
   },
+  'tga_generate': {
+    name: '目标生成',
+    description: '以输入文件里的活跃地址为种子，推测可能活跃的新地址，输出可直接作为 XMap 输入的地址文件（不发送探测包）',
+    category: 'process',
+    inputs: ['file'],
+    outputs: ['file'],
+    config: {
+      algorithm: {
+        type: 'select',
+        options: ['density-expand', 'subnet-walk', 'nibble-dist'],
+        default: 'density-expand',
+        label: '算法',
+        description: 'density-expand：密度扩展；subnet-walk：子网枚举；nibble-dist：位置分布采样（各算法的参数使用默认值）'
+      },
+      budget: {
+        type: 'number',
+        default: 10000,
+        label: '生成数量上限',
+        description: '最多生成多少个地址（候选空间不足时会更少）',
+        min: 1,
+        max: 1000000
+      },
+      excludeAliased: {
+        type: 'select',
+        options: ['true', 'false'],
+        default: 'true',
+        label: '排除已知别名前缀',
+        description: '跳过别名前缀检测页面已识别出的别名前缀内的地址'
+      }
+    }
+  },
   'apd_filter': {
     name: '别名前缀过滤',
     description: '用已检测到的别名前缀（别名前缀检测页面产生）剔除输入地址中落在别名前缀内的地址，输出剩余地址',

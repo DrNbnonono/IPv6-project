@@ -503,6 +503,31 @@ export default {
     }
   },
 
+  // 目标生成（TGA）
+  tga: {
+    getAlgorithms() {
+      return apiClient.get('/tga/algorithms');
+    },
+    createTask(data) {
+      return apiClient.post('/tga', data);
+    },
+    getTasks(params) {
+      return apiClient.get('/tga/tasks', { params });
+    },
+    getTaskDetails(taskId) {
+      return apiClient.get(`/tga/task/${taskId}`);
+    },
+    cancelTask(taskId) {
+      return apiClient.post(`/tga/cancel/${taskId}`);
+    },
+    deleteTask(taskId) {
+      return apiClient.delete(`/tga/${taskId}`);
+    },
+    downloadResult(taskId) {
+      return apiClient.get(`/tga/result/${taskId}`, { responseType: 'blob' });
+    }
+  },
+
   // 文件管理API
   // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
   admin: {

@@ -105,6 +105,15 @@ const routes = [
         }
       },
       {
+        path: '/tools/tga',
+        name: 'tga',
+        component: () => import('@/views/tools/tga/TgaDashboardView.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '目标生成'
+        }
+      },
+      {
         path: '/tools/admin',
         name: 'admin',
         component: () => import('@/views/tools/admin/AdminDashboardView.vue'),
