@@ -620,11 +620,14 @@ async function executeFileOutputNode(node, inputData, userId) {
 /**
  * 等待任务完成
  */
-async function waitForTaskCompletion(taskId, taskType, userId, maxWaitTime = 3600000) {
-  const startTime = Date.now();
-  const pollInterval = 5000; // 5秒轮询一次
+async function waitForTaskCompletion(taskId, taskType, userId, maxWaitTime = 3600000, options = {}) {
+  const pollInterval = options.pollInterval ?? 5000; // 5秒轮询一次
+  // 任务可能在调度器队列里排队（pending），排队时间不计入运行超时；排队本身另设一个较长的上限
+  const maxQueueTime = options.maxQueueTime ?? 24 * 3600000;
+  const queueStart = Date.now();
+  let runStart = null;
 
-  while (Date.now() - startTime < maxWaitTime) {
+  while (true) {
     let taskDetails;
 
     if (taskType === 'xmap') {
@@ -641,6 +644,13 @@ async function waitForTaskCompletion(taskId, taskType, userId, maxWaitTime = 360
       throw new Error(`任务执行失败: ${taskDetails.error_message}`);
     } else if (taskDetails.status === 'canceled') {
       throw new Error('任务被取消');
+    }
+
+    if (taskDetails.status === 'running') {
+      if (runStart === null) runStart = Date.now();
+      if (Date.now() - runStart >= maxWaitTime) break;
+    } else if (Date.now() - queueStart >= maxQueueTime) {
+      throw new Error('任务排队超时');
     }
 
     // 等待下次轮询
@@ -815,6 +825,7 @@ async function resumeExecution(executionId, userId) {
 }
 
 module.exports = {
+  waitForTaskCompletion,
   executeWorkflow,
   cancelExecution,
   pauseExecution,

@@ -7,6 +7,7 @@ const util = require('util');
 const { DIRS, safeJoin } = require('../services/storageService');
 const { buildXmapInvocation, buildPrivileged } = require('../services/xmapCommandService');
 const taskService = require('../services/taskService');
+const scheduler = require('../services/schedulerService');
 const logDir = DIRS.backendLogs;
 const XMAP_LOG_DIR = DIRS.xmapLog;
 const XMAP_RESULT_DIR = DIRS.xmapResult;
@@ -41,6 +42,18 @@ const logger = createModuleLogger('xmap');
 const spawnPrivileged = (command, args, options) => {
   const inv = buildPrivileged(command, args);
   return spawn(inv.command, inv.args, options);
+};
+
+
+// 按命令行匹配终止某任务的 xmap 进程（xmap 经 sudo 以 root 运行，需要同样经 sudo 的 pkill）
+const killXmapBySystem = (taskId) => {
+  const killByName = spawnPrivileged('pkill', ['-f', `xmap.*${taskId}`]);
+  killByName.on('close', (code) => {
+    logger.info(`系统级终止任务 ${taskId} 的 xmap 进程，退出码: ${code}`);
+  });
+  killByName.on('error', (error) => {
+    logger.error(`系统级终止任务 ${taskId} 失败`, { error: error.message });
+  });
 };
 
 // 任务进程存储对象
@@ -356,54 +369,68 @@ exports.uploadWhitelist = async (req, res) => {
 };
 
 
-// 创建扫描任务
+/**
+ * 构造 xmap 参数数组（不含 sudo / 程序名）。调用前须已通过 validateXmapParams。
+ * 白名单只接受白名单目录下的纯文件名。
+ */
+const buildXmapArgs = (body, { logFile, resultFile }) => {
+  const {
+    ipv6, ipv4, maxlen, rate,
+    targetPort, targetaddress, help,
+    whitelistFile, max_results, probeModule
+  } = body;
+
+  const args = [];
+  if (ipv6) args.push('-6');
+  if (ipv4) args.push('-4');
+  if (maxlen) args.push('-x', maxlen);
+  if (rate) args.push('-B', rate);
+  if (targetPort) args.push('-p', targetPort);
+  if (probeModule) args.push('-M', probeModule); // 添加扫描模式参数
+  if (targetaddress) args.push(targetaddress);
+  if (help) args.push('-h');
+  if (max_results) args.push('-N', max_results);
+
+  if (whitelistFile) {
+    // 只接受白名单目录下的纯文件名，拒绝 ../ 等路径
+    const whitelistPath = safeJoin(WHITELIST_DIR, String(whitelistFile));
+    if (fs.existsSync(whitelistPath)) {
+      args.push('-w', whitelistPath);
+    } else {
+      throw new Error('白名单文件不存在');
+    }
+  }
+
+  args.push('-u', logFile, '-o', resultFile, '-q', '-O', 'json', '-f', `*`);
+
+  /*
+  if (ipv6){
+    args.push('-S', '2001:250:200:10:20c:29ff:fe88:8a32');
+  }
+  else if (ipv4){
+    args.push('-S', '192.168.1.1', '-G', '00:00:5e:00:01:08');
+  }*/
+
+  return args;
+};
+
+/**
+ * 创建扫描任务：只做校验并入队（pending），由调度器按并发上限启动
+ * POST /api/xmap
+ */
 exports.scan = async (req, res) => {
   const userId = req.user.id;
-  const { 
-    ipv6, ipv4, maxlen, rate, 
-    targetPort, targetaddress, help,
-    whitelistFile, max_results, description, probeModule 
-  } = req.body;
+  const { description } = req.body;
 
   try {
     validateXmapParams(req.body);
-    
+
     const taskId = taskService.nextTaskId();
     const logFile = path.join(XMAP_LOG_DIR, `${taskId}.csv`);
     const resultFile = path.join(XMAP_RESULT_DIR, `${taskId}.json`);
-    const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
+    const args = buildXmapArgs(req.body, { logFile, resultFile });
 
-    const args = [];
-    if (ipv6) args.push('-6');
-    if (ipv4) args.push('-4');
-    if (maxlen) args.push('-x', maxlen);
-    if (rate) args.push('-B', rate);
-    if (targetPort) args.push('-p', targetPort);
-    if (probeModule) args.push('-M', probeModule); // 添加扫描模式参数
-    if (targetaddress) args.push(targetaddress);
-    if (help) args.push('-h');
-    if (max_results) args.push('-N', max_results);
-    
-    if (whitelistFile) {
-      // 只接受白名单目录下的纯文件名，拒绝 ../ 等路径
-      const whitelistPath = safeJoin(WHITELIST_DIR, String(whitelistFile));
-      if (fs.existsSync(whitelistPath)) {
-        args.push('-w', whitelistPath);
-      } else {
-        throw new Error('白名单文件不存在');
-      }
-    }
-    
-    args.push('-u', logFile, '-o', resultFile, '-q', '-O', 'json' , '-f', `*`);
-
-    /*
-    if (ipv6){
-      args.push('-S', '2001:250:200:10:20c:29ff:fe88:8a32');
-    }
-    else if (ipv4){
-      args.push('-S', '192.168.1.1', '-G', '00:00:5e:00:01:08');
-    }*/
-
+    // 这里的 display 只用于任务记录里展示命令；真正启动时由 runXmapTask 按当时的 XMAP_BIN / XMAP_USE_SUDO 重新生成
     const invocation = buildXmapInvocation(args);
 
     await taskService.createTaskRecord({
@@ -413,96 +440,120 @@ exports.scan = async (req, res) => {
       command: invocation.display,
       description,
       logPath: logFile,
-      outputPath: resultFile
+      outputPath: resultFile,
+      params: { args }
     });
 
-    logger.info(`用户 ${userId} 创建新任务 ${taskId}`, { 
+    logger.info(`用户 ${userId} 创建新任务 ${taskId}`, {
       command: invocation.display,
       description,
-      user: userId 
+      user: userId
     });
 
-    const xmapProcess = spawn(invocation.command, invocation.args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
-      detached: true, // 创建新的进程组，便于管理子进程
-    });
-
-    // 不要让Node.js等待这个子进程
-    xmapProcess.unref();
-
-    activeProcesses.set(taskId, xmapProcess);
-    const errorStream = fs.createWriteStream(errorLogFile);
-    xmapProcess.stderr.pipe(errorStream);
-
-    // 找不到 sudo / xmap 等启动失败会触发 error 事件；没有监听器时 Node 会抛出未捕获异常，使整个后端退出。
-    // 监听器必须在任何 await 之前挂上：error 事件在 spawn 之后的下一个 tick 就会触发。
-    xmapProcess.on('error', async (spawnError) => {
-      activeProcesses.delete(taskId);
-      logger.error(`任务 ${taskId} 启动失败`, { error: spawnError.message });
-      try {
-        await taskService.markTaskFinished(taskId, {
-          status: 'failed',
-          errorMessage: `无法启动 ${invocation.command}: ${spawnError.message}`
-        });
-      } catch (dbError) {
-        logger.error(`更新任务 ${taskId} 状态失败`, { error: dbError.message });
-      }
-    });
-
-    xmapProcess.on('close', async (code, signal) => {
-      activeProcesses.delete(taskId);
-      
-      let status = 'completed';
-      let errorMsg = null;
-      
-      if (code !== 0 || signal) {
-        status = 'failed';
-        errorMsg = `进程异常终止 - 退出码: ${code}, 信号: ${signal || '无'}`;
-        
-        try {
-          const errorData = fs.readFileSync(errorLogFile, 'utf-8');
-          const errorLines = errorData.split('\n')
-            .filter(line => line.trim())
-            .map(line => line.replace(/sudo:\s*/, ''));
-          
-          if (errorLines.length > 0) {
-            errorMsg += `\n最后错误:\n${errorLines.slice(-5).join('\n')}`;
-          }
-        } catch (readError) {
-          errorMsg += ` | 无法读取错误日志: ${readError.message}`;
-        }
-      }
-
-      try {
-        // 已被用户取消的任务保持 canceled，不会被改写
-        await taskService.markTaskFinished(taskId, { status, errorMessage: errorMsg, exitCode: code, signal });
-      } catch (dbError) {
-        logger.error(`更新任务 ${taskId} 状态失败`, {
-          error: dbError.message
-        });
-      }
-    });
-
-    await taskService.markTaskRunning(taskId, xmapProcess.pid);
+    scheduler.requestTick();
 
     res.status(202).json({
       success: true,
       taskId,
-      message: '扫描任务已开始'
+      message: '扫描任务已提交'
     });
 
   } catch (error) {
-    logger.error('任务创建失败', { 
+    logger.error('任务创建失败', {
       error: error.message,
       stack: error.stack,
       user: userId,
       params: req.body
     });
-    
+
     res.status(400).json({
       success: false,
       message: '任务创建失败: ' + error.message
     });
+  }
+};
+
+/**
+ * 启动 xmap 进程（由调度器调用，任务已被领取）。进程启动后即返回；结束时在 close 事件里写入状态。
+ */
+const runXmapTask = async (task) => {
+  const taskId = task.id;
+  const args = task.params && Array.isArray(task.params.args) ? task.params.args : null;
+  if (!args) {
+    throw new Error('任务缺少 xmap 参数');
+  }
+
+  const invocation = buildXmapInvocation(args);
+  const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
+
+  const xmapProcess = spawn(invocation.command, invocation.args, {
+    stdio: ['ignore', 'ignore', 'pipe'],
+    detached: true, // 创建新的进程组，便于管理子进程
+  });
+
+  // 不要让Node.js等待这个子进程
+  xmapProcess.unref();
+
+  activeProcesses.set(taskId, xmapProcess);
+  const errorStream = fs.createWriteStream(errorLogFile);
+  xmapProcess.stderr.pipe(errorStream);
+
+  // 找不到 sudo / xmap 等启动失败会触发 error 事件；没有监听器时 Node 会抛出未捕获异常，使整个后端退出。
+  // 监听器必须在任何 await 之前挂上：error 事件在 spawn 之后的下一个 tick 就会触发。
+  xmapProcess.on('error', async (spawnError) => {
+    activeProcesses.delete(taskId);
+    logger.error(`任务 ${taskId} 启动失败`, { error: spawnError.message });
+    try {
+      await taskService.markTaskFinished(taskId, {
+        status: 'failed',
+        errorMessage: `无法启动 ${invocation.command}: ${spawnError.message}`
+      });
+    } catch (dbError) {
+      logger.error(`更新任务 ${taskId} 状态失败`, { error: dbError.message });
+    }
+    scheduler.requestTick();
+  });
+
+  xmapProcess.on('close', async (code, signal) => {
+    activeProcesses.delete(taskId);
+
+    let status = 'completed';
+    let errorMsg = null;
+
+    if (code !== 0 || signal) {
+      status = 'failed';
+      errorMsg = `进程异常终止 - 退出码: ${code}, 信号: ${signal || '无'}`;
+
+      try {
+        const errorData = fs.readFileSync(errorLogFile, 'utf-8');
+        const errorLines = errorData.split('\n')
+          .filter(line => line.trim())
+          .map(line => line.replace(/sudo:\s*/, ''));
+
+        if (errorLines.length > 0) {
+          errorMsg += `\n最后错误:\n${errorLines.slice(-5).join('\n')}`;
+        }
+      } catch (readError) {
+        errorMsg += ` | 无法读取错误日志: ${readError.message}`;
+      }
+    }
+
+    try {
+      // 已被用户取消的任务保持 canceled，不会被改写
+      await taskService.markTaskFinished(taskId, { status, errorMessage: errorMsg, exitCode: code, signal });
+    } catch (dbError) {
+      logger.error(`更新任务 ${taskId} 状态失败`, {
+        error: dbError.message
+      });
+    }
+    scheduler.requestTick();
+  });
+
+  // 记录 pid。若任务在“被领取”到“进程启动”之间被取消，进程不应继续运行
+  const stillWanted = await taskService.markTaskRunning(taskId, xmapProcess.pid);
+  if (!stillWanted) {
+    logger.warn(`任务 ${taskId} 在启动前已被取消，终止刚启动的进程`);
+    killXmapBySystem(taskId);
   }
 };
 
@@ -649,17 +700,12 @@ exports.cancelTask = async (req, res) => {
         activeProcesses.delete(taskId);
         logger.info(`任务 ${taskId} 进程记录已清理`);
       }, 8000); // 增加到8秒，给进程更多时间终止
-    } else {
+    } else if (task.status === 'running') {
       // 服务重启后没有子进程句柄（进程是 detached 的，仍可能在运行），改用按命令行匹配的系统级终止
       logger.warn(`任务 ${taskId} 在活动进程列表中未找到，使用系统级终止`);
-      const killByName = spawnPrivileged('pkill', ['-f', `xmap.*${taskId}`]);
-      killByName.on('close', (code) => {
-        logger.info(`系统级终止任务 ${taskId} 的 xmap 进程，退出码: ${code}`);
-      });
-      killByName.on('error', (error) => {
-        logger.error(`系统级终止任务 ${taskId} 失败`, { error: error.message });
-      });
+      killXmapBySystem(taskId);
     }
+    // pending 的任务还没有进程，置为 canceled 即可：调度器领取时是条件更新，不会再启动它
 
     res.json({
       success: true,
@@ -1034,3 +1080,7 @@ exports.getLog = async (req, res) => {
     });
   }
 };
+
+exports.runXmapTask = runXmapTask;
+exports.buildXmapArgs = buildXmapArgs;
+scheduler.registerRunner('xmap', runXmapTask);

@@ -37,7 +37,7 @@ const installDb = ({ ownedPaths = [], byName = null } = {}) => {
       return [byName ? [{ file_path: byName }] : []];
     }
     if (/INSERT INTO tasks/.test(sql)) return [{ insertId: 1 }];
-    if (/UPDATE tasks/.test(sql)) return [{}];
+    if (/UPDATE tasks/.test(sql)) return [{ affectedRows: 1 }];
     return [[]];
   });
 };
@@ -73,6 +73,13 @@ beforeEach(() => {
 
 const request = (body) => ({ user: { id: 5 }, body: { module: 'http', inputFile: 'zgrab2_input_5_1.txt', ...body } });
 const insertCalls = () => db.query.mock.calls.filter(([sql]) => /INSERT INTO tasks/.test(sql));
+// createTask 只入队；从 INSERT 参数还原调度器交给 runner 的任务
+const queuedTask = () => {
+  const v = insertCalls()[0][1];
+  return { id: v[0], userId: v[1], command: v[2], taskType: v[7], logPath: v[5], outputPath: v[6], params: JSON.parse(v[8]) };
+};
+const queuedArgs = () => queuedTask().params.args;
+const runQueued = () => controller.runZgrab2Task(queuedTask());
 
 describe('zgrab2CommandService', () => {
   test('validatePort', () => {
@@ -136,9 +143,8 @@ describe('createTask 命令注入', () => {
     );
 
     expect(res.status).not.toHaveBeenCalledWith(400);
-    expect(mockExecFile).toHaveBeenCalledTimes(1);
-    const [bin, args] = mockExecFile.mock.calls[0];
-    expect(bin).toBe(process.execPath);
+    expect(mockExecFile).not.toHaveBeenCalled(); // 只入队，进程由调度器启动
+    const args = queuedArgs();
     expect(Array.isArray(args)).toBe(true);
     expect(args.slice(0, 7)).toEqual(['http', '--port', '8080', '-f', inputPath, '-o', expect.stringContaining('zgrab2_results')]);
     expect(args).toEqual(expect.arrayContaining(['--timeout=5s', '--user-agent=x; y']));
@@ -146,12 +152,18 @@ describe('createTask 命令注入', () => {
     const [, params] = insertCalls()[0];
     expect(params[2]).toContain('--port 8080');
     expect(res.json.mock.calls[0][0].success).toBe(true);
+
+    await runQueued();
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
+    const [bin, runArgs] = mockExecFile.mock.calls[0];
+    expect(bin).toBe(process.execPath);
+    expect(runArgs).toEqual(args);
   });
 
   test('未给端口时使用模块默认端口', async () => {
     installDb({ byName: inputPath });
     await controller.createTask(request({ module: 'ssh' }), createRes());
-    expect(mockExecFile.mock.calls[0][1].slice(0, 3)).toEqual(['ssh', '--port', '22']);
+    expect(queuedArgs().slice(0, 3)).toEqual(['ssh', '--port', '22']);
   });
 });
 
@@ -184,14 +196,13 @@ describe('createTask 输入文件路径', () => {
     installDb({ ownedPaths: [inputPath] });
     const res = createRes();
     await controller.createTask(request({ inputFile: 'other-name.txt', inputFilePath: inputPath }), res);
-    expect(mockExecFile).toHaveBeenCalledTimes(1);
-    expect(mockExecFile.mock.calls[0][1]).toEqual(expect.arrayContaining(['-f', inputPath]));
+    expect(queuedArgs()).toEqual(expect.arrayContaining(['-f', inputPath]));
   });
 
   test('数据库里的旧部署目录路径会被改写到当前 PROJECT_ROOT', async () => {
     installDb({ byName: '/home/ipv6/IPv6-project/zgrab2_inputs/zgrab2_input_5_1.txt' });
     await controller.createTask(request({}), createRes());
-    expect(mockExecFile.mock.calls[0][1]).toEqual(expect.arrayContaining(['-f', inputPath]));
+    expect(queuedArgs()).toEqual(expect.arrayContaining(['-f', inputPath]));
   });
 });
 
@@ -219,13 +230,27 @@ describe('createTask 可执行文件缺失', () => {
 
 const sqlCalls = (pattern) => db.query.mock.calls.filter(([sql]) => pattern.test(sql));
 
-describe('任务生命周期（taskService）', () => {
-  test('先写 pending 记录，execFile 返回后记录 pid 并置为 running', async () => {
+describe('任务生命周期', () => {
+  test('createTask 只写 pending 记录（含 params），不启动进程、不置 running', async () => {
+    installDb({ byName: inputPath });
+    const res = createRes();
+    await controller.createTask(request({}), res);
+
+    expect(res.json.mock.calls[0][0]).toMatchObject({ success: true });
+    expect(insertCalls()[0][1][4]).toBe('pending');
+    expect(sqlCalls(/SET status = 'running'/)).toHaveLength(0);
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  test('runner 启动进程后记录 pid（条件更新为 running）', async () => {
     installDb({ byName: inputPath });
     await controller.createTask(request({}), createRes());
+    const task = queuedTask();
+    db.query.mockClear();
 
-    expect(insertCalls()[0][1][4]).toBe('pending');
-    const running = sqlCalls(/SET status = 'running'/);
+    await controller.runZgrab2Task(task);
+
+    const running = sqlCalls(/SET status = 'running', pid/);
     expect(running).toHaveLength(1);
     expect(running[0][1][0]).toBe(4321); // mockExecFile 返回的 pid
   });
@@ -233,6 +258,7 @@ describe('任务生命周期（taskService）', () => {
   test('进程结束回调：成功 → completed；失败 → failed 并带退出码', async () => {
     installDb({ byName: inputPath });
     await controller.createTask(request({}), createRes());
+    await runQueued();
     const callback = mockExecFile.mock.calls[0][2];
 
     db.query.mockClear();
@@ -244,6 +270,24 @@ describe('任务生命周期（taskService）', () => {
     callback(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
     await new Promise(setImmediate);
     expect(sqlCalls(/UPDATE tasks/)[0][1].slice(0, 4)).toEqual(['failed', 'Command failed', 1, null]);
+  });
+
+  test('任务缺少参数时 runner 抛出（调度器会据此标记 failed）', async () => {
+    await expect(controller.runZgrab2Task({ id: 1, params: null })).rejects.toThrow('缺少 zgrab2 参数');
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  test('任务在被领取后、进程启动前被取消：刚启动的进程会被终止', async () => {
+    installDb({ byName: inputPath });
+    await controller.createTask(request({}), createRes());
+    const task = queuedTask();
+    const kill = jest.fn();
+    mockExecFile.mockReturnValueOnce({ pid: 4321, kill });
+    db.query.mockImplementation(async (sql) => (/SET status = 'running', pid/.test(sql) ? [{ affectedRows: 0 }] : [{}]));
+
+    await controller.runZgrab2Task(task);
+
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
 

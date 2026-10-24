@@ -250,3 +250,40 @@ describe('reconcileTasksOnStartup', () => {
     expect(await taskService.reconcileTasksOnStartup({ watch: false })).toEqual({ failed: 0, watching: 0 });
   });
 });
+
+describe('调度用查询', () => {
+  test('claimTask 只领取 pending 任务；已被取消或已被领取时返回 false', async () => {
+    expect(await taskService.claimTask(5)).toBe(true);
+    expect(db.query.mock.calls[0][0]).toMatch(/SET status = 'running'.*WHERE id = \? AND status = 'pending'/s);
+
+    db.query.mockResolvedValueOnce([{ affectedRows: 0 }]);
+    expect(await taskService.claimTask(5)).toBe(false);
+  });
+
+  test('listPendingTasks：按优先级/入队时间排序，params 兼容对象与 JSON 字符串，损坏时为 null', async () => {
+    db.query.mockResolvedValueOnce([[
+      { id: '11', user_id: 1, task_type: 'xmap', command: 'c', description: 'd', log_path: 'l', output_path: 'o', params: { args: ['-6'] }, priority: 2, queued_at: 't' },
+      { id: 12, user_id: 2, task_type: 'xmap', params: '{"args":["-4"]}', priority: 0 },
+      { id: 13, user_id: 2, task_type: 'xmap', params: '{broken', priority: 0 },
+      { id: 14, user_id: 2, task_type: 'xmap', params: null, priority: 0 }
+    ]]);
+
+    const tasks = await taskService.listPendingTasks('xmap', 50);
+
+    expect(db.query.mock.calls[0][0]).toMatch(/ORDER BY priority DESC, queued_at ASC, id ASC/);
+    expect(db.query.mock.calls[0][1]).toEqual(['xmap', 50]);
+    expect(tasks.map((t) => t.id)).toEqual([11, 12, 13, 14]);
+    expect(tasks[0]).toMatchObject({ userId: 1, taskType: 'xmap', logPath: 'l', outputPath: 'o', params: { args: ['-6'] }, priority: 2 });
+    expect(tasks[1].params).toEqual({ args: ['-4'] });
+    expect(tasks[2].params).toBeNull();
+    expect(tasks[3].params).toBeNull();
+  });
+
+  test('getRunningCountsByUser 返回 Map<userId, count>', async () => {
+    db.query.mockResolvedValueOnce([[{ user_id: 1, count: 2 }, { user_id: 7, count: '1' }]]);
+    const counts = await taskService.getRunningCountsByUser('zgrab2');
+    expect(counts.get(1)).toBe(2);
+    expect(counts.get(7)).toBe(1);
+    expect(counts.get(99)).toBeUndefined();
+  });
+});

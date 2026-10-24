@@ -33,6 +33,7 @@ ObserV6 把 IPv6 的**主动探测**（XMap 活跃性扫描、ZGrab2 服务探�
 
 - **分层**：路由只做鉴权与分发；控制器处理请求与响应（统一 `{ success, message, data }`）；服务层放业务逻辑；所有 SQL 走 `database/db.js` 的连接池。
 - **前端**：Vue 3 + Pinia + Element Plus + Vite；所有 HTTP 请求统一经 `src/api/index.js`（`VITE_API_BASE_URL`，默认 `/api`，自动附带 Bearer token，401 自动登出）。
+- **任务**：扫描任务先写入 `tasks` 表（`pending`），由 `schedulerService` 按并发上限拉起进程；`taskService` 负责状态流转（终态不可覆盖）和服务重启后的对账。
 - **Agent**：`agentService` 做意图识别与编排，`llmService` 屏蔽厂商差异，`toolService` 注册工具，`memoryService` 管理短期 / 长期记忆，`terminalService` + `terminalPolicyService` 提供受限终端。
 
 ## 目录结构
@@ -69,6 +70,7 @@ ObserV6 把 IPv6 的**主动探测**（XMap 活跃性扫描、ZGrab2 服务探�
 | `sqlGuardService.js` / `queryBuilderService.js` | 高级查询的 SQL 守卫与参数化构建 |
 | `terminalPolicyService.js` / `terminalService.js` | 终端命令白名单、参数规则、目录范围（`TERMINAL_JAIL_ROOT`）、会话 |
 | `agentService.js` / `llmService.js` / `toolService.js` / `memoryService.js` | Agent 编排、LLM 抽象、工具注册、记忆 |
+| `taskService.js` / `schedulerService.js` | 任务记录与状态流转、启动对账；按并发上限调度 pending 任务 |
 | `workflowEngine.js` | 工作流执行引擎 |
 | `loggerService.js` | 统一日志（winston），自动脱敏 token / 密码 / Authorization / API Key |
 
@@ -128,6 +130,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `AI_RATE_MAX` `AI_MESSAGE_MAX_CHARS` | `20` `2000` | 公开 AI 问答的每 IP 每分钟次数与问题长度 |
 | `PROJECT_ROOT` | 仓库根目录 | 数据目录根（`xmap_result`、`zgrab2_*`、`whitelists`、`backend_logs` 等都在其下） |
 | `TERMINAL_JAIL_ROOT` | 仓库根目录 | 终端可访问的目录范围 |
+| `MAX_CONCURRENT_XMAP` `MAX_CONCURRENT_ZGRAB2` `MAX_CONCURRENT_PER_USER` | `2` `4` `3` | 任务并发上限：创建任务只是入队，调度器按上限启动，超出的排队（`pending`） |
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
 | `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL` | `minimax` | LLM 提供商与密钥，详见 `.env.example` |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |

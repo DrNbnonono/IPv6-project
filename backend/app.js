@@ -26,6 +26,7 @@ const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
 const taskService = require('./services/taskService');
+const scheduler = require('./services/schedulerService');
 
 const logger = createModuleLogger('app');
 
@@ -125,10 +126,13 @@ if (require.main === module) {
   ensureDirs();
   logger.info(`数据目录根: ${PROJECT_ROOT}`);
   listen(PORT);
-  // 对账重启前遗留的 running 任务（进程已不在 → failed；仍在运行 → 继续监听）
-  taskService.reconcileTasksOnStartup().catch((err) => {
-    logger.error('启动时任务对账失败:', err.message);
-  });
+  // 先对账重启前遗留的 running 任务（进程已不在 → failed；仍在运行 → 继续监听），再启动调度器：
+  // 调度器领取任务时会把状态置为 running（pid 稍后才写入），不能被对账当成“丢失”的任务
+  taskService.reconcileTasksOnStartup()
+    .catch((err) => {
+      logger.error('启动时任务对账失败:', err.message);
+    })
+    .finally(() => scheduler.startScheduler());
 }
 
 module.exports = app;

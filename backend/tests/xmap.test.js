@@ -56,10 +56,23 @@ const scan = async (body) => {
   return res;
 };
 
+// scan 只入队；从 INSERT 的参数里还原出调度器会交给 runner 的任务
+const queuedTask = () => {
+  const call = db.query.mock.calls.find(([sql]) => /INSERT INTO tasks/.test(sql));
+  const v = call[1];
+  return { id: v[0], userId: v[1], command: v[2], description: v[3], taskType: v[7], logPath: v[5], outputPath: v[6], params: JSON.parse(v[8]) };
+};
+const queuedArgs = () => queuedTask().params.args;
+const runQueued = () => controller.runXmapTask(queuedTask());
+
 describe('xmap 参数校验', () => {
-  test('合法参数：以参数数组调用 sudo xmap', async () => {
+  test('合法参数：scan 只入队，不启动进程；runner 以参数数组调用 sudo xmap', async () => {
     const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32', rate: '10M', maxlen: '64', targetPort: '80,443', max_results: '1000', description: 't' });
     expect(res.status).toHaveBeenCalledWith(202);
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(queuedArgs()).toEqual(expect.arrayContaining(['-6', '-B', '10M', '-x', '64', '-p', '80,443', '2001:db8::/32']));
+
+    await runQueued();
     const [cmd, args] = mockSpawn.mock.calls[0];
     expect(cmd).toBe('sudo');
     expect(args.slice(0, 2)).toEqual(['xmap', '-6']);
@@ -72,6 +85,7 @@ describe('xmap 参数校验', () => {
     try {
       const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32', rate: '10M' });
       expect(res.status).toHaveBeenCalledWith(202);
+      await runQueued();
       const [cmd, args] = mockSpawn.mock.calls[0];
       expect(cmd).toBe('/usr/local/sbin/xmap');
       expect(args[0]).toBe('-6');
@@ -116,7 +130,7 @@ describe('xmap 参数校验', () => {
   test('白名单目录下的文件可以使用', async () => {
     const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32', whitelistFile: 'whitelist_5_1.txt' });
     expect(res.status).toHaveBeenCalledWith(202);
-    expect(mockSpawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['-w', path.join(tmpRoot, 'whitelists', 'whitelist_5_1.txt')]));
+    expect(queuedArgs()).toEqual(expect.arrayContaining(['-w', path.join(tmpRoot, 'whitelists', 'whitelist_5_1.txt')]));
   });
 
   test('白名单文件不存在时返回 400', async () => {
@@ -126,25 +140,38 @@ describe('xmap 参数校验', () => {
   });
 });
 
-describe('任务生命周期（taskService）', () => {
+describe('任务生命周期', () => {
   const taskSqls = () => db.query.mock.calls.filter(([sql]) => /tasks/.test(sql));
   const handlersOf = (child) => Object.fromEntries(child.on.mock.calls.map(([event, fn]) => [event, fn]));
 
-  test('先写 pending 记录，再启动进程，随后记录 pid 并置为 running', async () => {
+  test('scan 只写 pending 记录（含 params），不启动进程、不置 running', async () => {
     const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32', rate: '1M', description: 'd' });
     expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json.mock.calls[0][0]).toMatchObject({ success: true });
 
-    const sqls = taskSqls().map(([sql]) => sql.replace(/\s+/g, ' '));
-    expect(sqls[0]).toMatch(/^INSERT INTO tasks/);
-    expect(sqls[1]).toMatch(/SET status = 'running', pid = \?/);
-    expect(db.query.mock.calls.find(([sql]) => /INSERT INTO tasks/.test(sql))[1][4]).toBe('pending');
-    expect(taskSqls()[1][1][0]).toBe(99); // mockSpawn 返回的 pid
+    const sqls = taskSqls();
+    expect(sqls).toHaveLength(1);
+    expect(sqls[0][0]).toMatch(/^\s*INSERT INTO tasks/);
+    expect(sqls[0][1][4]).toBe('pending');
+    expect(queuedTask().taskType).toBe('xmap');
+    expect(queuedTask().logPath).toMatch(/xmap_log/);
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  test('runner 启动进程后记录 pid（条件更新为 running）', async () => {
+    await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    const task = queuedTask();
+    db.query.mockClear();
+    await controller.runXmapTask(task);
+
+    const running = taskSqls().find(([sql]) => /SET status = 'running', pid = \?/.test(sql));
+    expect(running[1][0]).toBe(99); // mockSpawn 返回的 pid
   });
 
   test('启动失败（error 事件，例如容器里没有 sudo/xmap）标记任务失败，而不是让进程崩溃', async () => {
     await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
-    const child = mockSpawn.mock.results[0].value;
-    const { error } = handlersOf(child);
+    await runQueued();
+    const { error } = handlersOf(mockSpawn.mock.results[0].value);
     expect(typeof error).toBe('function');
 
     db.query.mockClear();
@@ -158,6 +185,7 @@ describe('任务生命周期（taskService）', () => {
 
   test('退出码 0 → completed；非 0 → failed 并带退出码', async () => {
     await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    await runQueued();
     const { close } = handlersOf(mockSpawn.mock.results[0].value);
 
     db.query.mockClear();
@@ -168,6 +196,44 @@ describe('任务生命周期（taskService）', () => {
     await close(2, null);
     expect(db.query.mock.calls[0][1][0]).toBe('failed');
     expect(db.query.mock.calls[0][1][2]).toBe(2);
+  });
+
+  test('任务缺少参数时 runner 抛出（调度器会据此标记 failed），且不启动进程', async () => {
+    await expect(controller.runXmapTask({ id: 1, params: null })).rejects.toThrow('缺少 xmap 参数');
+    await expect(controller.runXmapTask({ id: 1, params: { args: 'x' } })).rejects.toThrow();
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  test('任务在被领取后、进程启动前被取消：刚启动的进程会被终止', async () => {
+    await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    mockSpawn.mockClear();
+    db.query.mockImplementation(async (sql) => (/SET status = 'running', pid/.test(sql) ? [{ affectedRows: 0 }] : [{}]));
+
+    await runQueued();
+
+    const killCall = mockSpawn.mock.calls.find(([cmd, args]) => cmd === 'sudo' && args[0] === 'pkill');
+    expect(killCall[1]).toEqual(['pkill', '-f', expect.stringMatching(/^xmap\.\*\d+$/)]);
+  });
+
+  test('error 监听器在任何 await 之前就已挂上（error 事件在 spawn 后的下一个 tick 触发）', async () => {
+    await scan({ ipv6: true, targetaddress: '2001:db8::/32' });
+    let releaseRunningUpdate;
+    db.query.mockImplementation((sql) => {
+      if (/SET status = 'running'/.test(sql)) {
+        return new Promise((resolve) => { releaseRunningUpdate = () => resolve([{ affectedRows: 1 }]); });
+      }
+      return Promise.resolve([{}]);
+    });
+
+    const pending = runQueued();
+    for (let i = 0; i < 20 && !releaseRunningUpdate; i += 1) await new Promise(setImmediate);
+
+    const child = mockSpawn.mock.results[0].value;
+    const events = child.on.mock.calls.map(([event]) => event);
+    expect(events).toEqual(expect.arrayContaining(['error', 'close']));
+
+    releaseRunningUpdate();
+    await pending;
   });
 });
 
@@ -191,6 +257,14 @@ describe('取消任务', () => {
     expect(args).toEqual(['pkill', '-f', 'xmap.*123']);
   });
 
+  test('pending 的任务置为 canceled 即可，不会去 pkill 一个还不存在的进程', async () => {
+    db.query.mockResolvedValueOnce([[{ id: 123, status: 'pending' }]]);
+    const res = await cancel(123);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(db.query.mock.calls.find(([sql]) => /UPDATE tasks/.test(sql))[1][0]).toBe('canceled');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
   test('已结束的任务不能取消', async () => {
     db.query.mockResolvedValueOnce([[{ id: 123, status: 'completed' }]]);
     const res = await cancel(123);
@@ -202,28 +276,5 @@ describe('取消任务', () => {
     db.query.mockResolvedValueOnce([[]]);
     const res = await cancel(123);
     expect(res.status).toHaveBeenCalledWith(404);
-  });
-});
-
-describe('启动失败的竞态', () => {
-  test('error 监听器在任何 await 之前就已挂上（error 事件在 spawn 后的下一个 tick 触发）', async () => {
-    let releaseRunningUpdate;
-    db.query.mockImplementation((sql) => {
-      if (/SET status = 'running'/.test(sql)) {
-        return new Promise((resolve) => { releaseRunningUpdate = () => resolve([{ affectedRows: 1 }]); });
-      }
-      return Promise.resolve([{}]);
-    });
-
-    const pending = scan({ ipv6: true, targetaddress: '2001:db8::/32' });
-    // 让 INSERT 完成、spawn 被调用，而 running 的 UPDATE 仍悬而未决
-    for (let i = 0; i < 20 && !releaseRunningUpdate; i += 1) await new Promise(setImmediate);
-
-    const child = mockSpawn.mock.results[0].value;
-    const events = child.on.mock.calls.map(([event]) => event);
-    expect(events).toEqual(expect.arrayContaining(['error', 'close']));
-
-    releaseRunningUpdate();
-    await pending;
   });
 });
