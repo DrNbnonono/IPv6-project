@@ -39,6 +39,8 @@ services:
       # 后端镜像里的 mysql 命令行是 MariaDB 客户端，对 caching_sha2_password 的首次认证
       # 需要安全通道；统一用 mysql_native_password 避免连接失败（mysql:8.0 支持，8.4 起已移除）
       - --default-authentication-plugin=mysql_native_password
+      # 二进制日志默认开启时，普通账号创建触发器需要它；演示快照还原（scripts/demoSnapshot.js）含触发器，缺它会在中途失败
+      - --log-bin-trust-function-creators=1
     volumes:
       - mysql_data:/var/lib/mysql
       # 仅在数据目录为空（首次启动）时执行；structure.sql 的表前有 DROP TABLE，不要用于已有数据的库

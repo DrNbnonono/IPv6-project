@@ -157,6 +157,8 @@ prompt.md
 # 运行期生成的数据目录与杂项
 /whitelists/
 /reports/
+# 演示数据快照（含用户表与密钥哈希，不能提交）
+/demo_snapshots/
 /uploads/
 nohup.out
 *:Zone.Identifier

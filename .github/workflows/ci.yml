@@ -77,6 +77,33 @@ jobs:
       - name: 数据库自检
         run: node scripts/checkDb.js
         working-directory: backend
+      - name: 演示快照往返（创建 → 改动 → 还原）
+        working-directory: backend
+        env:
+          DEMO_SNAPSHOT_DIR: ${{ runner.temp }}/demo-snapshots
+          MYSQL_PWD: observ6-ci
+        run: |
+          set -e
+          # 失败时把错误信息写成注释（日志在网页上不一定能看到）
+          trap 'code=$?; if [ $code -ne 0 ]; then echo "::error title=演示快照往返失败::$(tr "\n" " " < "$RUNNER_TEMP/demo-step.log" | tail -c 900)"; fi' EXIT
+          exec > >(tee "$RUNNER_TEMP/demo-step.log") 2>&1
+          count() { mysql -h 127.0.0.1 -u"$DB_USER" -N ipv6_project -e "SELECT COUNT(*) FROM users"; }
+          before=$(count)
+          test "$before" -ge 1
+          node scripts/demoSnapshot.js create ci-snap
+          mysql -h 127.0.0.1 -u"$DB_USER" ipv6_project -e "DELETE FROM users"
+          test "$(count)" = "0"
+          # MySQL 8 默认开二进制日志，普通账号建触发器需要 log_bin_trust_function_creators=1：
+          # 预检应当在动手前拒绝（退出码 1），并且不改动数据库
+          if node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project; then
+            echo "未设置 log_bin_trust_function_creators 时还原应当被预检拒绝"; exit 1
+          fi
+          test "$(count)" = "0"
+          MYSQL_PWD=root mysql -h 127.0.0.1 -uroot -e "SET GLOBAL log_bin_trust_function_creators=1"
+          node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project
+          test "$(count)" = "$before"
+          node scripts/demoSnapshot.js list | grep -q ci-snap
+          node scripts/checkDb.js
 
   frontend:
     name: 前端构建
