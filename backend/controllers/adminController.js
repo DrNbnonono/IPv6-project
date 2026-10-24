@@ -9,6 +9,7 @@ const { parseTarget } = require('../services/cidrService');
 const scanPolicy = require('../services/scanPolicyService');
 const auditService = require('../services/auditService');
 const apiKeys = require('../services/apiKeyService');
+const optOut = require('../services/optOutService');
 const { createModuleLogger } = require('../services/loggerService');
 const logger = createModuleLogger('admin');
 
@@ -84,6 +85,34 @@ exports.addAllowlistEntry = makeAddEntry('allowlist');
 exports.removeAllowlistEntry = makeRemoveEntry('allowlist');
 exports.addBlacklistEntry = makeAddEntry('blacklist');
 exports.removeBlacklistEntry = makeRemoveEntry('blacklist');
+
+// ---------- 探针退出请求 ----------
+
+/** GET /api/admin/opt-out-requests?status=pending：公开页面提交的退出请求（含联系邮箱，仅管理员可见） */
+exports.listOptOutRequests = async (req, res) => {
+  try {
+    const result = await optOut.list({ status: req.query.status, limit: req.query.limit, offset: req.query.offset });
+    if (!result.ok) return fail(res, result.status, result.message);
+    res.json({ success: true, data: { items: result.items, counts: result.counts } });
+  } catch (error) {
+    serverError(res, '获取退出请求', error);
+  }
+};
+
+const makeReviewOptOut = (decision) => async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const result = await optOut.review({ id, decision, note: (req.body || {}).note, adminId: req.user.id });
+    if (!result.ok) return fail(res, result.status, result.message);
+    await audited(req, `admin.optout.${decision}`, 'opt_out_request', String(id), { cidr: result.cidr, note: (req.body || {}).note || null });
+    res.json({ success: true, message: decision === 'approve' ? '已通过，网段已加入黑名单' : '已驳回', data: { id, cidr: result.cidr, status: result.status } });
+  } catch (error) {
+    serverError(res, decision === 'approve' ? '通过退出请求' : '驳回退出请求', error);
+  }
+};
+
+exports.approveOptOutRequest = makeReviewOptOut('approve');
+exports.rejectOptOutRequest = makeReviewOptOut('reject');
 
 // ---------- 用户配额 ----------
 

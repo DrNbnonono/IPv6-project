@@ -1,5 +1,5 @@
 /**
- * 管理员路由（/api/admin）：扫描策略、用户配额、审计日志、开放 API 密钥。
+ * 管理员路由（/api/admin）：扫描策略、退出请求审核、用户配额、审计日志、开放 API 密钥。
  * 后端强制要求管理员，不依赖前端的 adminOnly。
  */
 
@@ -15,6 +15,10 @@ router.post('/scan-allowlist', adminController.addAllowlistEntry);
 router.delete('/scan-allowlist/:id', adminController.removeAllowlistEntry);
 router.post('/scan-blacklist', adminController.addBlacklistEntry);
 router.delete('/scan-blacklist/:id', adminController.removeBlacklistEntry);
+
+router.get('/opt-out-requests', adminController.listOptOutRequests);
+router.post('/opt-out-requests/:id/approve', adminController.approveOptOutRequest);
+router.post('/opt-out-requests/:id/reject', adminController.rejectOptOutRequest);
 
 router.get('/quotas', adminController.listQuotas);
 router.put('/quotas/:userId', adminController.setQuota);

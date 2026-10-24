@@ -49,11 +49,26 @@ const createAiLimiter = () => rateLimit({
   handler: buildHandler('AI 问答请求过于频繁，请稍后再试')
 });
 
+/**
+ * 退出请求限流：按 IP，默认每小时 5 次提交，可通过 OPT_OUT_RATE_MAX 调整。
+ * 接口是匿名的，且每次提交都会写库、占用管理员审核精力。
+ */
+const createOptOutLimiter = () => rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: toPositiveInt(process.env.OPT_OUT_RATE_MAX, 5),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: buildHandler('提交过于频繁，请稍后再试，或直接邮件联系运营方')
+});
+
 const loginLimiter = createLoginLimiter();
 const apiLimiter = createApiLimiter();
 const aiLimiter = createAiLimiter();
+const optOutLimiter = createOptOutLimiter();
 
 module.exports = {
+  optOutLimiter,
+  createOptOutLimiter,
   loginLimiter,
   apiLimiter,
   aiLimiter,

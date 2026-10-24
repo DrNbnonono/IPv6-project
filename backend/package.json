@@ -179,6 +179,10 @@
         "lines": 90,
         "statements": 90
       },
+      "./services/optOutService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/openApiService.js": {
         "lines": 90,
         "statements": 90
