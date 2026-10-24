@@ -371,6 +371,19 @@ const generateSuggestions = (toolName, toolResult) => {
     suggestions.push('分析探测结果');
     suggestions.push('查看服务详细信息');
     suggestions.push('设计后续工作流');
+  } else if (toolName === 'query_database') {
+    suggestions.push('换个条件继续筛选');
+    suggestions.push('对这些地址做 ZGrab2 服务探测');
+  } else if (toolName === 'apd_detect') {
+    suggestions.push('查询这个任务的状态');
+    suggestions.push('检测完成后过滤别名前缀下的地址');
+  } else if (toolName === 'generate_targets') {
+    suggestions.push('查询这个任务的状态');
+    suggestions.push('用生成的目标做 XMap 扫描');
+  } else if (toolName === 'enrich') {
+    suggestions.push('查询这个任务的状态');
+  } else if (toolName === 'task_status') {
+    suggestions.push('查看任务的详细结果');
   } else if (toolName === 'knowledge') {
     suggestions.push('继续提问相关问题');
     suggestions.push('了解相关技术细节');
