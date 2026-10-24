@@ -1,0 +1,344 @@
+<template>
+  <div class="admin-dashboard">
+    <div class="page-header">
+      <h1>🛡️ 扫描策略与审计</h1>
+      <p class="page-description">
+        管理允许扫描的网段、用户速率与每日配额，查看操作审计。扫描策略默认拒绝：目标必须完整落在白名单内。
+      </p>
+    </div>
+
+    <el-alert v-if="admin.error" :title="admin.error" type="error" show-icon closable class="block" @close="admin.error = ''" />
+
+    <el-tabs v-model="activeTab" @tab-change="onTabChange">
+      <!-- 扫描策略 -->
+      <el-tab-pane label="扫描策略" name="policy">
+        <el-alert
+          v-if="policy && noAllowlist"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="block"
+          title="尚未配置任何白名单：所有扫描任务都会被拒绝"
+          description="在下方添加已获授权的网段，或在服务端设置 SCAN_ALLOWED_TARGETS。"
+        />
+
+        <el-row :gutter="16" v-if="policy" class="block">
+          <el-col :xs="24" :md="8">
+            <el-card shadow="never">
+              <template #header>默认限制</template>
+              <div class="kv"><span>单任务速率上限</span><b>{{ policy.defaults.maxRate }}</b></div>
+              <div class="kv"><span>未指定时的默认速率</span><b>{{ policy.defaults.defaultRate }}</b></div>
+              <div class="kv"><span>每用户每日任务数</span><b>{{ policy.defaults.dailyScanLimit }}</b></div>
+              <div class="hint">由服务端 SCAN_MAX_RATE / SCAN_DEFAULT_RATE / SCAN_DAILY_LIMIT 决定，可在“用户配额”里按用户覆盖。</div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :md="16">
+            <el-card shadow="never">
+              <template #header>永远不允许扫描的范围（内置）</template>
+              <el-tag v-for="item in policy.builtinBlocked" :key="item.cidr" type="info" class="cidr-tag" :title="item.label">
+                {{ item.cidr }}
+              </el-tag>
+              <div v-if="policy.envAllowedTargets.length" class="env-allow">
+                <div class="hint">来自环境变量 SCAN_ALLOWED_TARGETS（只读）：</div>
+                <el-tag v-for="cidr in policy.envAllowedTargets" :key="cidr" type="success" class="cidr-tag">{{ cidr }}</el-tag>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" v-if="policy">
+          <el-col :xs="24" :lg="12" v-for="list in lists" :key="list.kind">
+            <el-card shadow="never" class="block">
+              <template #header>{{ list.title }}</template>
+              <el-form inline @submit.prevent="addEntry(list.kind)">
+                <el-form-item>
+                  <el-input v-model="forms[list.kind].cidr" placeholder="2001:db8::/32 或单个地址" clearable style="width: 190px" />
+                </el-form-item>
+                <el-form-item>
+                  <el-input v-model="forms[list.kind].note" :placeholder="list.notePlaceholder" maxlength="255" clearable style="width: 170px" />
+                </el-form-item>
+                <el-form-item>
+                  <el-button type="primary" native-type="submit" :loading="admin.isLoading" :disabled="!forms[list.kind].cidr.trim()">添加</el-button>
+                </el-form-item>
+              </el-form>
+              <el-table :data="policy[list.kind]" size="small" empty-text="暂无条目">
+                <el-table-column prop="cidr" label="网段" min-width="170" />
+                <el-table-column prop="note" :label="list.noteLabel" min-width="140" show-overflow-tooltip />
+                <el-table-column label="添加时间" width="170">
+                  <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="80">
+                  <template #default="{ row }">
+                    <el-button link type="danger" @click="removeEntry(list.kind, row)">移除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
+
+      <!-- 用户配额 -->
+      <el-tab-pane label="用户配额" name="quotas">
+        <el-card shadow="never" class="block">
+          <template #header>设置配额</template>
+          <el-form inline @submit.prevent="saveQuota">
+            <el-form-item label="用户">
+              <el-select v-model="quotaForm.userId" placeholder="选择用户" filterable style="width: 200px">
+                <el-option v-for="u in admin.users" :key="u.id" :value="u.id" :label="`${u.username || '用户'} (#${u.id})`" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="速率上限">
+              <el-input v-model="quotaForm.maxRate" placeholder="如 20M，留空保持不变" clearable style="width: 190px" />
+            </el-form-item>
+            <el-form-item label="每日任务数">
+              <el-input-number v-model="quotaForm.dailyScanLimit" :min="0" :max="100000" :controls="false" placeholder="留空保持不变" style="width: 150px" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" native-type="submit" :loading="admin.isLoading" :disabled="!canSaveQuota">保存</el-button>
+            </el-form-item>
+          </el-form>
+          <div class="hint" v-if="admin.quotas.defaults">
+            未设置的用户使用默认值：速率 {{ admin.quotas.defaults.maxRate }}，每日 {{ admin.quotas.defaults.dailyScanLimit }} 个任务。
+          </div>
+        </el-card>
+
+        <el-table :data="admin.quotas.items" size="small" empty-text="还没有用户设置过自定义配额">
+          <el-table-column prop="username" label="用户" min-width="140">
+            <template #default="{ row }">{{ row.username || '-' }} (#{{ row.userId }})</template>
+          </el-table-column>
+          <el-table-column label="速率上限" width="120">
+            <template #default="{ row }">{{ row.maxRate || '默认' }}</template>
+          </el-table-column>
+          <el-table-column label="每日任务数" width="120">
+            <template #default="{ row }">{{ row.dailyScanLimit ?? '默认' }}</template>
+          </el-table-column>
+          <el-table-column label="更新时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="110">
+            <template #default="{ row }">
+              <el-button link type="danger" @click="resetQuota(row)">恢复默认</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 审计日志 -->
+      <el-tab-pane label="审计日志" name="audit">
+        <el-form inline class="block" @submit.prevent="searchAudit(1)">
+          <el-form-item label="动作">
+            <el-select v-model="auditFilters.action" placeholder="全部" clearable style="width: 160px">
+              <el-option v-for="a in actionOptions" :key="a.value" :value="a.value" :label="a.label" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="用户 ID">
+            <el-input v-model="auditFilters.userId" placeholder="全部" clearable style="width: 110px" />
+          </el-form-item>
+          <el-form-item label="结果">
+            <el-select v-model="auditFilters.success" placeholder="全部" clearable style="width: 100px">
+              <el-option value="true" label="成功" />
+              <el-option value="false" label="失败" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="时间">
+            <el-date-picker v-model="auditFilters.range" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" style="width: 360px" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" native-type="submit" :loading="admin.isLoading">查询</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="admin.audit.items" size="small" empty-text="没有符合条件的记录">
+          <el-table-column label="时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="用户" width="130">
+            <template #default="{ row }">{{ row.username || (row.user_id ? `#${row.user_id}` : '-') }}</template>
+          </el-table-column>
+          <el-table-column prop="action" label="动作" width="170" />
+          <el-table-column label="资源" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ [row.resource_type, row.resource_id].filter(Boolean).join(' / ') || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="结果" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '成功' : '失败' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="ip" label="来源 IP" width="190" show-overflow-tooltip />
+          <el-table-column label="详情" min-width="240">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.detail" placement="top-start" :show-after="300">
+                <template #content><pre class="detail-pop">{{ JSON.stringify(row.detail, null, 2) }}</pre></template>
+                <span class="detail-line">{{ summarize(row.detail) }}</span>
+              </el-tooltip>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          class="pager"
+          background
+          layout="total, prev, pager, next"
+          :total="admin.audit.total"
+          :page-size="admin.audit.pageSize"
+          :current-page="admin.audit.page"
+          @current-change="searchAudit"
+        />
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAdminStore } from '@/stores/admin'
+
+const admin = useAdminStore()
+const activeTab = ref('policy')
+const policy = computed(() => admin.policy)
+
+const lists = [
+  { kind: 'allowlist', title: '允许扫描的网段（白名单）', noteLabel: '说明', notePlaceholder: '说明（可选）' },
+  { kind: 'blacklist', title: '禁止扫描的网段（黑名单）', noteLabel: '原因', notePlaceholder: '原因（可选）' }
+]
+const forms = reactive({
+  allowlist: { cidr: '', note: '' },
+  blacklist: { cidr: '', note: '' }
+})
+
+const noAllowlist = computed(() =>
+  policy.value && policy.value.allowlist.length === 0 && policy.value.envAllowedTargets.length === 0
+)
+
+const formatTime = (value) => (value ? new Date(value).toLocaleString() : '-')
+
+const addEntry = async (kind) => {
+  const { cidr, note } = forms[kind]
+  try {
+    const res = await admin.addEntry(kind, cidr.trim(), note.trim())
+    ElMessage.success(res.message || '已添加')
+    forms[kind].cidr = ''
+    forms[kind].note = ''
+  } catch {
+    // 原因已显示在页面顶部的提示里
+  }
+}
+
+const removeEntry = async (kind, row) => {
+  try {
+    await ElMessageBox.confirm(
+      kind === 'allowlist'
+        ? `移除后，${row.cidr} 内的目标将无法再被扫描（除非被其他白名单条目覆盖）。`
+        : `移除后，${row.cidr} 将不再被黑名单拦截。`,
+      '确认移除',
+      { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await admin.removeEntry(kind, row.id)
+    ElMessage.success('已移除')
+  } catch {
+    // 原因已显示
+  }
+}
+
+// ----- 用户配额 -----
+const quotaForm = reactive({ userId: null, maxRate: '', dailyScanLimit: undefined })
+const canSaveQuota = computed(() =>
+  quotaForm.userId && (quotaForm.maxRate.trim() !== '' || (quotaForm.dailyScanLimit !== undefined && quotaForm.dailyScanLimit !== null))
+)
+
+const saveQuota = async () => {
+  const payload = {}
+  if (quotaForm.maxRate.trim() !== '') payload.maxRate = quotaForm.maxRate.trim()
+  if (quotaForm.dailyScanLimit !== undefined && quotaForm.dailyScanLimit !== null) payload.dailyScanLimit = quotaForm.dailyScanLimit
+  try {
+    await admin.saveQuota(quotaForm.userId, payload)
+    ElMessage.success('配额已保存')
+    quotaForm.maxRate = ''
+    quotaForm.dailyScanLimit = undefined
+  } catch {
+    // 原因已显示
+  }
+}
+
+const resetQuota = async (row) => {
+  try {
+    await ElMessageBox.confirm(`将用户 ${row.username || row.userId} 的配额恢复为默认值？`, '确认', {
+      type: 'warning', confirmButtonText: '恢复默认', cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    await admin.resetQuota(row.userId)
+    ElMessage.success('已恢复默认')
+  } catch {
+    // 原因已显示
+  }
+}
+
+// ----- 审计日志 -----
+const actionOptions = [
+  { value: 'auth', label: '登录' },
+  { value: 'task', label: '任务' },
+  { value: 'whitelist', label: '白名单文件' },
+  { value: 'agent', label: 'Agent 工具' },
+  { value: 'terminal', label: '终端' },
+  { value: 'workflow', label: '工作流' },
+  { value: 'db', label: '数据库写操作' },
+  { value: 'admin', label: '管理员操作' }
+]
+const auditFilters = reactive({ action: '', userId: '', success: '', range: null })
+
+const searchAudit = (page = 1) => {
+  const [since, until] = auditFilters.range || []
+  return admin.fetchAuditLogs({
+    action: auditFilters.action,
+    userId: auditFilters.userId.trim(),
+    success: auditFilters.success,
+    since: since ? new Date(since).toISOString() : '',
+    until: until ? new Date(until).toISOString() : '',
+    page
+  }).catch(() => {})
+}
+
+// 详情摘要：状态码以外的第一两项
+const summarize = (detail) =>
+  Object.entries(detail)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+    .join('  ')
+
+const loaded = new Set()
+const onTabChange = (name) => {
+  if (loaded.has(name)) return
+  loaded.add(name)
+  if (name === 'quotas') admin.fetchQuotas().catch(() => {})
+  if (name === 'audit') searchAudit(1)
+}
+
+onMounted(() => {
+  loaded.add('policy')
+  admin.fetchPolicy().catch(() => {})
+})
+</script>
+
+<style scoped>
+.admin-dashboard { padding: 20px; }
+.page-header h1 { margin: 0 0 6px; font-size: 24px; }
+.page-description { margin: 0 0 16px; color: #666; }
+.block { margin-bottom: 16px; }
+.kv { display: flex; justify-content: space-between; padding: 4px 0; }
+.hint { margin-top: 8px; color: #888; font-size: 12px; line-height: 1.5; }
+.cidr-tag { margin: 0 6px 6px 0; }
+.env-allow { margin-top: 12px; }
+.pager { margin-top: 16px; justify-content: flex-end; }
+.detail-line { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #555; }
+.detail-pop { margin: 0; max-width: 480px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+</style>
