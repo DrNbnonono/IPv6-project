@@ -77,6 +77,23 @@ jobs:
       - name: 数据库自检
         run: node scripts/checkDb.js
         working-directory: backend
+      - name: 演示快照往返（创建 → 改动 → 还原）
+        working-directory: backend
+        env:
+          DEMO_SNAPSHOT_DIR: ${{ runner.temp }}/demo-snapshots
+          MYSQL_PWD: observ6-ci
+        run: |
+          set -e
+          count() { mysql -h 127.0.0.1 -uobserv6 -N ipv6_project -e "SELECT COUNT(*) FROM users"; }
+          before=$(count)
+          test "$before" -ge 1
+          node scripts/demoSnapshot.js create ci-snap
+          mysql -h 127.0.0.1 -uobserv6 ipv6_project -e "DELETE FROM users"
+          test "$(count)" = "0"
+          node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project
+          test "$(count)" = "$before"
+          node scripts/demoSnapshot.js list | grep -q ci-snap
+          node scripts/checkDb.js
 
   frontend:
     name: 前端构建

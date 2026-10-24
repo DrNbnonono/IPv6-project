@@ -13,6 +13,8 @@
     "knowledge:index": "node scripts/indexKnowledge.js",
     "stats:snapshot": "node scripts/statsSnapshot.js",
     "eval:agent": "node scripts/evalAgent.js",
+    "demo:snapshot": "node scripts/demoSnapshot.js",
+    "loadtest": "node scripts/loadTest.js",
     "test:coverage": "jest --coverage"
   },
   "keywords": [],
