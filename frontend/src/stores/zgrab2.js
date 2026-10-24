@@ -8,6 +8,7 @@ export const useZgrab2Store = defineStore('zgrab2', () => {
   const supportedModules = ref([])
   const configs = ref([])
   const inputFiles = ref([])
+  const presets = ref([])
   const isLoading = ref(false)
   const error = ref(null)
 
@@ -323,7 +324,55 @@ export const useZgrab2Store = defineStore('zgrab2', () => {
     }
   }
 
+  // 扫描预设。错误抛出带后端文案的 Error，由调用方展示
+  const presetError = (err, fallback) => new Error(err?.response?.data?.message || err?.message || fallback)
+
+  const fetchPresets = async () => {
+    try {
+      const res = await api.zgrab2.getPresets()
+      presets.value = res.data || []
+      return presets.value
+    } catch (err) {
+      throw presetError(err, '获取扫描预设失败')
+    }
+  }
+
+  const createPreset = async (data) => {
+    try {
+      const res = await api.zgrab2.createPreset(data)
+      await fetchPresets()
+      return res.data
+    } catch (err) {
+      throw presetError(err, '保存预设失败')
+    }
+  }
+
+  const deletePreset = async (id) => {
+    try {
+      await api.zgrab2.deletePreset(id)
+      await fetchPresets()
+    } catch (err) {
+      throw presetError(err, '删除预设失败')
+    }
+  }
+
+  // 套用：后端生成多模块配置文件并登记，返回 { fileName, ... }；随后刷新配置文件列表
+  const applyPreset = async (id) => {
+    try {
+      const res = await api.zgrab2.applyPreset(id)
+      await fetchConfigs()
+      return res.data
+    } catch (err) {
+      throw presetError(err, '套用预设失败')
+    }
+  }
+
   return {
+    presets,
+    fetchPresets,
+    createPreset,
+    deletePreset,
+    applyPreset,
     tasks,
     currentTask,
     supportedModules,

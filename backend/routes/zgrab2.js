@@ -1,11 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const zgrab2Controller = require('../controllers/zgrab2Controller');
+const presetController = require('../controllers/scanPresetController');
 const { authenticate } = require('../middleware/auth');
 const { audit } = require('../middleware/audit');
 
 // 获取支持的模块列表 (需要放在动态路由之前)
 router.get('/modules', authenticate, zgrab2Controller.getSupportedModules);
+
+// 扫描预设（模块 + 端口的套件）；套用时生成多模块 INI 配置文件
+router.get('/presets', authenticate, presetController.listPresets);
+router.post('/presets', authenticate, audit('preset.create', {
+  resourceType: 'scan_preset',
+  resourceId: (req, res, body) => body && body.data && body.data.id,
+  detail: (req) => ({ name: req.body && req.body.name })
+}), presetController.createPreset);
+router.delete('/presets/:id', authenticate, audit('preset.delete', { resourceType: 'scan_preset', resourceId: (req) => req.params.id }), presetController.deletePreset);
+router.post('/presets/:id/apply', authenticate, audit('preset.apply', { resourceType: 'scan_preset', resourceId: (req) => req.params.id }), presetController.applyPreset);
 
 // 文件管理功能已移至统一的 /files 接口
 // 配置文件和输入文件上传: POST /files/upload
