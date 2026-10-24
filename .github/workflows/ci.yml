@@ -87,11 +87,11 @@ jobs:
           # 失败时把错误信息写成注释（日志在网页上不一定能看到）
           trap 'code=$?; if [ $code -ne 0 ]; then echo "::error title=演示快照往返失败::$(tr "\n" " " < "$RUNNER_TEMP/demo-step.log" | tail -c 900)"; fi' EXIT
           exec > >(tee "$RUNNER_TEMP/demo-step.log") 2>&1
-          count() { mysql -h 127.0.0.1 -uobserv6 -N ipv6_project -e "SELECT COUNT(*) FROM users"; }
+          count() { mysql -h 127.0.0.1 -u"$DB_USER" -N ipv6_project -e "SELECT COUNT(*) FROM users"; }
           before=$(count)
           test "$before" -ge 1
           node scripts/demoSnapshot.js create ci-snap
-          mysql -h 127.0.0.1 -uobserv6 ipv6_project -e "DELETE FROM users"
+          mysql -h 127.0.0.1 -u"$DB_USER" ipv6_project -e "DELETE FROM users"
           test "$(count)" = "0"
           node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project
           test "$(count)" = "$before"
