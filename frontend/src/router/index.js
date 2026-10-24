@@ -17,6 +17,7 @@ const NmapDashboardView = () => import('@/views/tools/nmap/NmapDashboardView.vue
 const WorkflowDashboardView = () => import('@/views/tools/workflows/WorkflowDashboardView.vue')
 const AgentDashboardView = () => import('@/views/tools/agent/AgentDashboardView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
+const HighlightsView = () => import('@/views/detection/HighlightsView.vue')
 
 const routes = [
   {
@@ -166,6 +167,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
  
+  {
+    path: '/detection/highlights',
+    name: 'highlights',
+    component: HighlightsView,
+    meta: { isPublic: true, title: '成果概览' }
+  },
   {
     path: '/detection/query',
     name: 'advancedQuery',

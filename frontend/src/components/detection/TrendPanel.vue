@@ -73,6 +73,8 @@ const title = computed(() => {
   return `${name} 趋势`
 })
 
+// 坐标轴刻度用紧凑写法（7500 万），避免长数字撑开坐标轴
+const axisNumber = (v) => (Math.abs(v) >= 1e8 ? `${+(v / 1e8).toFixed(2)} 亿` : Math.abs(v) >= 1e4 ? `${+(v / 1e4).toFixed(1)} 万` : String(v))
 const formatNumber = (value) => (Number(value) || 0).toLocaleString('zh-CN')
 const formatDelta = (item) => {
   const sign = item.change > 0 ? '+' : ''
@@ -106,13 +108,13 @@ const render = () => {
   const dates = points.value.map((p) => p.date)
   chart.setOption({
     color: ['#4fc3f7', '#ffb74d'],
-    grid: { left: 56, right: 56, top: 36, bottom: 28 },
+    grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
     tooltip: { trigger: 'axis' },
     legend: { top: 0, textStyle: { color: '#ddd' } },
     xAxis: { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#bbb' } },
     yAxis: [
-      { type: 'value', name: '地址', scale: true, axisLabel: { color: '#bbb' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
-      { type: 'value', name: '前缀', scale: true, axisLabel: { color: '#bbb' }, splitLine: { show: false } }
+      { type: 'value', name: '地址', scale: true, axisLabel: { color: '#bbb', formatter: axisNumber }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+      { type: 'value', name: '前缀', scale: true, axisLabel: { color: '#bbb', formatter: axisNumber }, splitLine: { show: false } }
     ],
     series: [
       { name: '活跃地址', type: 'line', yAxisIndex: 0, showSymbol: points.value.length < 40, data: points.value.map((p) => p.addresses) },

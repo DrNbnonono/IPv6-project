@@ -177,11 +177,11 @@ export const useDetectionStore = defineStore('detection', () => {
   }
 
   // 获取全球统计数据
-  const fetchGlobalStats = async () => {
+  const fetchGlobalStats = async (params = {}) => {
     try {
       isLoading.value = true
       error.value = null
-      const response = await api.detection.getGlobalStats()
+      const response = await api.detection.getGlobalStats(params)
       globalStats.value = response.data
       return response.data
     } catch (err) {
