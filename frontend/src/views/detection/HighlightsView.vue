@@ -9,6 +9,7 @@
       <nav class="hero-nav">
         <router-link :to="{ name: 'detection-platform' }" class="nav-link">返回检测平台</router-link>
         <router-link :to="{ name: 'advancedQuery' }" class="nav-link">高级查询</router-link>
+        <router-link :to="{ name: 'about-scanning' }" class="nav-link">探针说明</router-link>
       </nav>
     </header>
 

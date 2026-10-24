@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
 
-// 管理员页的数据：扫描策略（白名单/黑名单）、用户配额、审计日志。
+// 管理员页的数据：扫描策略（白名单/黑名单）、退出请求审核、用户配额、审计日志。
 // 请求错误统一整理成 error 文案，由页面展示；响应拦截器已返回响应体 { success, data, message }。
 export const useAdminStore = defineStore('admin', () => {
   const policy = ref(null)
@@ -10,6 +10,7 @@ export const useAdminStore = defineStore('admin', () => {
   const users = ref([])
   const audit = ref({ total: 0, page: 1, pageSize: 50, items: [] })
   const apiKeys = ref({ scopes: [], items: [] })
+  const optOut = ref({ items: [], counts: { pending: 0, approved: 0, rejected: 0 } })
   const isLoading = ref(false)
   const error = ref('')
 
@@ -110,8 +111,25 @@ export const useAdminStore = defineStore('admin', () => {
       return res
     }, '吊销 API 密钥失败')
 
+  const fetchOptOutRequests = (status = '') =>
+    run(async () => {
+      const res = await api.admin.getOptOutRequests(status ? { status } : {})
+      optOut.value = res.data
+      return res
+    }, '获取退出请求失败')
+
+  // 通过会把网段写入黑名单，所以之后同时刷新请求列表和策略
+  const reviewOptOut = (id, decision, note, status = '') =>
+    run(async () => {
+      const send = decision === 'approve' ? api.admin.approveOptOutRequest : api.admin.rejectOptOutRequest
+      const res = await send(id, note ? { note } : {})
+      await Promise.all([fetchOptOutRequests(status), fetchPolicy()])
+      return res
+    }, decision === 'approve' ? '通过退出请求失败' : '驳回退出请求失败')
+
   return {
-    policy, quotas, users, audit, apiKeys, isLoading, error,
+    policy, quotas, users, audit, apiKeys, optOut, isLoading, error,
+    fetchOptOutRequests, reviewOptOut,
     fetchPolicy, addEntry, removeEntry,
     fetchQuotas, saveQuota, resetQuota,
     fetchAuditLogs,

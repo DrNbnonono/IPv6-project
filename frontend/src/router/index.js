@@ -18,6 +18,7 @@ const WorkflowDashboardView = () => import('@/views/tools/workflows/WorkflowDash
 const AgentDashboardView = () => import('@/views/tools/agent/AgentDashboardView.vue')
 const AdvancedQueryView = () => import('@/views/detection/AdvancedQueryView.vue')
 const HighlightsView = () => import('@/views/detection/HighlightsView.vue')
+const AboutScanningView = () => import('@/views/detection/AboutScanningView.vue')
 
 const routes = [
   {
@@ -172,6 +173,12 @@ const routes = [
     name: 'highlights',
     component: HighlightsView,
     meta: { isPublic: true, title: '成果概览' }
+  },
+  {
+    path: '/about-scanning',
+    name: 'about-scanning',
+    component: AboutScanningView,
+    meta: { isPublic: true, title: '探针说明与退出' }
   },
   {
     path: '/detection/query',

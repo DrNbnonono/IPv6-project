@@ -3,7 +3,7 @@
     <div class="page-header">
       <h1>🛡️ 扫描策略与审计</h1>
       <p class="page-description">
-        管理允许扫描的网段、用户速率与每日配额，查看操作审计。扫描策略默认拒绝：目标必须完整落在白名单内。
+        管理允许扫描的网段、审核探针退出请求、设置用户速率与每日配额，查看操作审计。扫描策略默认拒绝：目标必须完整落在白名单内。
       </p>
     </div>
 
@@ -76,6 +76,55 @@
             </el-card>
           </el-col>
         </el-row>
+      </el-tab-pane>
+
+      <!-- 探针退出请求 -->
+      <el-tab-pane name="optout">
+        <template #label>
+          退出请求<el-badge v-if="admin.optOut.counts.pending" :value="admin.optOut.counts.pending" class="tab-badge" />
+        </template>
+        <el-alert
+          type="info"
+          show-icon
+          :closable="false"
+          class="block"
+          title="待审核的网段已经被扫描策略拒绝"
+          description="通过后网段写入黑名单并永久生效；驳回后暂停解除。联系邮箱只在这里显示，请先核实对方确实管理该网段再通过。公开页面：/about-scanning。"
+        />
+        <el-form inline class="block" @submit.prevent="loadOptOut">
+          <el-form-item label="状态">
+            <el-select v-model="optOutStatus" style="width: 130px" @change="loadOptOut">
+              <el-option value="pending" label="待审核" />
+              <el-option value="approved" label="已通过" />
+              <el-option value="rejected" label="已驳回" />
+              <el-option value="" label="全部" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <el-table :data="admin.optOut.items" size="small" empty-text="没有符合条件的请求">
+          <el-table-column prop="cidr" label="网段" min-width="170" />
+          <el-table-column prop="contact" label="联系邮箱" min-width="170" show-overflow-tooltip />
+          <el-table-column prop="organization" label="单位" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="sourceIp" label="提交 IP" width="140" show-overflow-tooltip />
+          <el-table-column label="提交时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag :type="optOutTag[row.status]" size="small">{{ optOutLabel[row.status] }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150">
+            <template #default="{ row }">
+              <template v-if="row.status === 'pending'">
+                <el-button link type="primary" @click="reviewOptOut(row, 'approve')">通过</el-button>
+                <el-button link type="danger" @click="reviewOptOut(row, 'reject')">驳回</el-button>
+              </template>
+              <span v-else class="hint">{{ row.reviewNote || '' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-tab-pane>
 
       <!-- 用户配额 -->
@@ -298,6 +347,36 @@ const removeEntry = async (kind, row) => {
   }
 }
 
+// ----- 探针退出请求 -----
+const optOutStatus = ref('pending')
+const optOutLabel = { pending: '待审核', approved: '已通过', rejected: '已驳回' }
+const optOutTag = { pending: 'warning', approved: 'success', rejected: 'info' }
+
+const loadOptOut = () => admin.fetchOptOutRequests(optOutStatus.value).catch(() => {})
+
+const reviewOptOut = async (row, decision) => {
+  const approve = decision === 'approve'
+  let note = ''
+  try {
+    const result = await ElMessageBox.prompt(
+      approve
+        ? `通过后 ${row.cidr} 将永久加入黑名单。可填写审核备注（如何核实的）：`
+        : `驳回后 ${row.cidr} 的暂停解除，可以再次被扫描（前提是仍在白名单内）。可填写驳回原因：`,
+      approve ? '通过退出请求' : '驳回退出请求',
+      { confirmButtonText: approve ? '通过' : '驳回', cancelButtonText: '取消', inputPattern: /^[\s\S]{0,255}$/, inputErrorMessage: '不能超过 255 个字符' }
+    )
+    note = (result.value || '').trim()
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const res = await admin.reviewOptOut(row.id, decision, note, optOutStatus.value)
+    ElMessage.success(res.message || '已处理')
+  } catch {
+    // 原因已显示在页面顶部
+  }
+}
+
 // ----- 用户配额 -----
 const quotaForm = reactive({ userId: null, maxRate: '', dailyScanLimit: undefined })
 const canSaveQuota = computed(() =>
@@ -381,6 +460,7 @@ const actionOptions = [
   { value: 'terminal', label: '终端' },
   { value: 'workflow', label: '工作流' },
   { value: 'db', label: '数据库写操作' },
+  { value: 'optout', label: '退出请求提交' },
   { value: 'admin', label: '管理员操作' }
 ]
 const auditFilters = reactive({ action: '', userId: '', success: '', range: null })
@@ -408,6 +488,7 @@ const loaded = new Set()
 const onTabChange = (name) => {
   if (loaded.has(name)) return
   loaded.add(name)
+  if (name === 'optout') loadOptOut()
   if (name === 'quotas') admin.fetchQuotas().catch(() => {})
   if (name === 'audit') searchAudit(1)
   if (name === 'apikeys') admin.fetchApiKeys().catch(() => {})
@@ -416,6 +497,7 @@ const onTabChange = (name) => {
 onMounted(() => {
   loaded.add('policy')
   admin.fetchPolicy().catch(() => {})
+  loadOptOut() // 先取一次，让标签上的待审核数量可见
 })
 </script>
 
@@ -425,6 +507,7 @@ onMounted(() => {
 .page-description { margin: 0 0 16px; color: #666; }
 .block { margin-bottom: 16px; }
 .kv { display: flex; justify-content: space-between; padding: 4px 0; }
+.tab-badge { margin-left: 6px; }
 .hint { margin-top: 8px; color: #888; font-size: 12px; line-height: 1.5; }
 .cidr-tag { margin: 0 6px 6px 0; }
 .env-allow { margin-top: 12px; }
