@@ -25,7 +25,7 @@ html, body, #app {
 }
 
 body {
-  font-family: 'Avenir', Helvetica, Arial, sans-serif;
+  font-family: var(--ov-font, 'Avenir', Helvetica, Arial, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;

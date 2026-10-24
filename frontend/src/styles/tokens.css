@@ -1,0 +1,70 @@
+/*
+ * ObserV6 设计变量。
+ * 品牌色：深海军蓝底 + 青色强调（与探测平台、成果页、说明页一致）。
+ * 约定：新写的样式用 --ov-* 变量，不要再写死色值；Element Plus 的主题色在这里统一覆盖。
+ */
+:root {
+  /* 强调色；--ov-accent-rgb 供 rgb(var(--ov-accent-rgb) / 0.2) 这样的半透明写法使用 */
+  --ov-accent: #0ea5e9;
+  --ov-accent-2: #2563eb;
+  --ov-accent-rgb: 14 165 233;
+  --ov-accent-soft: rgb(var(--ov-accent-rgb) / 0.12);
+  --ov-accent-gradient: linear-gradient(135deg, var(--ov-accent) 0%, var(--ov-accent-2) 100%);
+
+  /* 深色表面（探测平台、Agent 控制台） */
+  --ov-bg-deep: #08121d;
+  --ov-bg-panel: #0d1b2b;
+  --ov-bg-panel-2: #0b1726;
+  --ov-line: rgba(148, 197, 255, 0.12);
+  --ov-text: #e6edf3;
+  --ov-text-dim: #9fb1c3;
+
+  /* 浅色表面（工具平台） */
+  --ov-surface: #ffffff;
+  --ov-surface-2: #f6f8fb;
+  --ov-border: #e3e8ef;
+  --ov-ink: #0f172a;
+  --ov-ink-dim: #5b6b7f;
+  --ov-ink-faint: #94a3b8;
+
+  --ov-success: #10b981;
+  --ov-warning: #f59e0b;
+  --ov-danger: #ef4444;
+
+  --ov-radius: 12px;
+  --ov-radius-sm: 8px;
+  --ov-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --ov-shadow-lg: 0 2px 4px rgba(15, 23, 42, 0.05), 0 16px 40px rgba(15, 23, 42, 0.12);
+
+  --ov-font: 'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ov-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* Element Plus 主题色 */
+  --el-color-primary: var(--ov-accent);
+  --el-color-primary-light-3: #5cc0f0;
+  --el-color-primary-light-5: #87d3f5;
+  --el-color-primary-light-7: #b5e4f9;
+  --el-color-primary-light-8: #cdedfb;
+  --el-color-primary-light-9: #e6f6fd;
+  --el-color-primary-dark-2: #0b84bc;
+  --el-border-radius-base: 8px;
+  --el-font-family: var(--ov-font);
+}
+
+/* 键盘焦点可见：全局统一的焦点环（鼠标点击不显示） */
+:focus-visible {
+  outline: 2px solid var(--ov-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(var(--ov-accent-rgb) / 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
