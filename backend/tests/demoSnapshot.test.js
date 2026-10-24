@@ -43,6 +43,16 @@ describe('demoSnapshot 纯函数', () => {
     expect(demo.stripDefinerLine(dataLine)).toBe(dataLine);
   });
 
+  test('evaluateTriggerRestore 的判定', () => {
+    expect(demo.evaluateTriggerRestore({ logBin: false, trust: false, grants: '' }).ok).toBe(true);
+    expect(demo.evaluateTriggerRestore({ logBin: true, trust: true, grants: '' }).ok).toBe(true);
+    expect(demo.evaluateTriggerRestore({ logBin: true, trust: false, grants: 'GRANT SUPER ON *.* TO `u`@`%`' }).ok).toBe(true);
+    expect(demo.evaluateTriggerRestore({ logBin: true, trust: false, grants: 'GRANT ALL PRIVILEGES ON *.* TO `root`@`%`' }).ok).toBe(true);
+    const denied = demo.evaluateTriggerRestore({ logBin: true, trust: false, grants: 'GRANT ALL PRIVILEGES ON `db`.* TO `u`@`%`' });
+    expect(denied.ok).toBe(false);
+    expect(denied.message).toContain('log_bin_trust_function_creators');
+  });
+
   test('createDefinerStripper 跨 chunk 边界按行处理', async () => {
     const input = ['/*!50017 DEFI', 'NER=`r`@`l`*/ A\nINSERT x;\nCREATE DEFINER=`a`@`b` V', '\nlast-no-newline'];
     let out = '';
@@ -68,8 +78,13 @@ describe('demoSnapshot 创建/列表/还原（用假的 mysqldump / mysql）', (
     const dump = writeBin('fake-mysqldump', `case "$*" in *--routines*) [ -n "$FAKE_ROUTINE_DENY" ] && { echo "mysqldump: u has insufficient privileges to SHOW CREATE PROCEDURE \\\`p\\\`!" >&2; exit 2; };; esac
 echo "-- dump routines:$*" | grep -q -- --routines && echo "-- with-routines" || echo "-- no-routines"
 echo "/*!50017 DEFINER=\\\`root\\\`@\\\`localhost\\\`*/ trigger-line"
+[ -n "$FAKE_TRIGGERS" ] && echo "/*!50003 CREATE*/ /*!50017 DEFINER=\\\`root\\\`@\\\`localhost\\\`*/ /*!50003 TRIGGER trg AFTER INSERT ON t FOR EACH ROW BEGIN"
 echo "INSERT INTO t VALUES (1);"`);
-    const mysql = writeBin('fake-mysql', `case "$*" in *"SHOW FULL TABLES"*) printf 't1\\tBASE TABLE\\nt2\\tBASE TABLE\\n';; *) cat > "${restoredSql}";; esac`);
+    const mysql = writeBin('fake-mysql', `case "$*" in
+*"SHOW FULL TABLES"*) printf 't1\\tBASE TABLE\\nt2\\tBASE TABLE\\n';;
+*log_bin*) printf '%s\\t%s\\n' "\${FAKE_LOG_BIN:-0}" "\${FAKE_TRUST:-0}";;
+*"SHOW GRANTS"*) echo "\${FAKE_GRANTS:-GRANT USAGE ON *.* TO u}";;
+*) cat > "${restoredSql}"; if [ -n "$FAKE_RESTORE_FAIL" ]; then echo "ERROR 1419 boom" >&2; exit 1; fi;; esac`);
     env = {
       DB_HOST: 'h', DB_USER: 'u', DB_PASSWORD: 'p', DB_NAME: 'demo_db', PROJECT_ROOT: path.join(tmp, 'root'),
       DEMO_SNAPSHOT_DIR: path.join(tmp, 'snaps'), MYSQLDUMP_BIN: dump, MYSQL_BIN: mysql
@@ -143,6 +158,45 @@ echo "INSERT INTO t VALUES (1);"`);
     expect(fs.readFileSync(restoredSql, 'utf8')).toContain('INSERT INTO t VALUES (1);');
     expect(fs.readFileSync(path.join(env.PROJECT_ROOT, 'reports', 'r1.txt'), 'utf8')).toBe('report');
     expect(logs.join('\n')).toContain(`restore ${safety}`);
+  });
+
+  const withEnv = async (vars, fn) => {
+    Object.assign(process.env, vars);
+    try { return await fn(); } finally { for (const k of Object.keys(vars)) delete process.env[k]; }
+  };
+
+  test('create：统计触发器个数写进元数据', async () => {
+    const meta = await withEnv({ FAKE_TRIGGERS: '1' }, () => demo.createSnapshot('t1', {}, env, silent));
+    expect(meta.triggers).toBe(1);
+    expect((await demo.createSnapshot('t0', {}, env, silent)).triggers).toBe(0);
+  });
+
+  test('restore：含触发器且服务器开了 binlog、账号无 SUPER 时，动手前拒绝', async () => {
+    await withEnv({ FAKE_TRIGGERS: '1' }, () => demo.createSnapshot('tr', {}, env, silent));
+    await withEnv({ FAKE_LOG_BIN: '1', FAKE_TRUST: '0' }, async () => {
+      await expect(demo.restoreSnapshot('tr', { confirmDb: 'demo_db' }, env, silent)).rejects.toThrow('ERROR 1419');
+    });
+    expect(fs.existsSync(restoredSql)).toBe(false); // 没有碰数据库
+    expect(demo.listSnapshots(env).map((m) => m.name)).toEqual(['tr']); // 连安全快照都没留
+  });
+
+  test('restore：有 SUPER 或 trust 开启时放行', async () => {
+    await withEnv({ FAKE_TRIGGERS: '1' }, () => demo.createSnapshot('tr2', {}, env, silent));
+    await withEnv({ FAKE_LOG_BIN: '1', FAKE_TRUST: '1' }, () => demo.restoreSnapshot('tr2', { confirmDb: 'demo_db', safetySnapshot: false }, env, silent));
+    expect(fs.existsSync(restoredSql)).toBe(true);
+    fs.rmSync(restoredSql);
+    await withEnv({ FAKE_LOG_BIN: '1', FAKE_TRUST: '0', FAKE_GRANTS: 'GRANT SUPER ON *.* TO u' }, () => demo.restoreSnapshot('tr2', { confirmDb: 'demo_db', safetySnapshot: false }, env, silent));
+    expect(fs.existsSync(restoredSql)).toBe(true);
+  });
+
+  test('restore：中途失败时提示用安全快照退回', async () => {
+    await demo.createSnapshot('fl', {}, env, silent);
+    await withEnv({ FAKE_RESTORE_FAIL: '1' }, async () => {
+      await expect(demo.restoreSnapshot('fl', { confirmDb: 'demo_db' }, env, silent))
+        .rejects.toThrow(/不一致状态[\s\S]*auto-before-restore-fl-\d{14}/);
+      await expect(demo.restoreSnapshot('fl', { confirmDb: 'demo_db', safetySnapshot: false }, env, silent))
+        .rejects.toThrow('没有安全快照');
+    });
   });
 
   test('restore：--no-safety-snapshot 不创建安全快照', async () => {

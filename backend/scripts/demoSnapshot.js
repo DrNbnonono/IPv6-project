@@ -16,6 +16,8 @@
  *  - 还原是破坏性操作：必须带 --confirm-db <当前 DB_NAME>（防止连错库）；NODE_ENV=production 时还需 --allow-production；
  *    还原前校验 sha256；默认先自动创建一个 auto-before-restore-* 安全快照（--no-safety-snapshot 关闭）。
  *  - 当前账号无权读取存储过程定义时（过程由 root 创建而你用的是普通账号），快照会自动退为不含存储过程，并在输出和元数据（routines:false）里说明。
+ *  - 含触发器的快照还原需要建触发器：二进制日志开启（MySQL 8 默认）且账号无 SUPER 时服务器会拒绝（ERROR 1419）。
+ *    DDL 不能回滚，所以还原前先预检，不满足就拒绝并说明做法，数据库不被改动；真失败时提示用安全快照退回。
  *  - 导出时去掉 DEFINER 子句，否则用权限较低的账号还原触发器/存储过程会失败。
  *  - 还原只覆盖快照里有的表（DROP TABLE + 重建 + 灌数据）；快照之后新建的表（例如之后才执行的迁移）不会被删除。
  *    文件还原是覆盖解压：快照之后新增的结果文件不会被删除。
@@ -108,19 +110,28 @@ const stripDefinerLine = (line) => {
   return line.replace(DEFINER_PATTERN, '');
 };
 
+// mysqldump 建触发器的行形如 /*!50003 CREATE*/ /*!50017 DEFINER=...*/ /*!50003 TRIGGER name ...
+const TRIGGER_LINE = /^\/\*!\d+ CREATE\*\/.*\/\*!\d+ TRIGGER /;
+
 const createDefinerStripper = () => {
   let rest = '';
-  return new Transform({
+  const handle = (line, self) => {
+    if (TRIGGER_LINE.test(line)) self.triggers += 1;
+    return stripDefinerLine(line);
+  };
+  const stream = new Transform({
     transform(chunk, encoding, callback) {
       rest += chunk.toString('utf8');
       const lines = rest.split('\n');
       rest = lines.pop();
-      callback(null, lines.map((l) => `${stripDefinerLine(l)}\n`).join(''));
+      callback(null, lines.map((l) => `${handle(l, stream)}\n`).join(''));
     },
     flush(callback) {
-      callback(null, rest ? stripDefinerLine(rest) : '');
+      callback(null, rest ? handle(rest, stream) : '');
     }
   });
+  stream.triggers = 0; // 导出里的触发器个数，写进元数据，还原前用来判断权限
+  return stream;
 };
 
 const sha256File = (file) => new Promise((resolve, reject) => {
@@ -147,11 +158,12 @@ const dumpDatabase = async (outFile, env, { routines = true } = {}) => {
   const partial = `${outFile}.partial`; // 写完并确认 mysqldump 成功后才改名，失败不会留下半截快照
   const out = fs.createWriteStream(partial, { mode: 0o600 });
   let piped = Promise.resolve();
+  const stripper = createDefinerStripper();
   const result = await runCommand(bin, buildDumpArgs(env, { routines }), {
     env,
     stdout: (stream) => {
       piped = new Promise((resolve, reject) => {
-        pipeline(stream, createDefinerStripper(), zlib.createGzip(), out, (err) => (err ? reject(err) : resolve()));
+        pipeline(stream, stripper, zlib.createGzip(), out, (err) => (err ? reject(err) : resolve()));
       });
       piped.catch(() => {});
     }
@@ -163,6 +175,41 @@ const dumpDatabase = async (outFile, env, { routines = true } = {}) => {
   }
   await piped;
   fs.renameSync(partial, outFile);
+  return { triggers: stripper.triggers };
+};
+
+/**
+ * 还原含触发器的快照需要创建触发器：二进制日志开启（MySQL 8 默认）且账号没有 SUPER/SET_USER_ID 时，
+ * 服务器要求 log_bin_trust_function_creators=1，否则建触发器报 ERROR 1419。
+ * 而 DDL 不能回滚——还原是先删表再重建，中途失败会留下半截数据库——所以必须在动手前判断。
+ */
+const evaluateTriggerRestore = ({ logBin, trust, grants }) => {
+  if (!logBin || trust) return { ok: true };
+  const privileged = /\b(SUPER|SET_USER_ID)\b/i.test(grants) || /ALL PRIVILEGES ON \*\.\*/i.test(grants);
+  if (privileged) return { ok: true };
+  return {
+    ok: false,
+    message: '该快照含触发器，但服务器开启了二进制日志且当前账号没有 SUPER 权限，建触发器会报 ERROR 1419，还原会中途失败。'
+      + '请先让 DBA 设置 log_bin_trust_function_creators=1（docker-compose 的 mysql 已默认带 --log-bin-trust-function-creators=1），'
+      + '或改用有 SUPER 权限的账号（临时设置 DB_USER/DB_PASSWORD）再还原。数据库没有被改动。'
+  };
+};
+
+const queryOutput = async (sql, env) => {
+  const bin = env.MYSQL_BIN || 'mysql';
+  let out = '';
+  const result = await runCommand(bin, [...buildConnArgs(env), '--batch', '--skip-column-names', '-e', sql], {
+    env, stdout: (s) => s.on('data', (d) => { out += d; })
+  });
+  return result.code === 0 ? out : null;
+};
+
+const preflightTriggerRestore = async (env) => {
+  const vars = await queryOutput('SELECT @@global.log_bin, @@global.log_bin_trust_function_creators', env);
+  const grants = await queryOutput('SHOW GRANTS FOR CURRENT_USER()', env);
+  if (vars === null || grants === null) return { ok: true, unknown: true }; // 查不到就不拦，真失败时会有安全快照兜底
+  const [logBin, trust] = vars.trim().split(/\s+/).map((v) => v === '1' || /^ON$/i.test(v));
+  return evaluateTriggerRestore({ logBin, trust, grants });
 };
 
 const restoreDatabase = async (sqlFile, env) => {
@@ -209,14 +256,15 @@ const createSnapshot = async (name, { withFiles = false } = {}, env = process.en
   const tables = await countTables(env);
   log(`正在备份数据库 ${getDbName(env)}（${tables} 张表/视图）…`);
   let routines = true;
+  let dumped;
   try {
-    await dumpDatabase(p.sql, env, { routines: true });
+    dumped = await dumpDatabase(p.sql, env, { routines: true });
   } catch (err) {
     // 存储过程由别的账号（如 root）创建时，普通账号没有权限读取其定义；过程不是数据，不阻塞快照
     if (!/insufficient privileges/i.test(err.message)) throw err;
     routines = false;
     log('提示：当前账号无权读取部分存储过程的定义，快照不含存储过程（只含表、视图、触发器和数据）。还原时现有存储过程不会被改动。');
-    await dumpDatabase(p.sql, env, { routines: false });
+    dumped = await dumpDatabase(p.sql, env, { routines: false });
   }
 
   let dirs = [];
@@ -231,6 +279,7 @@ const createSnapshot = async (name, { withFiles = false } = {}, env = process.en
     db: getDbName(env),
     tables,
     routines,
+    triggers: dumped.triggers,
     sqlFile: path.basename(p.sql),
     sqlBytes: fs.statSync(p.sql).size,
     sha256: await sha256File(p.sql),
@@ -277,6 +326,11 @@ const restoreSnapshot = async (name, opts, env = process.env, log = console.log)
     if ((await sha256File(paths.files)) !== meta.files.sha256) throw new CliError(`快照 ${name} 的数据目录备份校验和不一致，拒绝还原`);
   }
 
+  if (meta.triggers > 0) {
+    const check = await preflightTriggerRestore(env);
+    if (!check.ok) throw new CliError(check.message);
+  }
+
   let safety = null;
   if (opts.safetySnapshot !== false) {
     safety = `auto-before-restore-${name}-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}`.slice(0, 64);
@@ -285,10 +339,18 @@ const restoreSnapshot = async (name, opts, env = process.env, log = console.log)
   }
 
   log(`正在还原 ${name}（${meta.createdAt}）到 ${dbName}…`);
-  await restoreDatabase(paths.sql, env);
-  if (meta.files) {
-    log('正在还原数据目录…');
-    await untarFiles(paths.files, env);
+  try {
+    await restoreDatabase(paths.sql, env);
+    if (meta.files) {
+      log('正在还原数据目录…');
+      await untarFiles(paths.files, env);
+    }
+  } catch (err) {
+    // 先删表再重建，中途失败数据库会处于不一致状态：必须明确告诉用户怎么退回去
+    err.message += safety
+      ? `\n还原中途失败，数据库可能处于不一致状态。可用安全快照退回：restore ${safety} --confirm-db ${dbName}（若失败原因没解决，同样的失败会再发生，请先处理原因）`
+      : '\n还原中途失败，数据库可能处于不一致状态，且没有安全快照；请从其他备份恢复。';
+    throw err;
   }
   log(`还原完成。${safety ? `如需撤销：restore ${safety} --confirm-db ${dbName}` : ''}`);
   return { meta, safety };
@@ -325,6 +387,7 @@ module.exports = {
   buildRestoreArgs,
   stripDefinerLine,
   createDefinerStripper,
+  evaluateTriggerRestore,
   snapshotPaths,
   getSnapshotDir,
   createSnapshot,
