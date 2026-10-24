@@ -1,0 +1,100 @@
+# ObserV6 生产部署：MySQL + 后端 + Nginx(前端静态文件 + /api 反向代理)
+#
+#   cp .env.docker.example .env   # 填写口令后
+#   docker compose up -d --build
+#
+# 首次启动时 MySQL 自动导入 structure.sql；随后 migrate 服务执行增量迁移，backend 才会启动。
+# 创建第一个管理员见 DEPLOYMENT.md。扫描能力（xmap/zgrab2）是可选叠加层：docker-compose.scanner.yml。
+#
+# 安全约束（有意不做）：不使用 privileged、不挂载 docker.sock、不配置 NOPASSWD sudo、
+# 不把 .env 打进镜像；后端容器以非 root 用户运行。
+
+name: observ6
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_NAME: ${DB_NAME:-ipv6_project}
+  DB_USER: ${DB_USER:-observ6}
+  DB_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
+  JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET（至少 32 位随机字符串）}
+  ALLOW_LEGACY_PASSWORDS: "false"
+  TRUST_PROXY: "1"
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-ipv6_project}
+      MYSQL_USER: ${DB_USER:-observ6}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 后端镜像里的 mysql 命令行是 MariaDB 客户端，对 caching_sha2_password 的首次认证
+      # 需要安全通道；统一用 mysql_native_password 避免连接失败（mysql:8.0 支持，8.4 起已移除）
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 仅在数据目录为空（首次启动）时执行；structure.sql 的表前有 DROP TABLE，不要用于已有数据的库
+      - ./structure.sql:/docker-entrypoint-initdb.d/01-structure.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime  # Dockerfile 末尾还有可选的 scanner 目标，不指定会默认构建最后一个阶段
+    image: observ6-backend
+    restart: "no"
+    environment: *backend-env
+    command: ["node", "scripts/migrate.js"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime  # Dockerfile 末尾还有可选的 scanner 目标，不指定会默认构建最后一个阶段
+    image: observ6-backend
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - app_data:/data
+      # 帮助文档（只读）；目录由你维护，见 DEPLOYMENT.md
+      - ./docs:/data/docs:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: observ6-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  app_data:

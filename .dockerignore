@@ -1,0 +1,26 @@
+# backend 镜像的构建上下文是仓库根目录：只需要 backend/、sql/、structure.sql
+.git
+.github
+**/node_modules
+frontend
+dist
+*.pid
+*.log
+nohup.out
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+# 运行期数据不进镜像
+backend_logs
+xmap_log
+xmap_result
+whitelists
+zgrab2_*
+IPv6_addresses
+jsonanalysis
+uploads
+reports
+docs
+# scanner-bin 需要进入构建上下文（docker-compose.scanner.yml 的 scanner 目标会 COPY 它），不要在此忽略

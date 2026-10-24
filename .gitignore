@@ -160,3 +160,6 @@ prompt.md
 /uploads/
 nohup.out
 *:Zone.Identifier
+
+# 自行构建的扫描工具（docker-compose.scanner.yml）
+/scanner-bin/

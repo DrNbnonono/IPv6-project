@@ -5,6 +5,7 @@ const db = require('../database/db');
 const util = require('util');
 // 配置系统日志和目录
 const { DIRS, safeJoin } = require('../services/storageService');
+const { buildXmapInvocation, buildPrivileged } = require('../services/xmapCommandService');
 const logDir = DIRS.backendLogs;
 const XMAP_LOG_DIR = DIRS.xmapLog;
 const XMAP_RESULT_DIR = DIRS.xmapResult;
@@ -34,6 +35,12 @@ const getFileSize = (filePath) => {
 const { createModuleLogger } = require('../services/loggerService');
 const logger = createModuleLogger('xmap');
 
+
+// 终止进程等辅助命令：启用 sudo 时经 sudo 执行
+const spawnPrivileged = (command, args, options) => {
+  const inv = buildPrivileged(command, args);
+  return spawn(inv.command, inv.args, options);
+};
 
 // 任务进程存储对象
 const activeProcesses = new Map();
@@ -396,18 +403,20 @@ exports.scan = async (req, res) => {
       args.push('-S', '192.168.1.1', '-G', '00:00:5e:00:01:08');
     }*/
 
+    const invocation = buildXmapInvocation(args);
+
     await db.query(
       'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path,  task_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [taskId, userId, `sudo xmap ${args.join(' ')}`, description, 'running', logFile, resultFile, 'xmap']
+      [taskId, userId, invocation.display, description, 'running', logFile, resultFile, 'xmap']
     );
 
     logger.info(`用户 ${userId} 创建新任务 ${taskId}`, { 
-      command: `sudo xmap ${args.join(' ')}`,
+      command: invocation.display,
       description,
       user: userId 
     });
 
-    const xmapProcess = spawn('sudo', ['xmap', ...args], {
+    const xmapProcess = spawn(invocation.command, invocation.args, {
       stdio: ['ignore', 'ignore', 'pipe'],
       detached: true, // 创建新的进程组，便于管理子进程
     });
@@ -536,7 +545,7 @@ exports.cancelTask = async (req, res) => {
 
         // 3. 使用系统命令终止所有相关的xmap进程
         // 查找并终止包含任务ID的xmap进程
-        const killXmapCommand = spawn('sudo', ['pkill', '-f', `xmap.*${taskId}`]);
+        const killXmapCommand = spawnPrivileged('pkill', ['-f', `xmap.*${taskId}`]);
 
         killXmapCommand.on('close', (code) => {
           logger.info(`终止任务 ${taskId} 相关xmap进程，退出码: ${code}`);
@@ -568,14 +577,14 @@ exports.cancelTask = async (req, res) => {
         // 5. 使用更精确的系统命令终止xmap进程
         try {
           // 查找所有xmap进程并终止
-          const killAllXmapCommand = spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -TERM`]);
+          const killAllXmapCommand = spawnPrivileged('bash', ['-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -TERM`]);
 
           killAllXmapCommand.on('close', (code) => {
             logger.info(`系统级终止xmap进程命令执行完成，退出码: ${code}`);
 
             // 如果TERM信号无效，使用KILL信号
             setTimeout(() => {
-              const forceKillCommand = spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
+              const forceKillCommand = spawnPrivileged('bash', ['-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
               forceKillCommand.on('close', (forceCode) => {
                 logger.info(`强制终止xmap进程命令执行完成，退出码: ${forceCode}`);
               });
@@ -610,7 +619,7 @@ exports.cancelTask = async (req, res) => {
               logger.warn(`任务 ${taskId} 仍有 ${processCount} 个相关进程在运行，尝试强制终止`);
 
               // 最后的强制终止尝试
-              spawn('sudo', ['bash', '-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
+              spawnPrivileged('bash', ['-c', `ps aux | grep '[x]map' | grep '${taskId}' | awk '{print $2}' | xargs -r kill -KILL`]);
             } else {
               logger.info(`任务 ${taskId} 所有相关进程已成功终止`);
             }

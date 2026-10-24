@@ -66,6 +66,24 @@ describe('xmap 参数校验', () => {
     expect(args).toEqual(expect.arrayContaining(['-B', '10M', '-x', '64', '-p', '80,443', '2001:db8::/32']));
   });
 
+  test('XMAP_USE_SUDO=false 且指定 XMAP_BIN：直接执行该程序，任务记录里也不含 sudo', async () => {
+    process.env.XMAP_USE_SUDO = 'false';
+    process.env.XMAP_BIN = '/usr/local/sbin/xmap';
+    try {
+      const res = await scan({ ipv6: true, targetaddress: '2001:db8::/32', rate: '10M' });
+      expect(res.status).toHaveBeenCalledWith(202);
+      const [cmd, args] = mockSpawn.mock.calls[0];
+      expect(cmd).toBe('/usr/local/sbin/xmap');
+      expect(args[0]).toBe('-6');
+      const insert = db.query.mock.calls.find(([sql]) => /INSERT INTO tasks/.test(sql));
+      expect(insert[1][2]).toMatch(/^\/usr\/local\/sbin\/xmap -6/);
+      expect(insert[1][2]).not.toContain('sudo');
+    } finally {
+      delete process.env.XMAP_USE_SUDO;
+      delete process.env.XMAP_BIN;
+    }
+  });
+
   test.each([
     ['目标以 - 开头（选项注入）', { targetaddress: '--output-file=/etc/cron.d/x' }],
     ['目标含空格', { targetaddress: '2001:db8::1 -o /tmp/x' }],

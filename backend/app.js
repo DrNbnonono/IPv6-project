@@ -88,14 +88,42 @@ app.get('/api/test', (req, res) => {
   res.send('Hello World!');
 });
 
-// 启动服务，同时监听IPv4和IPv6地址（被测试 require 时不启动监听）
+// 健康检查（容器/反向代理探活用）：进程在运行且数据库可连接
+app.get('/api/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ status: 'ok' });
+  } catch (error) {
+    logger.error('健康检查失败: 数据库不可用', error.message);
+    res.status(503).json({ status: 'error' });
+  }
+});
+
+/**
+ * 监听 host（默认 ::，同时覆盖 IPv4/IPv6）。内核或容器网络不支持 IPv6 时
+ * （EAFNOSUPPORT/EADDRNOTAVAIL）退回 0.0.0.0，而不是直接启动失败。
+ */
+function listen(port, host = process.env.LISTEN_HOST || '::') {
+  const server = app.listen(port, host, () => {
+    logger.info(`服务器正在监听 ${host.includes(':') ? `[${host}]` : host}:${port}`);
+  });
+  server.on('error', (err) => {
+    if (host !== '0.0.0.0' && (err.code === 'EAFNOSUPPORT' || err.code === 'EADDRNOTAVAIL')) {
+      logger.warn(`无法监听 ${host}（${err.code}），改为监听 0.0.0.0`);
+      listen(port, '0.0.0.0');
+      return;
+    }
+    logger.error('服务器启动失败:', err);
+    process.exit(1);
+  });
+  return server;
+}
+
+// 启动服务（被测试 require 时不启动监听）
 if (require.main === module) {
   ensureDirs();
   logger.info(`数据目录根: ${PROJECT_ROOT}`);
-  app.listen(PORT, '::', () => {
-    logger.info(`服务器正在运行在 http://[::]:${PORT}`);
-    logger.info(`IPv4访问地址: http://0.0.0.0:${PORT}`);
-  });
+  listen(PORT);
 }
 
 module.exports = app;
