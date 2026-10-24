@@ -1,10 +1,8 @@
 const db = require('../database/db');
-const { createLogger, transports } = require('winston');
 const workflowEngine = require('../services/workflowEngine');
 
-const logger = createLogger({
-  transports: [new transports.Console()]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('workflow');
 
 // 支持的节点类型定义
 const NODE_TYPES = {
@@ -467,7 +465,7 @@ exports.getWorkflowById = async (req, res) => {
           workflow.definition = JSON.parse(workflow.definition);
         } else {
           // 如果不是有效的JSON，创建默认结构
-          console.warn('工作流定义不是有效的JSON，使用默认结构:', workflow.definition);
+          logger.warn('工作流定义不是有效的JSON，使用默认结构:', workflow.definition);
           workflow.definition = {
             nodes: [],
             connections: []
@@ -482,7 +480,7 @@ exports.getWorkflowById = async (req, res) => {
       }
       // 如果已经是对象，直接使用
     } catch (parseError) {
-      console.error('解析工作流定义失败:', parseError);
+      logger.error('解析工作流定义失败:', parseError);
       // 解析失败时使用默认结构
       workflow.definition = {
         nodes: [],
@@ -623,16 +621,16 @@ exports.deleteWorkflow = async (req, res) => {
  */
 exports.getNodeTypes = async (req, res) => {
   try {
-    console.log('=== getNodeTypes 被调用 ===');
-    console.log('NODE_TYPES 数量:', Object.keys(NODE_TYPES).length);
-    console.log('NODE_TYPES 键:', Object.keys(NODE_TYPES));
+    logger.debug('=== getNodeTypes 被调用 ===');
+    logger.debug('NODE_TYPES 数量:', Object.keys(NODE_TYPES).length);
+    logger.debug('NODE_TYPES 键:', Object.keys(NODE_TYPES));
 
     res.json({
       success: true,
       data: NODE_TYPES
     });
   } catch (error) {
-    console.error('获取节点类型失败:', error);
+    logger.error('获取节点类型失败:', error);
     logger.error('获取节点类型失败:', error);
     res.status(500).json({
       success: false,
@@ -646,7 +644,7 @@ exports.getNodeTypes = async (req, res) => {
  */
 exports.getWorkflowTemplates = async (req, res) => {
   try {
-    console.log('=== getWorkflowTemplates 被调用 ===');
+    logger.debug('=== getWorkflowTemplates 被调用 ===');
     const templates = [
       {
         id: 'xmap_zgrab2_basic',
@@ -942,7 +940,7 @@ exports.executeWorkflow = async (req, res) => {
         throw new Error('工作流定义为空或格式不正确');
       }
     } catch (parseError) {
-      console.error('解析工作流定义失败:', parseError);
+      logger.error('解析工作流定义失败:', parseError);
       return res.status(400).json({
         success: false,
         message: '工作流定义格式不正确，无法执行'
@@ -1036,7 +1034,7 @@ exports.getExecutions = async (req, res) => {
               progress = exec.progress;
             }
           } catch (parseError) {
-            console.warn('解析执行进度失败:', parseError);
+            logger.warn('解析执行进度失败:', parseError);
             progress = null;
           }
 

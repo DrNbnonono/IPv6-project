@@ -1,9 +1,15 @@
+const dotenv = require('dotenv');
+const path = require('path');
+
+// 必须最先加载环境变量：后面 require 的模块（日志级别、数据目录、数据库等）在导入时就会读取它们。
+// 先尝试加载项目根目录的 .env，再加载 backend 目录下的 .env（如果存在，后者会覆盖前者同名变量）
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
-const path = require('path');
 const db = require('./database/db');
 const addressRouter = require('./routes/address');
 const xmapRouter = require('./routes/xmap');
@@ -18,14 +24,13 @@ const aichatRouter = require('./routes/aichat'); // AI聊天路由
 const agentRouter = require('./routes/agent'); // Agent路由
 const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
+const { createModuleLogger } = require('./services/loggerService');
 
-// 先尝试加载项目根目录的 .env，再加载 backend 目录下的 .env（如果存在，后者会覆盖前者同名变量）
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-dotenv.config();
+const logger = createModuleLogger('app');
 
 // 启动前检查必需的环境变量：JWT 密钥不再提供默认值
 if (!process.env.JWT_SECRET) {
-  console.error('❌ 未配置 JWT_SECRET，请在 .env 中设置后再启动');
+  logger.error('未配置 JWT_SECRET，请在 .env 中设置后再启动');
   process.exit(1);
 }
 
@@ -48,7 +53,7 @@ const corsOrigins = (process.env.CORS_ORIGINS || '')
   .filter(Boolean);
 
 if (corsOrigins.length === 0) {
-  console.warn('⚠️ 未配置 CORS_ORIGINS，当前允许所有来源跨域访问，生产环境请设置');
+  logger.warn('未配置 CORS_ORIGINS，当前允许所有来源跨域访问，生产环境请设置');
 }
 
 app.use(cors({
@@ -86,10 +91,10 @@ app.get('/api/test', (req, res) => {
 // 启动服务，同时监听IPv4和IPv6地址（被测试 require 时不启动监听）
 if (require.main === module) {
   ensureDirs();
-  console.log(`数据目录根: ${PROJECT_ROOT}`);
+  logger.info(`数据目录根: ${PROJECT_ROOT}`);
   app.listen(PORT, '::', () => {
-    console.log(`服务器正在运行在 http://[::]:${PORT}`);
-    console.log(`IPv4访问地址: http://0.0.0.0:${PORT}`);
+    logger.info(`服务器正在运行在 http://[::]:${PORT}`);
+    logger.info(`IPv4访问地址: http://0.0.0.0:${PORT}`);
   });
 }
 

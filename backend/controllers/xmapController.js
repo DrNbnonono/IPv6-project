@@ -2,7 +2,6 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const db = require('../database/db');
-const { createLogger, format, transports } = require('winston');
 const util = require('util');
 // 配置系统日志和目录
 const { DIRS, safeJoin } = require('../services/storageService');
@@ -32,36 +31,9 @@ const getFileSize = (filePath) => {
   }
 };
 
-// 日志配置
-const logger = createLogger({
-  level: 'info',
-  format: format.combine(
-    format.timestamp({
-      format: 'YYYY-MM-DD HH:mm:ss'
-    }),
-    format.errors({ stack: true }),
-    format.splat(),
-    format.json()
-  ),
-  transports: [
-    new transports.File({ 
-      filename: path.join(logDir, 'error.log'), 
-      level: 'error' 
-    }),
-    new transports.File({ 
-      filename: path.join(logDir, 'combined.log') 
-    })
-  ]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('xmap');
 
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new transports.Console({
-    format: format.combine(
-      format.colorize(),
-      format.simple()
-    )
-  }));
-}
 
 // 任务进程存储对象
 const activeProcesses = new Map();
@@ -998,7 +970,7 @@ exports.getTasks = async (req, res) => {
 // 获取任务结果文件
 exports.getResult = async (req, res) => {
   const taskId = req.params.taskId;
-  console.log(`尝试获取任务 ${taskId} 的结果文件`); // 调试日志
+  logger.debug(`尝试获取任务 ${taskId} 的结果文件`); // 调试日志
 
   try {
     const [tasks] = await db.query(
@@ -1007,15 +979,15 @@ exports.getResult = async (req, res) => {
     );
     
     if (!tasks.length) {
-      console.log('任务不存在');
+      logger.warn('任务不存在');
       return res.status(404).json({ success: false, message: '任务不存在' });
     }
 
     const resultPath = tasks[0].output_path;
-    console.log('文件路径:', resultPath); // 打印实际路径
+    logger.debug('文件路径:', resultPath); // 打印实际路径
 
     if (!fs.existsSync(resultPath)) {
-      console.log('文件不存在:', resultPath);
+      logger.warn('文件不存在:', resultPath);
       return res.status(404).json({ success: false, message: '结果文件不存在' });
     }
 
@@ -1028,7 +1000,7 @@ exports.getResult = async (req, res) => {
     fileStream.pipe(res);
 
   } catch (error) {
-    console.error('文件下载错误:', error);
+    logger.error('文件下载错误:', error);
     res.status(500).json({ success: false, message: '文件下载失败' });
   }
 };

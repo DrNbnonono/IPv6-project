@@ -2,16 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../database/db');
 const { DIRS, ensureDir } = require('../services/storageService');
-const { createLogger, transports } = require('winston');
 
-// 创建日志记录器
-const logger = createLogger({
-  level: 'info',
-  format: require('winston').format.json(),
-  transports: [
-    new transports.File({ filename: path.join(DIRS.backendLogs, 'jsonanalysis.log') })
-  ]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('jsonanalysis');
 
 // jsonanalysis 数据目录由 storageService 提供，启动时创建，写入前再次确保存在
 const JSONANALYSIS_DIR = DIRS.jsonanalysis;
@@ -26,7 +19,7 @@ exports.parseJsonFile = async (req, res) => {
     const { fileId } = req.params;
     const userId = req.user.id;
 
-    console.log('解析JSON文件请求:', { fileId, userId });
+    logger.debug('解析JSON文件请求:', { fileId, userId });
 
     let filePath = null;
     let fileName = null;
@@ -42,7 +35,7 @@ exports.parseJsonFile = async (req, res) => {
       const file = uploadFiles[0];
       filePath = file.file_path;
       fileName = file.file_name;
-      console.log('找到上传文件:', { filePath, fileName });
+      logger.debug('找到上传文件:', { filePath, fileName });
     } else {
       // 如果不是上传文件，尝试从任务表查找
       const [taskFiles] = await db.query(`
@@ -52,7 +45,7 @@ exports.parseJsonFile = async (req, res) => {
       `, [fileId, userId]);
 
       if (taskFiles.length === 0) {
-        console.log('文件未找到:', { fileId, userId });
+        logger.debug('文件未找到:', { fileId, userId });
         return res.status(404).json({
           success: false,
           message: '文件不存在或无权访问'
@@ -62,32 +55,32 @@ exports.parseJsonFile = async (req, res) => {
       const task = taskFiles[0];
       filePath = task.output_path;
       fileName = `${task.task_type}_task_${fileId}_result`;
-      console.log('找到任务文件:', { filePath, fileName });
+      logger.debug('找到任务文件:', { filePath, fileName });
     }
 
     // 检查文件是否存在
     if (!filePath || !fs.existsSync(filePath)) {
-      console.log('文件不存在:', filePath);
+      logger.warn('文件不存在:', filePath);
       return res.status(404).json({
         success: false,
         message: '文件不存在或已被删除'
       });
     }
 
-    console.log('准备读取文件:', filePath);
+    logger.debug('准备读取文件:', filePath);
 
     // 读取文件内容
     const content = fs.readFileSync(filePath, 'utf8');
-    console.log('文件内容长度:', content.length);
+    logger.debug('文件内容长度:', content.length);
 
     // 解析JSON - 支持标准JSON和JSONL格式
     let jsonData;
     try {
       // 首先尝试解析为标准JSON
       jsonData = JSON.parse(content);
-      console.log('标准JSON解析成功');
+      logger.debug('标准JSON解析成功');
     } catch (parseError) {
-      console.log('标准JSON解析失败，尝试JSONL格式:', parseError.message);
+      logger.error('标准JSON解析失败，尝试JSONL格式:', parseError.message);
 
       // 如果标准JSON解析失败，尝试解析为JSONL格式
       try {
@@ -99,7 +92,7 @@ exports.parseJsonFile = async (req, res) => {
             const lineData = JSON.parse(lines[i]);
             jsonData.push(lineData);
           } catch (lineError) {
-            console.log(`第${i + 1}行JSON解析失败:`, lineError.message);
+            logger.error(`第${i + 1}行JSON解析失败:`, lineError.message);
             // 跳过无效行，继续处理其他行
           }
         }
@@ -111,9 +104,9 @@ exports.parseJsonFile = async (req, res) => {
           });
         }
 
-        console.log(`JSONL解析成功，共解析${jsonData.length}行数据`);
+        logger.debug(`JSONL解析成功，共解析${jsonData.length}行数据`);
       } catch (jsonlError) {
-        console.log('JSONL解析也失败:', jsonlError.message);
+        logger.error('JSONL解析也失败:', jsonlError.message);
         return res.status(400).json({
           success: false,
           message: '文件不是有效的JSON或JSONL格式: ' + parseError.message
@@ -123,7 +116,7 @@ exports.parseJsonFile = async (req, res) => {
 
     // 分析JSON结构
     const analysis = analyzeJsonStructure(jsonData);
-    console.log('结构分析完成:', analysis);
+    logger.debug('结构分析完成:', analysis);
 
     // 生成会话ID用于临时文件管理
     const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -159,7 +152,7 @@ exports.parseJsonFile = async (req, res) => {
 
   } catch (error) {
     logger.error('解析JSON文件失败:', error);
-    console.error('解析JSON文件详细错误:', error);
+    logger.error('解析JSON文件详细错误:', error);
     res.status(500).json({
       success: false,
       message: '解析JSON文件失败: ' + error.message
@@ -227,7 +220,7 @@ exports.parseJsonText = async (req, res) => {
 
   } catch (error) {
     logger.error('解析JSON文本失败:', error);
-    console.error('解析JSON文本详细错误:', error);
+    logger.error('解析JSON文本详细错误:', error);
     res.status(500).json({
       success: false,
       message: '解析JSON文本失败: ' + error.message
@@ -256,7 +249,7 @@ exports.extractFields = async (req, res) => {
 
   } catch (error) {
     logger.error('提取字段失败:', error);
-    console.error('提取字段详细错误:', error);
+    logger.error('提取字段详细错误:', error);
     res.status(500).json({
       success: false,
       message: '提取字段失败: ' + error.message
@@ -285,7 +278,7 @@ exports.searchAndFilter = async (req, res) => {
 
   } catch (error) {
     logger.error('搜索过滤失败:', error);
-    console.error('搜索过滤详细错误:', error);
+    logger.error('搜索过滤详细错误:', error);
     res.status(500).json({
       success: false,
       message: '搜索过滤失败: ' + error.message
@@ -603,7 +596,7 @@ exports.saveProcessedJson = async (req, res) => {
 
   } catch (error) {
     logger.error('保存JSON文件失败:', error);
-    console.error('保存JSON文件详细错误:', error);
+    logger.error('保存JSON文件详细错误:', error);
     res.status(500).json({
       success: false,
       message: '保存JSON文件失败: ' + error.message
@@ -1087,9 +1080,9 @@ function cleanupTempFiles() {
           fs.unlinkSync(fileInfo.filePath);
         }
         tempFiles.delete(sessionId);
-        console.log(`清理临时文件: ${sessionId}`);
+        logger.debug(`清理临时文件: ${sessionId}`);
       } catch (error) {
-        console.error(`清理临时文件失败: ${sessionId}`, error);
+        logger.error(`清理临时文件失败: ${sessionId}`, error);
       }
     }
   }

@@ -5,6 +5,8 @@
  */
 
 const db = require('../database/db');
+const { createModuleLogger } = require('./loggerService');
+const logger = createModuleLogger('memory');
 
 // 记忆配置
 const MEMORY_CONFIG = {
@@ -188,7 +190,7 @@ const longTermMemory = {
 
       return { success: true };
     } catch (error) {
-      console.error('保存用户偏好失败:', error.message);
+      logger.error('保存用户偏好失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -210,7 +212,7 @@ const longTermMemory = {
       }
       return { success: true, data: null };
     } catch (error) {
-      console.error('获取用户偏好失败:', error.message);
+      logger.error('获取用户偏好失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -228,7 +230,7 @@ const longTermMemory = {
 
       return { success: true };
     } catch (error) {
-      console.error('记录工具历史失败:', error.message);
+      logger.error('记录工具历史失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -259,7 +261,7 @@ const longTermMemory = {
         }))
       };
     } catch (error) {
-      console.error('获取工具历史失败:', error.message);
+      logger.error('获取工具历史失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -279,7 +281,7 @@ const longTermMemory = {
 
       return { success: true };
     } catch (error) {
-      console.error('保存知识失败:', error.message);
+      logger.error('保存知识失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -323,7 +325,7 @@ const longTermMemory = {
 
       return { success: true, data: results };
     } catch (error) {
-      console.error('搜索知识失败:', error.message);
+      logger.error('搜索知识失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -355,7 +357,7 @@ const longTermMemory = {
 
       return { success: true, data: summary };
     } catch (error) {
-      console.error('获取记忆摘要失败:', error.message);
+      logger.error('获取记忆摘要失败:', error.message);
       return { success: false, error: error.message };
     }
   },
@@ -368,7 +370,7 @@ const longTermMemory = {
       await db.query('DELETE FROM agent_memory WHERE user_id = ?', [userId]);
       return { success: true };
     } catch (error) {
-      console.error('清空记忆失败:', error.message);
+      logger.error('清空记忆失败:', error.message);
       return { success: false, error: error.message };
     }
   }

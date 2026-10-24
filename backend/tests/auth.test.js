@@ -3,6 +3,9 @@
  * 数据库用 mock 替代，不需要真实 MySQL。
  */
 
+const mockLogger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+jest.mock('../services/loggerService', () => ({ createModuleLogger: () => mockLogger }));
+
 jest.mock('../database/db', () => ({
   query: jest.fn(),
   end: jest.fn()
@@ -113,8 +116,14 @@ describe('login', () => {
     const logged = JSON.stringify([
       ...logSpy.mock.calls,
       ...console.warn.mock.calls,
-      ...console.error.mock.calls
+      ...console.error.mock.calls,
+      ...mockLogger.debug.mock.calls,
+      ...mockLogger.info.mock.calls,
+      ...mockLogger.warn.mock.calls,
+      ...mockLogger.error.mock.calls
     ]);
+    // 确认登录失败确实经由 logger 记录（否则上面的断言没有意义）
+    expect(mockLogger.warn).toHaveBeenCalled();
     expect(logged).not.toContain('wrong-pass-456');
     expect(logged).not.toContain(hash);
     expect(logged).not.toContain('13800000000');

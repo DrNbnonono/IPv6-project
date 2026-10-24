@@ -3,11 +3,9 @@ const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { createLogger, transports } = require('winston');
 
-const logger = createLogger({
-  transports: [new transports.Console()]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('zgrab2');
 
 const ITEMS_PER_PAGE = 20;
 // 数据目录统一由 storageService 提供（根目录见 PROJECT_ROOT），启动时由 ensureDirs() 创建
@@ -89,7 +87,7 @@ const resolveOwnedInputPath = async (userId, candidatePath) => {
  * 创建Zgrab2扫描任务 - 使用输入文件
  */
 exports.createTask = async (req, res) => {
-  console.log('\n=== ZGrab2 任务创建开始 ===');
+  logger.debug('\n=== ZGrab2 任务创建开始 ===');
   const userId = req.user.id;
   const {
     module,
@@ -102,7 +100,7 @@ exports.createTask = async (req, res) => {
     additionalParams = {}
   } = req.body;
 
-  console.log('请求参数:', {
+  logger.debug('请求参数:', {
     userId,
     module,
     port,
@@ -114,9 +112,9 @@ exports.createTask = async (req, res) => {
 
   try {
     // 验证必要参数
-    console.log('开始参数验证...');
+    logger.debug('开始参数验证...');
     if (!module) {
-      console.log('错误: 未选择扫描模块');
+      logger.warn('错误: 未选择扫描模块');
       return res.status(400).json({
         success: false,
         message: '请选择扫描模块'
@@ -124,7 +122,7 @@ exports.createTask = async (req, res) => {
     }
 
     if (!inputFile) {
-      console.log('错误: 未选择输入文件');
+      logger.warn('错误: 未选择输入文件');
       return res.status(400).json({
         success: false,
         message: '请选择输入文件'
@@ -133,7 +131,7 @@ exports.createTask = async (req, res) => {
 
     // 验证模块是否有效
     if (typeof module !== 'string' || !Object.prototype.hasOwnProperty.call(SUPPORTED_MODULES, module)) {
-      console.log('错误: 无效的模块', module);
+      logger.warn('错误: 无效的模块', module);
       return res.status(400).json({
         success: false,
         message: `无效的zgrab2模块，支持的模块: ${Object.keys(SUPPORTED_MODULES).join(', ')}`
@@ -146,14 +144,14 @@ exports.createTask = async (req, res) => {
       module, port: validatedPort || 0, inputFile: '-', outputFile: '-', logFile: '-', additionalParams
     });
 
-    console.log('参数验证通过');
+    logger.debug('参数验证通过');
 
     const taskId = Date.now();
     // 使用绝对路径存储到数据库
     const outputFile = path.join(ZGRAB2_RESULTS_DIR, `${taskId}.jsonl`);
     const logFile = path.join(ZGRAB2_LOGS_DIR, `${taskId}.log`);
 
-    console.log('生成任务ID和文件路径:', {
+    logger.debug('生成任务ID和文件路径:', {
       taskId,
       outputFile,
       logFile,
@@ -162,16 +160,16 @@ exports.createTask = async (req, res) => {
     });
 
     // 获取zgrab2工具ID
-    console.log('查询zgrab2工具ID...');
+    logger.debug('查询zgrab2工具ID...');
     const [tools] = await db.query(
       "SELECT id FROM tools WHERE name = ? LIMIT 1",
       ['zgrab2']
     );
 
-    console.log('工具查询结果:', tools);
+    logger.debug('工具查询结果:', tools);
 
     if (tools.length === 0) {
-      console.log('错误: Zgrab2工具未配置');
+      logger.warn('错误: Zgrab2工具未配置');
       return res.status(400).json({
         success: false,
         message: 'Zgrab2工具未配置'
@@ -179,10 +177,10 @@ exports.createTask = async (req, res) => {
     }
 
     const toolId = tools[0].id;
-    console.log('获取到工具ID:', toolId);
+    logger.debug('获取到工具ID:', toolId);
 
     // 查找输入文件路径 - 支持工作流传递的文件
-    console.log('查找输入文件路径...', { userId, toolId, inputFile, fileId, inputFilePath });
+    logger.debug('查找输入文件路径...', { userId, toolId, inputFile, fileId, inputFilePath });
 
     let inputFilePathResolved;
 
@@ -191,7 +189,7 @@ exports.createTask = async (req, res) => {
     const ownedInputPath = await resolveOwnedInputPath(userId, inputFilePath);
     if (ownedInputPath) {
       inputFilePathResolved = ownedInputPath;
-      console.log('使用工作流传递的文件路径:', inputFilePathResolved);
+      logger.debug('使用工作流传递的文件路径:', inputFilePathResolved);
     } else if (fileId) {
       // 如果有文件ID，通过ID查询
       const [fileRecords] = await db.query(
@@ -201,7 +199,7 @@ exports.createTask = async (req, res) => {
 
       if (fileRecords.length > 0) {
         inputFilePathResolved = resolveStoredPath(fileRecords[0].file_path);
-        console.log('通过文件ID查询到路径:', inputFilePathResolved);
+        logger.debug('通过文件ID查询到路径:', inputFilePathResolved);
       }
     }
 
@@ -212,10 +210,10 @@ exports.createTask = async (req, res) => {
         [userId, inputFile]
       );
 
-      console.log('通过文件名查询结果:', inputFileRecords);
+      logger.debug('通过文件名查询结果:', inputFileRecords);
 
       if (inputFileRecords.length === 0) {
-        console.log('错误: 输入文件不存在');
+        logger.warn('错误: 输入文件不存在');
         return res.status(400).json({
           success: false,
           message: '输入文件不存在'
@@ -225,34 +223,34 @@ exports.createTask = async (req, res) => {
       inputFilePathResolved = resolveStoredPath(inputFileRecords[0].file_path);
     }
 
-    console.log('最终输入文件路径:', inputFilePathResolved);
+    logger.debug('最终输入文件路径:', inputFilePathResolved);
 
     // 检查输入文件是否存在
     if (!fs.existsSync(inputFilePathResolved)) {
-      console.log('错误: 输入文件物理路径不存在:', inputFilePathResolved);
+      logger.warn('错误: 输入文件物理路径不存在:', inputFilePathResolved);
       return res.status(400).json({
         success: false,
         message: '输入文件不存在'
       });
     }
 
-    console.log('输入文件验证通过');
+    logger.debug('输入文件验证通过');
 
     let command;
     let commandArgs;
 
     if (configFile) {
-      console.log('使用配置文件模式，查找配置文件路径...', configFile);
+      logger.debug('使用配置文件模式，查找配置文件路径...', configFile);
       // 查找配置文件路径
       const [configFileRecords] = await db.query(
         'SELECT file_path FROM whitelists WHERE user_id = ? AND tool_id = ? AND file_name = ? AND is_deleted = 0',
         [userId, toolId, configFile]
       );
 
-      console.log('配置文件查询结果:', configFileRecords);
+      logger.debug('配置文件查询结果:', configFileRecords);
 
       if (configFileRecords.length === 0) {
-        console.log('错误: 配置文件不存在');
+        logger.warn('错误: 配置文件不存在');
         return res.status(400).json({
           success: false,
           message: '配置文件不存在'
@@ -260,10 +258,10 @@ exports.createTask = async (req, res) => {
       }
 
       const configFilePath = resolveStoredPath(configFileRecords[0].file_path);
-      console.log('配置文件路径:', configFilePath);
+      logger.debug('配置文件路径:', configFilePath);
 
       if (!fs.existsSync(configFilePath)) {
-        console.log('错误: 配置文件物理路径不存在:', configFilePath);
+        logger.warn('错误: 配置文件物理路径不存在:', configFilePath);
         return res.status(400).json({
           success: false,
           message: '配置文件不存在'
@@ -277,12 +275,12 @@ exports.createTask = async (req, res) => {
         logFile
       });
       command = formatCommand(commandArgs);
-      console.log('配置文件模式命令:', command);
+      logger.debug('配置文件模式命令:', command);
     } else {
-      console.log('使用单模块模式');
+      logger.debug('使用单模块模式');
       // 单模块模式
       const scanPort = validatedPort || SUPPORTED_MODULES[module].defaultPort;
-      console.log('扫描端口:', scanPort);
+      logger.debug('扫描端口:', scanPort);
 
       commandArgs = buildSingleModuleArgs({
         module,
@@ -294,12 +292,12 @@ exports.createTask = async (req, res) => {
       });
       command = formatCommand(commandArgs);
 
-      console.log('单模块模式命令:', command);
+      logger.debug('单模块模式命令:', command);
     }
 
     // 先确认 zgrab2 可执行文件存在，再写任务记录，避免留下永远处于 running 的记录
     if (!fs.existsSync(ZGRAB2_BIN)) {
-      console.log('错误: zgrab2二进制文件不存在:', ZGRAB2_BIN);
+      logger.warn('错误: zgrab2二进制文件不存在:', ZGRAB2_BIN);
       return res.status(500).json({
         success: false,
         message: 'zgrab2工具未安装或路径不正确'
@@ -307,9 +305,9 @@ exports.createTask = async (req, res) => {
     }
 
     // 在数据库中创建任务记录
-    console.log('创建数据库任务记录...');
+    logger.debug('创建数据库任务记录...');
     const taskData = [taskId, userId, command, description || `ZGrab2 ${module} scan`, 'zgrab2', 'running', logFile, outputFile];
-    console.log('任务数据:', taskData);
+    logger.debug('任务数据:', taskData);
 
     await db.query(`
       INSERT INTO tasks
@@ -317,28 +315,28 @@ exports.createTask = async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, taskData);
 
-    console.log('数据库任务记录创建成功');
+    logger.info('数据库任务记录创建成功');
 
-    console.log('开始执行zgrab2命令:', command);
+    logger.debug('开始执行zgrab2命令:', command);
 
     // 异步执行zgrab2命令
     const childProcess = execFile(ZGRAB2_BIN, commandArgs, (error, stdout, stderr) => {
       let status = 'completed';
       let errorMessage = null;
 
-      console.log('zgrab2命令执行完成');
-      console.log('stdout:', stdout);
-      console.log('stderr:', stderr);
+      logger.debug('zgrab2命令执行完成');
+      logger.debug('stdout:', stdout);
+      logger.debug('stderr:', stderr);
 
       if (error) {
         status = 'failed';
         errorMessage = error.message;
-        console.log('zgrab2执行错误:', error.message);
+        logger.error('zgrab2执行错误:', error.message);
         logger.error(`zgrab2执行错误: ${error.message}`);
       }
 
       // 更新任务状态
-      console.log('更新任务状态:', { status, errorMessage, taskId });
+      logger.debug('更新任务状态:', { status, errorMessage, taskId });
       db.query(`
         UPDATE tasks
         SET status = ?,
@@ -346,7 +344,7 @@ exports.createTask = async (req, res) => {
             completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `, [status, errorMessage, taskId]).catch(err => {
-        console.log('更新任务状态失败:', err);
+        logger.error('更新任务状态失败:', err);
         logger.error('更新任务状态失败:', err);
       });
     });
@@ -357,18 +355,18 @@ exports.createTask = async (req, res) => {
     }
     global.zgrab2Processes.set(taskId.toString(), childProcess);
 
-    console.log('任务创建成功，返回响应');
+    logger.info('任务创建成功，返回响应');
     res.json({
       success: true,
       message: 'Zgrab2扫描任务已启动',
       taskId: taskId
     });
 
-    console.log('=== ZGrab2 任务创建完成 ===\n');
+    logger.debug('=== ZGrab2 任务创建完成 ===\n');
   } catch (error) {
-    console.log('=== ZGrab2 任务创建失败 ===');
-    console.log('错误详情:', error);
-    console.log('错误堆栈:', error.stack);
+    logger.error('=== ZGrab2 任务创建失败 ===');
+    logger.error('错误详情:', error);
+    logger.error('错误堆栈:', error.stack);
     if (error instanceof Zgrab2ArgsError) {
       return res.status(400).json({
         success: false,
@@ -391,7 +389,7 @@ exports.cancelTask = async (req, res) => {
     const { taskId } = req.params;
     const userId = req.user.id;
 
-    console.log('取消任务请求，taskId:', taskId, 'userId:', userId);
+    logger.debug('取消任务请求，taskId:', taskId, 'userId:', userId);
 
     // 检查任务是否存在且属于当前用户
     const [tasks] = await db.query(`
@@ -399,10 +397,10 @@ exports.cancelTask = async (req, res) => {
       WHERE id = ? AND user_id = ? AND task_type = 'zgrab2'
     `, [taskId, userId]);
 
-    console.log('任务查询结果:', tasks);
+    logger.debug('任务查询结果:', tasks);
 
     if (!tasks || tasks.length === 0) {
-      console.log('任务不存在');
+      logger.warn('任务不存在');
       return res.status(404).json({
         success: false,
         message: '任务不存在'
@@ -410,10 +408,10 @@ exports.cancelTask = async (req, res) => {
     }
 
     const task = tasks[0];
-    console.log('任务状态:', task.status);
+    logger.debug('任务状态:', task.status);
 
     if (task.status !== 'running') {
-      console.log('任务不在运行状态，无法取消');
+      logger.warn('任务不在运行状态，无法取消');
       return res.status(400).json({
         success: false,
         message: '任务不在运行状态，无法取消'
@@ -421,32 +419,32 @@ exports.cancelTask = async (req, res) => {
     }
 
     // 终止进程
-    console.log('检查进程是否存在，taskId:', taskId);
+    logger.debug('检查进程是否存在，taskId:', taskId);
     if (global.zgrab2Processes && global.zgrab2Processes.has(taskId)) {
-      console.log('找到进程，正在终止...');
+      logger.debug('找到进程，正在终止...');
       const process = global.zgrab2Processes.get(taskId);
       process.kill('SIGTERM');
       global.zgrab2Processes.delete(taskId);
-      console.log('进程已终止');
+      logger.info('进程已终止');
     } else {
-      console.log('未找到运行中的进程');
+      logger.debug('未找到运行中的进程');
     }
 
     // 更新任务状态
-    console.log('更新任务状态为cancelled');
+    logger.debug('更新任务状态为cancelled');
     await db.query(`
       UPDATE tasks
       SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [taskId]);
 
-    console.log('任务取消成功');
+    logger.info('任务取消成功');
     res.json({
       success: true,
       message: '任务已取消'
     });
   } catch (error) {
-    console.log('取消zgrab2任务失败:', error);
+    logger.error('取消zgrab2任务失败:', error);
     logger.error('取消zgrab2任务失败:', error);
     res.status(500).json({
       success: false,
@@ -566,7 +564,7 @@ exports.getTaskDetails = async (req, res) => {
   try {
     const { taskId } = req.params;
 
-    console.log('获取任务详情，任务ID:', taskId, '用户ID:', req.user.id);
+    logger.debug('获取任务详情，任务ID:', taskId, '用户ID:', req.user.id);
 
     const [tasks] = await db.query(`
       SELECT
@@ -584,10 +582,10 @@ exports.getTaskDetails = async (req, res) => {
       WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
     `, [taskId, req.user.id]);
 
-    console.log('任务查询结果:', tasks);
+    logger.debug('任务查询结果:', tasks);
 
     if (!tasks || tasks.length === 0) {
-      console.log('任务不存在');
+      logger.warn('任务不存在');
       return res.status(404).json({
         success: false,
         message: '任务不存在'
@@ -599,7 +597,7 @@ exports.getTaskDetails = async (req, res) => {
     // 解析命令参数
     const params = parseCommandParams(task.command);
 
-    console.log('任务文件路径:', {
+    logger.debug('任务文件路径:', {
       output_path: task.output_path,
       log_path: task.log_path
     });
@@ -611,53 +609,53 @@ exports.getTaskDetails = async (req, res) => {
     if (outputPath && !path.isAbsolute(outputPath)) {
       // 相对路径基于项目根目录
       outputPath = path.resolve(PROJECT_ROOT, outputPath);
-      console.log('转换输出文件为绝对路径:', outputPath);
+      logger.debug('转换输出文件为绝对路径:', outputPath);
     }
 
     if (logPath && !path.isAbsolute(logPath)) {
       // 相对路径基于项目根目录
       logPath = path.resolve(PROJECT_ROOT, logPath);
-      console.log('转换日志文件为绝对路径:', logPath);
+      logger.debug('转换日志文件为绝对路径:', logPath);
     }
 
     // 读取结果文件
     let result = null;
     if (outputPath) {
-      console.log('检查输出文件是否存在:', outputPath, fs.existsSync(outputPath));
+      logger.debug('检查输出文件是否存在:', outputPath, fs.existsSync(outputPath));
       if (fs.existsSync(outputPath)) {
         try {
           result = fs.readFileSync(outputPath, 'utf8');
-          console.log('读取输出文件成功，长度:', result.length);
+          logger.debug('读取输出文件成功，长度:', result.length);
           // 尝试解析为JSON
           if (result.trim()) {
             try {
               result = JSON.parse(result);
             } catch (e) {
               // 如果不是JSON格式，保持原样
-              console.log('输出文件不是JSON格式，保持原文本');
+              logger.debug('输出文件不是JSON格式，保持原文本');
             }
           }
         } catch (e) {
-          console.log('读取输出文件失败:', e.message);
+          logger.error('读取输出文件失败:', e.message);
         }
       } else {
-        console.log('输出文件不存在');
+        logger.warn('输出文件不存在');
       }
     }
 
     // 读取日志文件
     let log = null;
     if (logPath) {
-      console.log('检查日志文件是否存在:', logPath, fs.existsSync(logPath));
+      logger.debug('检查日志文件是否存在:', logPath, fs.existsSync(logPath));
       if (fs.existsSync(logPath)) {
         try {
           log = fs.readFileSync(logPath, 'utf8');
-          console.log('读取日志文件成功，长度:', log.length);
+          logger.debug('读取日志文件成功，长度:', log.length);
         } catch (e) {
-          console.log('读取日志文件失败:', e.message);
+          logger.error('读取日志文件失败:', e.message);
         }
       } else {
-        console.log('日志文件不存在');
+        logger.warn('日志文件不存在');
       }
     }
     
@@ -733,14 +731,14 @@ exports.downloadResult = async (req, res) => {
   try {
     const { taskId } = req.params;
 
-    console.log('下载结果文件，任务ID:', taskId);
+    logger.debug('下载结果文件，任务ID:', taskId);
 
     const [tasks] = await db.query(`
       SELECT output_path FROM tasks WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
     `, [taskId, req.user.id]);
 
     if (!tasks || tasks.length === 0) {
-      console.log('任务不存在');
+      logger.warn('任务不存在');
       return res.status(404).json({
         success: false,
         message: '任务不存在'
@@ -750,28 +748,28 @@ exports.downloadResult = async (req, res) => {
     const task = tasks[0];
     let outputPath = task.output_path;
 
-    console.log('原始输出路径:', outputPath);
+    logger.debug('原始输出路径:', outputPath);
 
     // 处理相对路径
     if (outputPath && !path.isAbsolute(outputPath)) {
       outputPath = path.resolve(PROJECT_ROOT, outputPath);
-      console.log('转换为绝对路径:', outputPath);
+      logger.debug('转换为绝对路径:', outputPath);
     }
 
     if (!outputPath || !fs.existsSync(outputPath)) {
-      console.log('结果文件不存在:', outputPath);
+      logger.warn('结果文件不存在:', outputPath);
       return res.status(404).json({
         success: false,
         message: '结果文件不存在'
       });
     }
 
-    console.log('开始下载文件:', outputPath);
+    logger.debug('开始下载文件:', outputPath);
 
     // 使用express的download方法
     res.download(outputPath, `zgrab2_result_${taskId}.jsonl`, (err) => {
       if (err) {
-        console.log('文件下载失败:', err);
+        logger.error('文件下载失败:', err);
         if (!res.headersSent) {
           res.status(500).json({
             success: false,
@@ -779,11 +777,11 @@ exports.downloadResult = async (req, res) => {
           });
         }
       } else {
-        console.log('文件下载完成');
+        logger.debug('文件下载完成');
       }
     });
   } catch (error) {
-    console.log('下载zgrab2结果失败:', error);
+    logger.error('下载zgrab2结果失败:', error);
     logger.error('下载zgrab2结果失败:', error);
     res.status(500).json({
       success: false,
@@ -799,14 +797,14 @@ exports.downloadLog = async (req, res) => {
   try {
     const { taskId } = req.params;
 
-    console.log('获取日志内容，任务ID:', taskId);
+    logger.debug('获取日志内容，任务ID:', taskId);
 
     const [tasks] = await db.query(`
       SELECT log_path FROM tasks WHERE id = ? AND task_type = 'zgrab2' AND user_id = ?
     `, [taskId, req.user.id]);
 
     if (!tasks || tasks.length === 0) {
-      console.log('任务不存在');
+      logger.warn('任务不存在');
       return res.status(404).json({
         success: false,
         message: '任务不存在'
@@ -816,16 +814,16 @@ exports.downloadLog = async (req, res) => {
     const task = tasks[0];
     let logPath = task.log_path;
 
-    console.log('原始日志路径:', logPath);
+    logger.debug('原始日志路径:', logPath);
 
     // 处理相对路径
     if (logPath && !path.isAbsolute(logPath)) {
       logPath = path.resolve(PROJECT_ROOT, logPath);
-      console.log('转换为绝对路径:', logPath);
+      logger.debug('转换为绝对路径:', logPath);
     }
 
     if (!logPath || !fs.existsSync(logPath)) {
-      console.log('日志文件不存在:', logPath);
+      logger.warn('日志文件不存在:', logPath);
       return res.status(404).json({
         success: false,
         message: '日志文件不存在'
@@ -835,7 +833,7 @@ exports.downloadLog = async (req, res) => {
     // 读取日志内容并返回JSON格式（在线预览）
     try {
       const logContent = fs.readFileSync(logPath, 'utf8');
-      console.log('读取日志文件成功，长度:', logContent.length);
+      logger.debug('读取日志文件成功，长度:', logContent.length);
 
       res.json({
         success: true,
@@ -846,14 +844,14 @@ exports.downloadLog = async (req, res) => {
         }
       });
     } catch (readError) {
-      console.log('读取日志文件失败:', readError);
+      logger.error('读取日志文件失败:', readError);
       res.status(500).json({
         success: false,
         message: '读取日志文件失败'
       });
     }
   } catch (error) {
-    console.log('获取zgrab2日志失败:', error);
+    logger.error('获取zgrab2日志失败:', error);
     logger.error('获取zgrab2日志失败:', error);
     res.status(500).json({
       success: false,

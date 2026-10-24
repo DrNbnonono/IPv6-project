@@ -7,7 +7,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const db = require('../database/db');
 
 const PROJECT_ROOT = path.resolve(process.env.PROJECT_ROOT || path.join(__dirname, '../..'));
 
@@ -168,6 +167,9 @@ const saveTargetsFile = async (userId, targets, tool, description = 'Agent 生�
   const fileName = `${spec.prefix}${userId}_${Date.now()}.txt`;
   const filePath = safeJoin(dir, fileName);
 
+  // 延迟加载：避免 loggerService → storageService → db → loggerService 的循环依赖，
+  // 也让只用到路径工具的代码（含单元测试）不必连接数据库
+  const db = require('../database/db');
   const [tools] = await db.query('SELECT id FROM tools WHERE name = ? LIMIT 1', [tool]);
   if (tools.length === 0) {
     throw new Error(`工具未配置: ${tool}`);

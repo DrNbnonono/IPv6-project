@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../database/db');
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('auth-middleware');
 
 /**
  * 获取JWT密钥
@@ -55,14 +57,14 @@ exports.authenticate = async (req, res, next) => {
   } catch (error) {
     // 服务端配置错误与令牌错误分开处理，且都不向客户端回传内部错误信息
     if (error.message === 'JWT_SECRET 未配置') {
-      console.error('认证失败: JWT_SECRET 未配置');
+      logger.error('认证失败: JWT_SECRET 未配置');
       return res.status(500).json({
         success: false,
         message: '服务器配置错误'
       });
     }
 
-    console.error('认证失败:', error.name);
+    logger.error('认证失败:', error.name);
     res.status(401).json({
       success: false,
       message: '认证失败'

@@ -5,6 +5,8 @@
  */
 
 const axios = require('axios');
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('aichat');
 
 // IPv6专家系统提示词
 const IPV6_EXPERT_SYSTEM_PROMPT = `你是一位资深的IPv6网络专家和数据分析师，名为"ObserV6 AI助手"。你的专业领域包括：
@@ -140,7 +142,7 @@ const callAIAPI = async (messages, config) => {
 
     return response.data;
   } catch (error) {
-    console.error('AI API调用失败:', error.response?.data || error.message);
+    logger.error('AI API调用失败:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -152,7 +154,7 @@ const callAIAPI = async (messages, config) => {
 exports.detectionChat = async (req, res) => {
   const { message, context, history } = req.body;
 
-  console.log('收到Detection AI请求:', { 
+  logger.debug('收到Detection AI请求:', { 
     message: message?.substring(0, 50) + '...', 
     historyLength: history?.length || 0 
   });
@@ -168,7 +170,7 @@ exports.detectionChat = async (req, res) => {
   try {
     // 获取API配置
     const config = getAPIConfig();
-    console.log('使用AI配置:', { 
+    logger.debug('使用AI配置:', { 
       baseURL: config.baseURL, 
       model: config.model,
       hasKey: !!config.apiKey 
@@ -187,7 +189,7 @@ exports.detectionChat = async (req, res) => {
       throw new Error('AI返回内容为空');
     }
 
-    console.log('AI响应成功:', { 
+    logger.debug('AI响应成功:', { 
       preview: assistantMessage.slice(0, 120),
       responseLength: assistantMessage.length,
       usage: aiResponse.usage 
@@ -205,7 +207,7 @@ exports.detectionChat = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Detection AI错误:', error.message);
+    logger.error('Detection AI错误:', error.message);
 
     // 错误处理
     let errorMessage = '抱歉，AI服务暂时不可用，请稍后再试。';

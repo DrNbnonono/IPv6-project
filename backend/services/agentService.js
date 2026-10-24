@@ -5,6 +5,8 @@
 
 const llmService = require('./llmService');
 const toolService = require('./toolService');
+const { createModuleLogger } = require('./loggerService');
+const logger = createModuleLogger('agent-service');
 
 // Agent欢迎消息
 const WELCOME_MESSAGE = `您好！我是ObserV6 Agent，您的IPv6网络探测智能助手。
@@ -89,7 +91,7 @@ const processMessage = async (userMessage, history = [], context = {}) => {
     };
 
   } catch (error) {
-    console.error('Agent处理消息错误:', error.message);
+    logger.error('Agent处理消息错误:', error.message);
     throw error;
   }
 };
@@ -152,7 +154,7 @@ const detectIntent = async (userMessage, history = []) => {
     return intent;
 
   } catch (error) {
-    console.error('意图识别错误:', error.message);
+    logger.error('意图识别错误:', error.message);
     // 出错时默认不使用工具
     return {
       shouldUseTool: false,
@@ -381,7 +383,7 @@ const generateWorkflow = async (goal, constraints, context = {}) => {
     };
 
   } catch (error) {
-    console.error('工作流生成错误:', error.message);
+    logger.error('工作流生成错误:', error.message);
     return {
       success: false,
       error: error.message

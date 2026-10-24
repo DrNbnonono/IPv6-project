@@ -4,6 +4,8 @@
  */
 
 const axios = require('axios');
+const { createModuleLogger } = require('./loggerService');
+const logger = createModuleLogger('llm');
 
 // MiniMax/Anthropic格式配置
 const ANTHROPIC_LIKE_PROVIDERS = {
@@ -198,7 +200,7 @@ const callAnthropicAPI = async (messages, config, options = {}) => {
 
     return response.data;
   } catch (error) {
-    console.error('Anthropic API调用失败:', error.response?.data || error.message);
+    logger.error('Anthropic API调用失败:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -234,7 +236,7 @@ const callOpenAIAPI = async (messages, config, options = {}) => {
 
     return response.data;
   } catch (error) {
-    console.error('OpenAI API调用失败:', error.response?.data || error.message);
+    logger.error('OpenAI API调用失败:', error.response?.data || error.message);
     throw error;
   }
 };

@@ -2,7 +2,6 @@ const db = require('../database/db');
 const addressModel = require('../models/addressModels');
 const { DIRS } = require('../services/storageService');
 const { buildAdvancedQuery, QueryValidationError } = require('../services/queryBuilderService');
-const { createLogger, transports } = require('winston');
 const readline = require('readline');
 
 
@@ -33,10 +32,8 @@ const upload = multer({
 });
 
 
-// 配置日志
-const logger = createLogger({
-  transports: [new transports.Console()]
-});
+const { createModuleLogger } = require('../services/loggerService');
+const logger = createModuleLogger('database');
 
 /**
  * 获取数据库统计信息
@@ -343,7 +340,7 @@ exports.getIIDTypes = async (req, res) => {
       data: rows
     });
   } catch (error) {
-    console.error('获取IID类型失败:', error);
+    logger.error('获取IID类型失败:', error);
     res.status(500).json({
       success: false,
       message: '获取IID类型失败',
@@ -672,7 +669,7 @@ exports.getPrefixes = async (req, res) => {
     const limit = parseInt(req.query.pageSize) || 1000;
     const offset = (page - 1) * limit;
     
-    console.log(`[getPrefixes] 请求获取前缀列表: 页码=${page}, 每页数量=${limit}, 偏移量=${offset}`);
+    logger.debug(`[getPrefixes] 请求获取前缀列表: 页码=${page}, 每页数量=${limit}, 偏移量=${offset}`);
     
     // 获取总数
     const [countResult] = await db.query('SELECT COUNT(*) as total FROM ip_prefixes');
@@ -712,7 +709,7 @@ exports.getPrefixes = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[getPrefixes] 获取前缀列表失败:', error);
+    logger.error('[getPrefixes] 获取前缀列表失败:', error);
     res.status(500).json({ 
       success: false, 
       message: '获取前缀列表失败',
@@ -725,7 +722,7 @@ exports.createPrefix = async (req, res) => {
     const { prefix, prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count } = req.body;
     
     // 记录请求参数
-    console.log('创建前缀请求参数:', req.body);
+    logger.debug('创建前缀请求参数:', req.body);
     
     // 检查前缀是否已存在
     const [existing] = await db.query(
@@ -759,7 +756,7 @@ exports.updatePrefix = async (req, res) => {
     const { id } = req.params;
     const { prefix_length, version, asn, country_id, registry, is_private, active_ipv6_count } = req.body;
 
-    console.log('更新前缀请求参数:', { id, ...req.body });
+    logger.debug('更新前缀请求参数:', { id, ...req.body });
 
     // 更新前缀信息
     await db.query(
@@ -771,7 +768,7 @@ exports.updatePrefix = async (req, res) => {
 
     res.json({ success: true, message: '前缀信息更新成功' });
   } catch (error) {
-    console.error('更新前缀信息失败:', error);
+    logger.error('更新前缀信息失败:', error);
     res.status(500).json({ success: false, message: '更新前缀信息失败', error: error.message });
   }
 };
@@ -779,7 +776,7 @@ exports.updatePrefix = async (req, res) => {
 exports.deletePrefix = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`[deletePrefix] 尝试删除前缀ID: ${id}`);
+    logger.debug(`[deletePrefix] 尝试删除前缀ID: ${id}`);
 
     // 先检查前缀是否存在
     const [prefixCheck] = await db.query(
@@ -788,7 +785,7 @@ exports.deletePrefix = async (req, res) => {
     );
 
     if (prefixCheck.length === 0) {
-      console.log(`[deletePrefix] 前缀不存在: ${id}`);
+      logger.warn(`[deletePrefix] 前缀不存在: ${id}`);
       return res.status(404).json({
         success: false,
         message: '前缀不存在'
@@ -796,11 +793,11 @@ exports.deletePrefix = async (req, res) => {
     }
 
     const prefix = prefixCheck[0];
-    console.log(`[deletePrefix] 找到前缀: ${prefix.prefix}, 活跃IPv6地址数量: ${prefix.active_ipv6_count}`);
+    logger.debug(`[deletePrefix] 找到前缀: ${prefix.prefix}, 活跃IPv6地址数量: ${prefix.active_ipv6_count}`);
 
     // 使用active_ipv6_count字段检查是否有关联地址，而不是查询active_addresses表
     if (prefix.active_ipv6_count > 0) {
-      console.log(`[deletePrefix] 前缀 ${prefix.prefix} 下存在 ${prefix.active_ipv6_count} 个活跃地址，无法删除`);
+      logger.debug(`[deletePrefix] 前缀 ${prefix.prefix} 下存在 ${prefix.active_ipv6_count} 个活跃地址，无法删除`);
       return res.status(400).json({
         success: false,
         message: `该前缀下存在${prefix.active_ipv6_count}个活跃地址数据，无法删除`
@@ -813,7 +810,7 @@ exports.deletePrefix = async (req, res) => {
       [id, id]
     );
     
-    console.log(`[deletePrefix] 删除结果: 影响行数=${deleteResult.affectedRows}`);
+    logger.debug(`[deletePrefix] 删除结果: 影响行数=${deleteResult.affectedRows}`);
     
     if (deleteResult.affectedRows > 0) {
       res.json({ 
@@ -832,7 +829,7 @@ exports.deletePrefix = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('[deletePrefix] 删除前缀失败:', error);
+    logger.error('[deletePrefix] 删除前缀失败:', error);
     res.status(500).json({ 
       success: false, 
       message: '删除前缀失败', 
@@ -845,7 +842,7 @@ exports.deletePrefix = async (req, res) => {
   let connection;
   try {
     const { id } = req.params;
-    console.log(`[deletePrefix] 尝试删除前缀ID: ${id}`);
+    logger.debug(`[deletePrefix] 尝试删除前缀ID: ${id}`);
 
     // 获取数据库连接
     connection = await db.getConnection();
@@ -864,7 +861,7 @@ exports.deletePrefix = async (req, res) => {
     );
     
     const outputResult = result[0];
-    console.log(`[deletePrefix] 存储过程执行结果:`, outputResult);
+    logger.debug(`[deletePrefix] 存储过程执行结果:`, outputResult);
     
     if (outputResult.prefix_deleted) {
       res.json({
@@ -884,7 +881,7 @@ exports.deletePrefix = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('[deletePrefix] 删除前缀失败:', error);
+    logger.error('[deletePrefix] 删除前缀失败:', error);
     
     // 处理特定的数据库错误
     if (error.code === 'ER_SIGNAL_EXCEPTION') {
@@ -934,7 +931,7 @@ exports.createImportTask = async (req, res) => {
     const tasks = Array.isArray(req.body) ? req.body : [req.body];
     
     // 添加参数验证日志
-    console.log('创建批量导入任务参数:', {
+    logger.debug('创建批量导入任务参数:', {
       taskCount: tasks.length,
       tasks,
       userId: req.user.id
@@ -942,7 +939,7 @@ exports.createImportTask = async (req, res) => {
 
     // 验证任务数组不为空
     if (!tasks.length) {
-      console.error('创建导入任务失败: 任务列表为空');
+      logger.error('创建导入任务失败: 任务列表为空');
       return res.status(400).json({
         success: false,
         message: '任务列表不能为空'
@@ -959,13 +956,13 @@ exports.createImportTask = async (req, res) => {
     }
     
     const databaseToolId = tools[0].id;
-    console.log('数据库工具ID:', databaseToolId);
+    logger.debug('数据库工具ID:', databaseToolId);
 
     // 验证每个任务的必要参数
     for (const task of tasks) {
       const { countryId, asn, prefix, fileId } = task;
       if (!countryId || !asn || !prefix || !fileId) {
-        console.error('创建导入任务失败: 任务缺少必要参数', task);
+        logger.error('创建导入任务失败: 任务缺少必要参数', task);
         return res.status(400).json({
           success: false,
           message: '每个任务都必须包含 countryId, asn, prefix, fileId 参数'
@@ -1025,7 +1022,7 @@ exports.createImportTask = async (req, res) => {
         // 启动异步处理
         processImportTask(taskId, countryId, asn, prefix, fileId)
           .catch(error => {
-            console.error(`任务 ${taskId} 处理失败:`, error);
+            logger.error(`任务 ${taskId} 处理失败:`, error);
             // 更新任务状态为失败
             connection.query(`
               UPDATE tasks 
@@ -1033,7 +1030,7 @@ exports.createImportTask = async (req, res) => {
                   error_message = ?,
                   completed_at = NOW()
               WHERE id = ?
-            `, [error.message, taskId]).catch(console.error);
+            `, [error.message, taskId]).catch((e) => logger.error("更新导入任务失败状态出错:", e));
           });
       }
 
@@ -1055,7 +1052,7 @@ exports.createImportTask = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('创建导入任务失败:', error);
+    logger.error('创建导入任务失败:', error);
     res.status(500).json({
       success: false,
       message: '创建导入任务失败: ' + error.message
@@ -1099,7 +1096,7 @@ exports.getImportTaskStatus = async (req, res) => {
 exports.getImportTasks = async (req, res) => {
   const connection = await db.getConnection();
   try {
-    console.log('[getImportTasks] 开始获取导入任务列表', {
+    logger.debug('[getImportTasks] 开始获取导入任务列表', {
       userId: req.user.id,
       query: req.query
     });
@@ -1109,7 +1106,7 @@ exports.getImportTasks = async (req, res) => {
     const offset = (page - 1) * pageSize;
 
     // 获取任务总数
-    console.log('[getImportTasks] 查询任务总数');
+    logger.debug('[getImportTasks] 查询任务总数');
     const [countResult] = await connection.query(`
       SELECT COUNT(*) as total
       FROM tasks
@@ -1119,15 +1116,15 @@ exports.getImportTasks = async (req, res) => {
     `, [req.user.id]);
 
     if (!countResult || countResult.length === 0) {
-      console.error('[getImportTasks] 获取任务总数失败');
+      logger.error('[getImportTasks] 获取任务总数失败');
       throw new Error('获取任务总数失败');
     }
 
     const total = countResult[0].total;
-    console.log('[getImportTasks] 任务总数:', total);
+    logger.debug('[getImportTasks] 任务总数:', total);
 
     // 获取分页任务列表，包含更多详细信息
-    console.log('[getImportTasks] 查询任务列表', { page, pageSize, offset });
+    logger.debug('[getImportTasks] 查询任务列表', { page, pageSize, offset });
     const [tasks] = await connection.query(`
       SELECT 
         t.id,
@@ -1183,7 +1180,7 @@ exports.getImportTasks = async (req, res) => {
       file_id: task.file_id || null
     }));
 
-    console.log('[getImportTasks] 查询到任务数量:', formattedTasks.length);
+    logger.debug('[getImportTasks] 查询到任务数量:', formattedTasks.length);
 
     // 确保返回的数据结构正确
     const response = {
@@ -1199,7 +1196,7 @@ exports.getImportTasks = async (req, res) => {
       }
     };
 
-    console.log('[getImportTasks] 返回数据:', {
+    logger.debug('[getImportTasks] 返回数据:', {
       taskCount: formattedTasks.length,
       pagination: response.data.pagination
     });
@@ -1207,7 +1204,7 @@ exports.getImportTasks = async (req, res) => {
     res.json(response);
 
   } catch (error) {
-    console.error('[getImportTasks] 获取导入任务列表失败:', {
+    logger.error('[getImportTasks] 获取导入任务列表失败:', {
       error: error.message,
       stack: error.stack,
       userId: req.user?.id
@@ -1281,7 +1278,7 @@ exports.cancelImportTask = async (req, res) => {
 
 // 异步处理导入任务
 async function processImportTask(taskId, countryId, asn, prefix, fileId) {
-  console.log('开始处理导入任务:', { taskId, countryId, asn, prefix, fileId });
+  logger.debug('开始处理导入任务:', { taskId, countryId, asn, prefix, fileId });
   
   // 获取数据库连接
   const connection = await db.getConnection();
@@ -1297,7 +1294,7 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     }
     
     const databaseToolId = tools[0].id;
-    console.log('数据库工具ID:', databaseToolId);
+    logger.debug('数据库工具ID:', databaseToolId);
 
     // 更新任务状态为运行中
     await connection.query(`
@@ -1308,18 +1305,18 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     `, [taskId]);
 
     // 获取文件路径
-    console.log('查询文件信息:', { fileId });
+    logger.debug('查询文件信息:', { fileId });
     const [files] = await connection.query(`
       SELECT id, file_path, tool_id, is_deleted
       FROM whitelists
       WHERE id = ? AND tool_id = ? AND is_deleted = 0
     `, [fileId, databaseToolId]);
 
-    console.log('文件查询结果:', files);
+    logger.debug('文件查询结果:', files);
 
     if (files.length === 0) {
       const error = new Error('文件不存在或已被删除');
-      console.error('文件查询失败:', {
+      logger.error('文件查询失败:', {
         fileId,
         error: error.message,
         query: 'SELECT id, file_path, tool_id, is_deleted FROM whitelists WHERE id = ? AND tool_id = ? AND is_deleted = 0'
@@ -1338,14 +1335,14 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     }
 
     const filePath = files[0].file_path;
-    console.log('获取到文件路径:', { filePath });
+    logger.debug('获取到文件路径:', { filePath });
 
     // 检查文件是否存在
     try {
       await fs.access(filePath);
-      console.log('文件存在且可访问');
+      logger.debug('文件存在且可访问');
     } catch (error) {
-      console.error('文件访问失败:', {
+      logger.error('文件访问失败:', {
         filePath,
         error: error.message
       });
@@ -1353,19 +1350,19 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     }
 
     // 读取文件内容
-    console.log('开始读取文件内容');
+    logger.debug('开始读取文件内容');
     const fileContent = await fs.readFile(filePath, 'utf8');
     const addresses = fileContent.split(/\r?\n/)
       .map(line => line.trim())
       .filter(line => line);
 
-    console.log('文件内容处理完成:', {
+    logger.debug('文件内容处理完成:', {
       totalLines: addresses.length,
       firstFewAddresses: addresses.slice(0, 3)
     });
 
     // 创建临时表并插入地址
-    console.log('开始创建临时表');
+    logger.debug('开始创建临时表');
     await connection.query('START TRANSACTION');
     
     await connection.query(`
@@ -1378,14 +1375,14 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
 
     const insertValues = addresses.map(addr => [addr]);
     if (insertValues.length > 0) {
-      console.log('开始插入地址到临时表:', { count: insertValues.length });
+      logger.debug('开始插入地址到临时表:', { count: insertValues.length });
       await connection.query(`
         INSERT INTO temp_addresses (address) VALUES ?
       `, [insertValues]);
     }
 
     // 声明存储过程的输出参数
-    console.log('开始调用存储过程');
+    logger.debug('开始调用存储过程');
     await connection.query(`
       SET @p_imported_count = 0,
           @p_error_count = 0,
@@ -1422,7 +1419,7 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
         @p_country_total_addresses as country_total_addresses
     `);
 
-    console.log('存储过程执行完成:', result[0]);
+    logger.debug('存储过程执行完成:', result[0]);
 
     await connection.query('COMMIT');
 
@@ -1448,13 +1445,13 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
       fn: files[0].file_name,
     }), taskId]);
 
-    console.log('导入任务处理完成:', {
+    logger.debug('导入任务处理完成:', {
       taskId,
       result: result[0]
     });
 
   } catch (error) {
-    console.error('导入任务处理失败:', {
+    logger.error('导入任务处理失败:', {
       taskId,
       error: error.message,
       stack: error.stack
@@ -1472,7 +1469,7 @@ async function processImportTask(taskId, countryId, asn, prefix, fileId) {
     await connection.query('ROLLBACK');
     throw error;
   } finally {
-    console.log('清理临时表');
+    logger.debug('清理临时表');
     await connection.query('DROP TEMPORARY TABLE IF EXISTS temp_addresses');
     // 释放连接
     connection.release();
@@ -1484,7 +1481,7 @@ exports.deleteImportTask = async (req, res) => {
   const connection = await db.getConnection();
   try {
     const taskId = req.params.id;
-    console.log('[deleteImportTask] 开始删除任务:', { taskId, userId: req.user.id });
+    logger.debug('[deleteImportTask] 开始删除任务:', { taskId, userId: req.user.id });
 
     // 检查任务是否存在且属于当前用户
     const [tasks] = await connection.query(`
@@ -1525,7 +1522,7 @@ exports.deleteImportTask = async (req, res) => {
       message: '任务已删除'
     });
   } catch (error) {
-    console.error('[deleteImportTask] 删除任务失败:', error);
+    logger.error('[deleteImportTask] 删除任务失败:', error);
     res.status(500).json({
       success: false,
       message: '删除任务失败: ' + error.message
@@ -1597,12 +1594,12 @@ exports.getAllAsns = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
     
-    console.log(`[getAllAsns] 请求获取ASN列表: 页码=${page}, 每页数量=${limit}, 偏移量=${offset}`);
+    logger.debug(`[getAllAsns] 请求获取ASN列表: 页码=${page}, 每页数量=${limit}, 偏移量=${offset}`);
     
     // 获取总数
     const [countResult] = await db.query('SELECT COUNT(*) as total FROM asns');
     const total = countResult[0].total;
-    console.log(`[getAllAsns] 数据库中ASN总数: ${total}`);
+    logger.debug(`[getAllAsns] 数据库中ASN总数: ${total}`);
     
     // 获取分页数据
     const [asns] = await db.query(`
@@ -1612,11 +1609,11 @@ exports.getAllAsns = async (req, res) => {
       LIMIT ? OFFSET ?
     `, [limit, offset]);
     
-    console.log(`[getAllAsns] 成功获取ASN数据，返回数量: ${asns.length}`);
+    logger.debug(`[getAllAsns] 成功获取ASN数据，返回数量: ${asns.length}`);
     if (asns.length > 0) {
-      console.log(`[getAllAsns] 第一个ASN: ${asns[0].asn}, 名称: ${asns[0].as_name || asns[0].as_name_zh}`);
+      logger.debug(`[getAllAsns] 第一个ASN: ${asns[0].asn}, 名称: ${asns[0].as_name || asns[0].as_name_zh}`);
     } else {
-      console.warn('[getAllAsns] 警告: 查询返回空结果集');
+      logger.warn('[getAllAsns] 警告: 查询返回空结果集');
     }
 
     // 构建响应数据
@@ -1632,7 +1629,7 @@ exports.getAllAsns = async (req, res) => {
     };
 
     // 记录发送的响应数据
-    console.log('[getAllAsns] 发送响应数据:', {
+    logger.debug('[getAllAsns] 发送响应数据:', {
       success: responseData.success,
       dataLength: responseData.data.length,
       pagination: responseData.pagination
@@ -1640,7 +1637,7 @@ exports.getAllAsns = async (req, res) => {
     
     res.json(responseData);
   } catch (error) {
-    console.error('[getAllAsns] 获取ASN列表失败:', error);
+    logger.error('[getAllAsns] 获取ASN列表失败:', error);
     logger.error('获取ASN列表失败:', error);
     res.status(500).json({ 
       success: false, 
@@ -1657,7 +1654,7 @@ exports.getAsnsByCountry = async (req, res) => {
     const { countryId } = req.params;
     const { query } = req.query;
     
-    console.log(`后端: 收到根据国家获取ASN请求, 国家ID: ${countryId}, 查询: ${query}`);
+    logger.debug(`后端: 收到根据国家获取ASN请求, 国家ID: ${countryId}, 查询: ${query}`);
     
     // 验证国家ID
     if (!countryId || countryId.length !== 2) {
@@ -1681,12 +1678,12 @@ exports.getAsnsByCountry = async (req, res) => {
     sql += ` ORDER BY asn LIMIT 20`;
     
     const [asns] = await db.query(sql, params);
-    console.log(`后端: 查询到 ${asns.length} 个ASN`);
+    logger.debug(`后端: 查询到 ${asns.length} 个ASN`);
     
     res.json({ success: true, data: asns });
   } catch (error) {
     logger.error(`获取国家(${req.params.countryId})的ASN列表失败:`, error);
-    console.error(`获取国家ASN列表详细错误:`, error);
+    logger.error(`获取国家ASN列表详细错误:`, error);
     res.status(500).json({ success: false, message: '获取ASN列表失败', error: error.message });
   }
 };
@@ -1697,10 +1694,10 @@ exports.searchAsns = async (req, res) => {
     const { query } = req.query;
     const limit = parseInt(req.query.limit) || 20;
     
-    console.log(`[ASN Search] 收到搜索请求，查询词: '${query}', 限制: ${limit}`);
+    logger.debug(`[ASN Search] 收到搜索请求，查询词: '${query}', 限制: ${limit}`);
     
     if (!query || query.length < 2) {
-      console.log('[ASN Search] 搜索词过短，至少需要2个字符');
+      logger.debug('[ASN Search] 搜索词过短，至少需要2个字符');
       return res.status(400).json({ 
         success: false, 
         message: '搜索词至少需要2个字符' 
@@ -1708,7 +1705,7 @@ exports.searchAsns = async (req, res) => {
     }
 
     const searchTerm = `%${query}%`;
-    console.log(`[ASN Search] 构建的搜索模式: '${searchTerm}'`);
+    logger.debug(`[ASN Search] 构建的搜索模式: '${searchTerm}'`);
     
     const [asns] = await db.query(`
       SELECT 
@@ -1727,11 +1724,11 @@ exports.searchAsns = async (req, res) => {
       LIMIT ?
     `, [searchTerm, searchTerm, searchTerm, searchTerm, limit]);
 
-    console.log(`[ASN Search] 查询结果数量: ${asns.length}`);
+    logger.debug(`[ASN Search] 查询结果数量: ${asns.length}`);
     if (asns.length === 0) {
-      console.log('[ASN Search] 未找到匹配的ASN');
+      logger.debug('[ASN Search] 未找到匹配的ASN');
     } else {
-      console.log(`[ASN Search] 找到匹配的ASN，第一个结果: ASN=${asns[0].asn}, 名称=${asns[0].as_name || asns[0].as_name_zh}`);
+      logger.debug(`[ASN Search] 找到匹配的ASN，第一个结果: ASN=${asns[0].asn}, 名称=${asns[0].as_name || asns[0].as_name_zh}`);
     }
 
     res.json({ 
@@ -1739,7 +1736,7 @@ exports.searchAsns = async (req, res) => {
       data: asns 
     });
   } catch (error) {
-    console.error('[ASN Search] 搜索ASN失败:', error);
+    logger.error('[ASN Search] 搜索ASN失败:', error);
     logger.error('搜索ASN失败:', error);
     res.status(500).json({ 
       success: false, 
@@ -1755,9 +1752,9 @@ exports.searchPrefixes = async (req, res) => {
     const { query } = req.query;
     const limit = parseInt(req.query.limit) || 20;
     
-    console.log('[searchPrefixes] 收到搜索请求:', { query, limit });
+    logger.debug('[searchPrefixes] 收到搜索请求:', { query, limit });
     if (!query || query.length < 2) {
-      console.log('[searchPrefixes] 搜索词过短:', query);
+      logger.debug('[searchPrefixes] 搜索词过短:', query);
       return res.status(400).json({ 
         success: false, 
         message: '搜索词至少需要2个字符' 
@@ -1792,15 +1789,15 @@ exports.searchPrefixes = async (req, res) => {
       ORDER BY p.prefix
       LIMIT ?
     `;
-    console.log('[searchPrefixes] 执行SQL:', sql);
+    logger.debug('[searchPrefixes] 执行SQL:', sql);
     const [prefixes] = await db.query(sql, [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, limit]);
-    console.log(`[searchPrefixes] 查询结果数量: ${prefixes.length}`);
+    logger.debug(`[searchPrefixes] 查询结果数量: ${prefixes.length}`);
     if (prefixes.length > 0) {
-      console.log('[searchPrefixes] 首条结果:', prefixes[0]);
+      logger.debug('[searchPrefixes] 首条结果:', prefixes[0]);
     }
     res.json({ success: true, data: prefixes });
   } catch (error) {
-    console.error('[searchPrefixes] 搜索前缀失败:', error);
+    logger.error('[searchPrefixes] 搜索前缀失败:', error);
     res.status(500).json({ 
       success: false, 
       message: '搜索前缀失败',
@@ -1954,13 +1951,13 @@ exports.deleteProtocol = async (req, res) => {
 exports.batchUpdateAsnProtocolStats = async (req, res) => {
   const { operations } = req.body; // operations: [{ protocolId, asn, updateAction, value }]
 
-  console.log(`[批量更新] 收到批量更新请求，操作数量: ${operations?.length || 0}`);
+  logger.debug(`[批量更新] 收到批量更新请求，操作数量: ${operations?.length || 0}`);
   if (operations && operations.length > 0) {
-    console.log(`[批量更新] 第一个操作: 协议ID=${operations[0].protocolId}, ASN=${operations[0].asn}, 操作=${operations[0].updateAction}, 值=${operations[0].value}`);
+    logger.debug(`[批量更新] 第一个操作: 协议ID=${operations[0].protocolId}, ASN=${operations[0].asn}, 操作=${operations[0].updateAction}, 值=${operations[0].value}`);
   }
 
   if (!Array.isArray(operations) || operations.length === 0) {
-    console.log('[批量更新] 请求缺少有效的操作列表');
+    logger.debug('[批量更新] 请求缺少有效的操作列表');
     return res.status(400).json({ success: false, message: '缺少有效的操作列表' });
   }
 
@@ -2040,10 +2037,10 @@ exports.batchUpdateAsnProtocolStats = async (req, res) => {
       
       try {
         await connection.query(query, queryParams);
-        console.log(`[批量更新] 操作成功: 协议ID=${protocolId}, ASN=${asn}`);
+        logger.debug(`[批量更新] 操作成功: 协议ID=${protocolId}, ASN=${asn}`);
         results.push({ ...op, success: true, message: '更新成功' });
       } catch (error) {
-        console.error(`[批量更新] 处理ASN ${asn} 协议 ${protocolId} 更新失败:`, error);
+        logger.error(`[批量更新] 处理ASN ${asn} 协议 ${protocolId} 更新失败:`, error);
         logger.error(`处理ASN ${asn} 协议 ${protocolId} 更新失败:`, error);
         results.push({ ...op, success: false, message: `数据库操作失败: ${error.message}` });
         overallSuccess = false;
@@ -2052,7 +2049,7 @@ exports.batchUpdateAsnProtocolStats = async (req, res) => {
 
     if (overallSuccess) {
       await connection.commit();
-      console.log(`[批量更新] 所有操作成功完成，提交事务`);
+      logger.debug(`[批量更新] 所有操作成功完成，提交事务`);
       res.json({
         data: {
           success: true,
@@ -2062,7 +2059,7 @@ exports.batchUpdateAsnProtocolStats = async (req, res) => {
       });
     } else {
       await connection.rollback();
-      console.log(`[批量更新] 部分操作失败，回滚事务`);
+      logger.error(`[批量更新] 部分操作失败，回滚事务`);
       // 即便部分失败也返回207 Multi-Status，让前端处理各个操作的结果
       res.status(207).json({
         data: {
@@ -2075,7 +2072,7 @@ exports.batchUpdateAsnProtocolStats = async (req, res) => {
 
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('[批量更新] 批量更新ASN协议统计失败:', error);
+    logger.error('[批量更新] 批量更新ASN协议统计失败:', error);
     logger.error('批量更新ASN协议统计失败:', error);
     res.status(500).json({
       data: {
@@ -2209,13 +2206,13 @@ exports.deleteVulnerability = async (req, res) => {
 exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
   const { operations } = req.body; // operations: [{ vulnerabilityId, countryId, asn, updateAction, value }]
 
-  console.log(`[批量更新] 收到批量更新请求，操作数量: ${operations?.length || 0}`);
+  logger.debug(`[批量更新] 收到批量更新请求，操作数量: ${operations?.length || 0}`);
   if (operations && operations.length > 0) {
-    console.log(`[批量更新] 第一个操作: 漏洞ID=${operations[0].vulnerabilityId}, ASN=${operations[0].asn}, 操作=${operations[0].updateAction}, 值=${operations[0].value}`);
+    logger.debug(`[批量更新] 第一个操作: 漏洞ID=${operations[0].vulnerabilityId}, ASN=${operations[0].asn}, 操作=${operations[0].updateAction}, 值=${operations[0].value}`);
   }
 
   if (!Array.isArray(operations) || operations.length === 0) {
-    console.log('[批量更新] 请求缺少有效的操作列表');
+    logger.debug('[批量更新] 请求缺少有效的操作列表');
     return res.status(400).json({ success: false, message: '缺少有效的操作列表' });
   }
 
@@ -2295,10 +2292,10 @@ exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
       
       try {
         await connection.query(query, queryParams);
-        console.log(`[批量更新] 操作成功: 漏洞ID=${vulnerabilityId}, ASN=${asn}`);
+        logger.debug(`[批量更新] 操作成功: 漏洞ID=${vulnerabilityId}, ASN=${asn}`);
         results.push({ ...op, success: true, message: '更新成功' });
       } catch (error) {
-        console.error(`[批量更新] 处理ASN ${asn} 漏洞 ${vulnerabilityId} 更新失败:`, error);
+        logger.error(`[批量更新] 处理ASN ${asn} 漏洞 ${vulnerabilityId} 更新失败:`, error);
         logger.error(`处理ASN ${asn} 漏洞 ${vulnerabilityId} 更新失败:`, error);
         results.push({ ...op, success: false, message: `数据库操作失败: ${error.message}` });
         overallSuccess = false;
@@ -2307,7 +2304,7 @@ exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
 
     if (overallSuccess) {
       await connection.commit();
-      console.log(`[批量更新] 所有操作成功完成，提交事务`);
+      logger.debug(`[批量更新] 所有操作成功完成，提交事务`);
       res.json({
         data: {
           success: true,
@@ -2317,7 +2314,7 @@ exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
       });
     } else {
       await connection.rollback();
-      console.log(`[批量更新] 部分操作失败，回滚事务`);
+      logger.error(`[批量更新] 部分操作失败，回滚事务`);
       // 即便部分失败也返回207 Multi-Status，让前端处理各个操作的结果
       res.status(207).json({
         data: {
@@ -2330,7 +2327,7 @@ exports.batchUpdateAsnVulnerabilityStats = async (req, res) => {
 
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('[批量更新] 批量更新ASN漏洞统计失败:', error);
+    logger.error('[批量更新] 批量更新ASN漏洞统计失败:', error);
     logger.error('批量更新ASN漏洞统计失败:', error);
     res.status(500).json({
       data: {
