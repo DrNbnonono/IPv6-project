@@ -8,7 +8,8 @@
     "dev": "nodemon app.js",
     "test": "jest",
     "db:migrate": "node scripts/migrate.js",
-    "db:check": "node scripts/checkDb.js"
+    "db:check": "node scripts/checkDb.js",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -39,6 +40,65 @@
     "testEnvironment": "node",
     "testMatch": [
       "**/tests/**/*.test.js"
-    ]
+    ],
+    "collectCoverageFrom": [
+      "services/**/*.js",
+      "!services/workflowEngine.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text-summary",
+      "lcov"
+    ],
+    "coverageThreshold": {
+      "./services/agentService.js": {
+        "lines": 85,
+        "statements": 85
+      },
+      "./services/llmService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/memoryService.js": {
+        "lines": 85,
+        "statements": 85
+      },
+      "./services/queryBuilderService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/sqlGuardService.js": {
+        "lines": 85,
+        "statements": 85
+      },
+      "./services/storageService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/terminalPolicyService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/terminalService.js": {
+        "lines": 85,
+        "statements": 85
+      },
+      "./services/xmapCommandService.js": {
+        "lines": 95,
+        "statements": 95
+      },
+      "./services/zgrab2CommandService.js": {
+        "lines": 95,
+        "statements": 95
+      },
+      "./services/toolService.js": {
+        "lines": 70,
+        "statements": 70
+      },
+      "./services/loggerService.js": {
+        "lines": 80,
+        "statements": 80
+      }
+    }
   }
 }

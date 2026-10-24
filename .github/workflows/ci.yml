@@ -27,7 +27,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - run: npx jest --ci
+      - run: npx jest --ci --coverage
 
   database:
     name: 建库与迁移（MySQL 8）
