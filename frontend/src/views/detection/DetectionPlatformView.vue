@@ -10,6 +10,7 @@
       <div class="time-display">{{ currentTime }}</div>
       <div class="user-info">
         <button @click="goToAdvancedQuery" class="nav-btn query-btn">高级查询</button>
+        <button @click="goToHighlights" class="nav-btn highlights-btn">成果</button>
         <button @click="showProtocolAnalysis = true" class="nav-btn protocol-btn">协议分析</button>
         <button @click="showVulnerabilityAnalysis = true" class="nav-btn vulnerability-btn">漏洞分析</button>
         <button @click="showTrends = !showTrends" class="nav-btn trend-btn">趋势</button>
@@ -990,6 +991,10 @@ const handleZoomChanged = (data) => {
 // 添加跳转到高级查询页面的方法
 const goToAdvancedQuery = () => {
   router.push({ name: 'advancedQuery' });
+}
+
+const goToHighlights = () => {
+  router.push({ name: 'highlights' });
 }
 
 //国家详细页面
@@ -2106,6 +2111,15 @@ onMounted(() => {
 
 .vulnerability-btn:hover {
   background: rgba(244, 67, 54, 0.4);
+}
+
+.highlights-btn {
+  background: rgba(255, 183, 77, 0.2);
+  border: 1px solid rgba(255, 183, 77, 0.5);
+}
+
+.highlights-btn:hover {
+  background: rgba(255, 183, 77, 0.4);
 }
 
 .trend-btn {
