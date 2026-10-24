@@ -28,6 +28,7 @@ const tgaRouter = require('./routes/tga'); // 目标生成
 const reportRouter = require('./routes/report'); // 任务报告
 const openRouter = require('./routes/open'); // 开放只读 API（API 密钥）
 const optOutRouter = require('./routes/optOut'); // 探针说明与退出渠道（公开）
+const mcpRouter = require('./routes/mcp'); // MCP 只读入口（API 密钥）
 const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
@@ -97,6 +98,7 @@ app.use('/api/tga', tgaRouter);
 app.use('/api/reports', reportRouter);
 app.use('/api/open/v1', openRouter);
 app.use('/api/opt-out', optOutRouter);
+app.use('/api/mcp', mcpRouter);
 app.use('/api/docs', docRouter)
 // 测试接口
 app.get('/api/test', (req, res) => {
