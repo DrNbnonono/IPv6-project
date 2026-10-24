@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test": "jest"
+    "test": "jest",
+    "db:migrate": "node scripts/migrate.js",
+    "db:check": "node scripts/checkDb.js"
   },
   "keywords": [],
   "author": "",
