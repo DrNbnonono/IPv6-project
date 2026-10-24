@@ -3,7 +3,7 @@
  * llmService 与 toolService 全部 mock，不发起网络请求，也不执行任何工具。
  */
 
-jest.mock('../services/llmService', () => ({ chat: jest.fn() }));
+jest.mock('../services/llmService', () => ({ chat: jest.fn(), supportsNativeTools: jest.fn() }));
 jest.mock('../services/toolService', () => ({ executeTool: jest.fn() }));
 
 const llmService = require('../services/llmService');

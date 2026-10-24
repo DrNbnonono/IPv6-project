@@ -14,7 +14,8 @@ jest.mock('../services/storageService', () => ({
 }));
 
 const mockChat = jest.fn();
-jest.mock('../services/llmService', () => ({ chat: (...args) => mockChat(...args) }));
+const mockNative = jest.fn(() => false);
+jest.mock('../services/llmService', () => ({ chat: (...args) => mockChat(...args), supportsNativeTools: () => mockNative() }));
 
 const mockTerminalExecute = jest.fn();
 const mockTerminalCreate = jest.fn();

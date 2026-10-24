@@ -21,59 +21,116 @@ const WELCOME_MESSAGE = `您好！我是ObserV6 Agent，您的IPv6网络探测�
 请告诉我您需要什么帮助？`;
 
 /**
- * 处理用户消息
+ * 执行一次工具调用并整理成响应。
+ * 大模型识别出的调用永远不能自行确认：confirmed 只能由用户通过 /tools/execute 显式提供。
+ * 有副作用的工具（扫描、终端）只返回待确认请求，等待用户在界面上确认。
  */
-const processMessage = async (userMessage, history = [], context = {}) => {
-  try {
-    // 意图识别：分析用户是否需要使用工具
-    const intentResult = await detectIntent(userMessage, history);
+const handleToolCall = async (userMessage, toolName, toolParams, context) => {
+  const toolResult = await toolService.executeTool(toolName, toolParams, { ...context, confirmed: false });
 
-    // 如果识别到需要使用工具
-    if (intentResult.shouldUseTool && intentResult.toolName) {
-      // 大模型识别出的调用永远不能自行确认：confirmed 只能由用户通过 /tools/execute 显式提供
-      const toolResult = await toolService.executeTool(
-        intentResult.toolName,
-        intentResult.toolParams,
-        { ...context, confirmed: false }
-      );
-
-      // 有副作用的工具（扫描、终端）只返回待确认请求，等待用户在界面上确认
-      if (toolResult.needsConfirmation) {
-        return {
-          success: true,
-          type: 'confirmation_required',
-          message: `我准备执行「${toolResult.tool}」，参数如下，请确认后再执行。`,
-          pendingToolCall: {
-            tool: toolResult.tool,
-            params: toolResult.params
-          }
-        };
+  if (toolResult.needsConfirmation) {
+    return {
+      success: true,
+      type: 'confirmation_required',
+      message: `我准备执行「${toolResult.tool}」，参数如下，请确认后再执行。`,
+      pendingToolCall: {
+        tool: toolResult.tool,
+        params: toolResult.params
       }
+    };
+  }
 
-      // 生成工具执行结果的解释
-      const explanationPrompt = `用户请求：${userMessage}
-工具名称：${intentResult.toolName}
-工具参数：${JSON.stringify(intentResult.toolParams)}
+  // 生成工具执行结果的解释
+  const explanationPrompt = `用户请求：${userMessage}
+工具名称：${toolName}
+工具参数：${JSON.stringify(toolParams)}
 工具执行结果：${JSON.stringify(toolResult)}
 
 请用简洁的语言解释工具执行结果，并给出后续建议。用Markdown格式输出。`;
 
-      const explanation = await llmService.chat(explanationPrompt, [], {
-        temperature: 0.7,
-        max_tokens: 1024
-      });
+  const explanation = await llmService.chat(explanationPrompt, [], {
+    temperature: 0.7,
+    max_tokens: 1024
+  });
 
-      return {
-        success: true,
-        type: 'tool_execution',
-        message: explanation.message,
-        toolCall: {
-          tool: intentResult.toolName,
-          params: intentResult.toolParams,
-          result: toolResult
-        },
-        suggestions: generateSuggestions(intentResult.toolName, toolResult)
-      };
+  return {
+    success: true,
+    type: 'tool_execution',
+    message: explanation.message,
+    toolCall: {
+      tool: toolName,
+      params: toolParams,
+      result: toolResult
+    },
+    suggestions: generateSuggestions(toolName, toolResult)
+  };
+};
+
+// 提供商以 4xx 拒绝带 tools 的请求（不支持或格式不兼容）时退回关键词意图识别；网络错误、鉴权失败等不退回
+const TOOL_UNSUPPORTED_STATUSES = new Set([400, 404, 422]);
+
+/**
+ * 原生工具调用：把工具定义随请求发给模型，由模型决定是否调用、调用哪个、参数是什么。
+ * 一次调用同时完成“要不要用工具”和“直接回答”，比旧的“意图识别 + 回答”少一次模型调用。
+ * 单轮只处理模型给出的第一个调用；调用次数上限与结果回灌见 P4-3。
+ */
+const processWithNativeTools = async (userMessage, history, context) => {
+  const response = await llmService.chat(userMessage, history, {
+    temperature: 0.5,
+    max_tokens: 2048,
+    tools: toolService.getToolDefinitions(context)
+  });
+
+  const call = Array.isArray(response.toolCalls) ? response.toolCalls[0] : null;
+  if (!call) {
+    return {
+      success: true,
+      type: 'text',
+      message: response.message,
+      model: response.model,
+      provider: response.provider
+    };
+  }
+
+  // 参数不是合法 JSON、未知工具、缺参数或类型不对：不执行，直接告诉用户缺什么
+  const checked = call.argumentsError
+    ? { valid: false, errors: [call.argumentsError] }
+    : toolService.validateToolParams(call.name, call.arguments);
+  if (!checked.valid) {
+    logger.warn(`模型给出的工具调用无效: ${String(call.name).slice(0, 40)}: ${checked.errors.join('; ')}`);
+    return {
+      success: true,
+      type: 'text',
+      message: `我想调用「${call.name}」，但参数还不完整或不正确：${checked.errors.join('；')}。请补充信息后再试一次。`,
+      model: response.model,
+      provider: response.provider
+    };
+  }
+
+  return handleToolCall(userMessage, call.name, call.arguments, context);
+};
+
+/**
+ * 处理用户消息
+ * 默认走原生工具调用；AGENT_NATIVE_TOOLS=false、未配置密钥或提供商不接受 tools 时，用关键词 + 正则的意图识别。
+ */
+const processMessage = async (userMessage, history = [], context = {}) => {
+  try {
+    if (llmService.supportsNativeTools()) {
+      try {
+        return await processWithNativeTools(userMessage, history, context);
+      } catch (error) {
+        const status = error && error.response && error.response.status;
+        if (!TOOL_UNSUPPORTED_STATUSES.has(status)) throw error;
+        logger.warn(`提供商拒绝了工具调用请求（HTTP ${status}），退回关键词意图识别`);
+      }
+    }
+
+    // 意图识别：分析用户是否需要使用工具
+    const intentResult = await detectIntent(userMessage, history);
+
+    if (intentResult.shouldUseTool && intentResult.toolName) {
+      return await handleToolCall(userMessage, intentResult.toolName, intentResult.toolParams, context);
     }
 
     // 直接回答

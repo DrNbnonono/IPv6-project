@@ -142,6 +142,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `SCAN_MAX_RATE` `SCAN_DEFAULT_RATE` `SCAN_DAILY_LIMIT` | `100M` `10M` `100` | xmap 单任务速率上限 / 未指定时的默认速率 / 每用户每天可创建的扫描任务数；可在 `/api/admin/quotas` 按用户覆盖 |
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
 | `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL` | `minimax` | LLM 提供商与密钥，详见 `.env.example` |
+| `AGENT_NATIVE_TOOLS` | `true` | Agent 使用模型原生工具调用；`false` 退回关键词意图识别。有副作用的工具无论哪种方式都需用户确认 |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |
 | `BCRYPT_ROUNDS` `ALLOW_LEGACY_PASSWORDS` | `10` `true` | 密码哈希强度；执行 `scripts/migratePasswords.js` 后请设为 `false` |
 

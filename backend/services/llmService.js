@@ -158,6 +158,66 @@ const buildMessages = (userMessage, history = [], systemPrompt = AGENT_SYSTEM_PR
 };
 
 /**
+ * 原生工具调用（function calling / tool_use）
+ *
+ * 工具定义统一用 OpenAI 格式 { type: 'function', function: { name, description, parameters } }（toolService.getToolDefinitions
+ * 生成）；Anthropic 格式在发请求时转换。响应里的工具调用统一整理成 [{ id, name, arguments }]：
+ * arguments 是对象；模型给出的参数不是合法 JSON 时为 null，并带 argumentsError，由调用方当作无效调用处理。
+ */
+const toAnthropicTool = (tool) => ({
+  name: tool.function.name,
+  description: tool.function.description,
+  input_schema: tool.function.parameters || { type: 'object', properties: {} }
+});
+
+const parseJsonObject = (text) => {
+  if (text && typeof text === 'object' && !Array.isArray(text)) return { value: text };
+  if (typeof text !== 'string' || !text.trim()) return { value: {} };
+  try {
+    const value = JSON.parse(text);
+    if (value && typeof value === 'object' && !Array.isArray(value)) return { value };
+    return { value: null, error: '参数必须是 JSON 对象' };
+  } catch (error) {
+    return { value: null, error: '参数不是合法的 JSON' };
+  }
+};
+
+/** 从 Anthropic 响应中取文本（拼接所有 text 块，忽略 thinking / tool_use）和工具调用。 */
+const parseAnthropicResponse = (response) => {
+  const blocks = Array.isArray(response?.content) ? response.content : [];
+  // 个别兼容接口的文本块不带 type，按有 text 字符串处理
+  const message = blocks.filter((b) => b && (b.type === 'text' || (b.type === undefined && typeof b.text === 'string'))).map((b) => b.text || '').join('');
+  const toolCalls = blocks
+    .filter((b) => b && b.type === 'tool_use')
+    .map((b) => {
+      const parsed = parseJsonObject(b.input);
+      return { id: b.id, name: b.name, arguments: parsed.value, ...(parsed.error ? { argumentsError: parsed.error } : {}) };
+    });
+  return { message, toolCalls };
+};
+
+/** 从 OpenAI 格式响应中取文本和工具调用（function.arguments 是 JSON 字符串）。 */
+const parseOpenAIResponse = (response) => {
+  const msg = response?.choices?.[0]?.message || {};
+  const toolCalls = (Array.isArray(msg.tool_calls) ? msg.tool_calls : [])
+    .filter((c) => c && c.function)
+    .map((c) => {
+      const parsed = parseJsonObject(c.function.arguments);
+      return { id: c.id, name: c.function.name, arguments: parsed.value, ...(parsed.error ? { argumentsError: parsed.error } : {}) };
+    });
+  return { message: msg.content || '', toolCalls };
+};
+
+/**
+ * 当前提供商是否使用原生工具调用。AGENT_NATIVE_TOOLS=false 可关闭（退回关键词 + 正则的意图识别）。
+ * 需要已配置密钥；MiniMax 的 Anthropic 兼容接口与 OpenAI 兼容接口（DeepSeek / OpenAI / SiliconFlow）都支持。
+ */
+const supportsNativeTools = () => {
+  if (String(process.env.AGENT_NATIVE_TOOLS || '').toLowerCase() === 'false') return false;
+  return Boolean(getProviderConfig().apiKey);
+};
+
+/**
  * 调用Anthropic格式API（MiniMax）
  */
 const callAnthropicAPI = async (messages, config, options = {}) => {
@@ -183,6 +243,11 @@ const callAnthropicAPI = async (messages, config, options = {}) => {
     // 添加system消息（如果存在）
     if (systemMessage) {
       requestData.system = systemMessage;
+    }
+
+    // 原生工具调用：把 OpenAI 格式的工具定义转成 Anthropic 的 input_schema 格式
+    if (Array.isArray(options.tools) && options.tools.length > 0) {
+      requestData.tools = options.tools.map(toAnthropicTool);
     }
 
     const response = await axios.post(
@@ -223,7 +288,8 @@ const callOpenAIAPI = async (messages, config, options = {}) => {
         messages: messages,
         temperature: options.temperature || 0.7,
         max_tokens: options.max_tokens || 2048,
-        stream: false
+        stream: false,
+        ...(Array.isArray(options.tools) && options.tools.length > 0 ? { tools: options.tools, tool_choice: 'auto' } : {})
       },
       {
         headers: {
@@ -253,9 +319,11 @@ const chat = async (userMessage, history = [], options = {}) => {
   if (config.type === 'anthropic') {
     response = await callAnthropicAPI(messages, config, options);
     // 解析Anthropic格式响应
+    const parsed = parseAnthropicResponse(response);
     return {
       success: true,
-      message: response.content?.[0]?.text || '',
+      message: parsed.message,
+      toolCalls: parsed.toolCalls,
       model: config.model,
       provider: config.name,
       usage: response.usage ? {
@@ -267,9 +335,11 @@ const chat = async (userMessage, history = [], options = {}) => {
   } else {
     response = await callOpenAIAPI(messages, config, options);
     // 解析OpenAI格式响应
+    const parsed = parseOpenAIResponse(response);
     return {
       success: true,
-      message: response.choices?.[0]?.message?.content || '',
+      message: parsed.message,
+      toolCalls: parsed.toolCalls,
       model: config.model,
       provider: config.name,
       usage: response.usage ? {
@@ -301,7 +371,8 @@ const getStatus = () => {
 };
 
 /**
- * 获取支持的工具列表（用于Function Calling格式）
+ * 旧的内置工具列表（OpenAI 格式，工具名与注册表不一致，仅为兼容保留）。
+ * Agent 的原生工具调用使用 toolService.getToolDefinitions()：它由工具注册表生成，名称与参数和执行器一致。
  */
 const getToolDefinitions = () => {
   // 这是OpenAI格式的工具定义
@@ -409,6 +480,9 @@ module.exports = {
   getStatus,
   getProviderConfig,
   getToolDefinitions,
+  supportsNativeTools,
+  parseAnthropicResponse,
+  parseOpenAIResponse,
   buildMessages,
   AGENT_SYSTEM_PROMPT
 };

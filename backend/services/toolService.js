@@ -436,12 +436,14 @@ const getTools = () => {
 };
 
 /**
- * 获取工具定义（用于LLM Function Calling）
+ * 获取工具定义（用于LLM Function Calling，OpenAI 格式）。
+ * 传入 context 时，调用者没有权限的工具（如仅管理员可用的终端）不会出现在列表里，模型也就不会去调用它。
  */
-const getToolDefinitions = () => {
+const getToolDefinitions = (context) => {
   const definitions = [];
 
   for (const [key, tool] of Object.entries(TOOL_REGISTRY)) {
+    if (context && tool.authorize && !tool.authorize(context)) continue;
     const params = {};
     const required = [];
 
@@ -470,6 +472,41 @@ const getToolDefinitions = () => {
   }
 
   return definitions;
+};
+
+/**
+ * 校验模型给出的工具调用参数（依据 TOOL_REGISTRY[*].parameters 的 type / required）。
+ * 返回 { valid, errors }。只做结构校验：范围、格式等业务校验仍由各工具的 validate 负责。
+ * 模型给出的未知参数名按错误处理，让它有机会改正，而不是悄悄丢掉。
+ */
+const validateToolParams = (toolName, params) => {
+  const tool = Object.prototype.hasOwnProperty.call(TOOL_REGISTRY, toolName) ? TOOL_REGISTRY[toolName] : null;
+  if (!tool) return { valid: false, errors: [`未知工具: ${String(toolName).slice(0, 40)}`] };
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
+    return { valid: false, errors: ['参数必须是对象'] };
+  }
+
+  const errors = [];
+  for (const [name, config] of Object.entries(tool.parameters)) {
+    const value = params[name];
+    const missing = value === undefined || value === null || value === '';
+    if (missing) {
+      if (config.required) errors.push(`缺少必需参数: ${name}`);
+      continue;
+    }
+    if (config.type === 'number') {
+      const ok = (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim()));
+      if (!ok) errors.push(`参数 ${name} 必须是数字`);
+    } else if (config.type === 'string') {
+      if (typeof value === 'object') errors.push(`参数 ${name} 必须是字符串`);
+    } else if (config.type === 'boolean') {
+      if (typeof value !== 'boolean') errors.push(`参数 ${name} 必须是布尔值`);
+    }
+  }
+  for (const name of Object.keys(params)) {
+    if (!Object.prototype.hasOwnProperty.call(tool.parameters, name)) errors.push(`未知参数: ${name.slice(0, 40)}`);
+  }
+  return { valid: errors.length === 0, errors };
 };
 
 /**
@@ -559,6 +596,7 @@ const getToolByName = (toolName) => {
 module.exports = {
   getTools,
   getToolDefinitions,
+  validateToolParams,
   executeTool,
   getToolByName,
   TOOL_REGISTRY
