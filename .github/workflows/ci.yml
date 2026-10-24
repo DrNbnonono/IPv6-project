@@ -104,6 +104,14 @@ jobs:
           test "$(count)" = "$before"
           node scripts/demoSnapshot.js list | grep -q ci-snap
           node scripts/checkDb.js
+      - name: 安全回归（黑盒，--strict）
+        working-directory: backend
+        env:
+          PROJECT_ROOT: ${{ runner.temp }}/observ6-root
+          SEC_EXTRA_ARGS: --include-ratelimit
+        run: |
+          mkdir -p "$PROJECT_ROOT"
+          bash scripts/ci/run-security-regression.sh
 
   frontend:
     name: 前端构建
