@@ -166,60 +166,6 @@ const validateWhitelistFile = (filePath) => {
     throw error;
   }
 };
-// 上传白名单文件
-exports.uploadWhitelist = async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      message: '未上传文件'
-    });
-  }
-
-  const userId = req.user.id;
-  const { description, tool } = req.body; // 新增获取描述和工具
-  const originalName = req.file.originalname;
-  const fileExt = path.extname(originalName);
-  const fileName = `whitelist_${userId}_${Date.now()}${fileExt}`;
-  const filePath = path.join(WHITELIST_DIR, fileName);
-
-  try {
-    fs.renameSync(req.file.path, filePath);
-    validateWhitelistFile(filePath);
-    
-    const [tools] = await db.query(
-      "SELECT id FROM tools WHERE name = ? LIMIT 1",
-      [tool || 'xmap'] // 默认为xmap
-    );
-    
-    if (tools.length === 0) {
-      throw new Error('工具不存在');
-    }
-    
-    // 保存到数据库
-    await db.query(
-      `INSERT INTO whitelists 
-       (user_id, tool_id, file_name, file_path, description) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [userId, tools[0].id, fileName, filePath, description]
-    );
-
-    res.json({
-      success: true,
-      message: '白名单文件上传成功',
-      fileName: fileName
-    });
-  } catch (error) {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
-    res.status(400).json({
-      success: false,
-      message: '白名单文件验证失败: ' + error.message
-    });
-  }
-};
-
 // 获取用户上传的白名单文件列表
 exports.getWhitelists = async (req, res) => {
   const userId = req.user.id;
