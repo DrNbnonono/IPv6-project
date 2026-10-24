@@ -11,6 +11,7 @@
     "db:check": "node scripts/checkDb.js",
     "db:bench-storage": "node scripts/benchAddressStorage.js",
     "knowledge:index": "node scripts/indexKnowledge.js",
+    "stats:snapshot": "node scripts/statsSnapshot.js",
     "eval:agent": "node scripts/evalAgent.js",
     "test:coverage": "jest --coverage"
   },
@@ -155,6 +156,10 @@
         "statements": 90
       },
       "./services/knowledgeService.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/statsSnapshotService.js": {
         "lines": 90,
         "statements": 90
       }

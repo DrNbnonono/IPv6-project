@@ -30,6 +30,7 @@ const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
 const taskService = require('./services/taskService');
 const scheduler = require('./services/schedulerService');
+const statsSnapshot = require('./services/statsSnapshotService');
 
 const logger = createModuleLogger('app');
 
@@ -138,7 +139,10 @@ if (require.main === module) {
     .catch((err) => {
       logger.error('启动时任务对账失败:', err.message);
     })
-    .finally(() => scheduler.startScheduler());
+    .finally(() => {
+      scheduler.startScheduler();
+      statsSnapshot.startDailySnapshot();
+    });
 }
 
 module.exports = app;
