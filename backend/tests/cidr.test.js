@@ -1,4 +1,4 @@
-const { parseTarget, contains, overlaps, size } = require('../services/cidrService');
+const { parseTarget, contains, overlaps, size, formatAddress } = require('../services/cidrService');
 
 describe('parseTarget', () => {
   test.each([
@@ -68,5 +68,23 @@ describe('contains / overlaps / size', () => {
     expect(size(p('2001:db8::1'))).toBe(1n);
     expect(size(p('2001:db8::/64'))).toBe(1n << 64n);
     expect(size(p('::/0'))).toBe(1n << 128n);
+  });
+});
+
+describe('formatAddress', () => {
+  test.each([
+    [6, 0x20010db8000000000000000000000001n, '2001:db8::1'],
+    [6, 0n, '::'],
+    [6, 1n, '::1'],
+    [4, 0xc0000201n, '192.0.2.1']
+  ])('版本 %i 的值格式化为 %s', (version, value, text) => {
+    expect(formatAddress(version, value)).toBe(text);
+  });
+
+  test('与 parseTarget 互逆', () => {
+    for (const text of ['2001:db8:1:2::', '2001:db8::1', '1:0:0:2::3', '10.1.2.3']) {
+      const range = parseTarget(text);
+      expect(formatAddress(range.version, range.start)).toBe(range.text);
+    }
   });
 });

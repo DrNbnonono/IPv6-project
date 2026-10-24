@@ -146,4 +146,7 @@ const overlaps = (a, b) => a.version === b.version && a.start <= b.end && b.star
 /** 范围内的地址数量（BigInt）。 */
 const size = (range) => range.end - range.start + 1n;
 
-module.exports = { parseTarget, contains, overlaps, size };
+/** 把整数值格式化为规范文本（IPv4 点分十进制；IPv6 小写压缩，最长零段 >= 2 才压缩）。 */
+const formatAddress = (version, value) => (version === 4 ? formatIPv4(value) : formatIPv6(value));
+
+module.exports = { parseTarget, contains, overlaps, size, formatAddress };

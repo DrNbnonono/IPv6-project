@@ -1036,9 +1036,10 @@ exports.getResult = async (req, res) => {
   logger.debug(`尝试获取任务 ${taskId} 的结果文件`); // 调试日志
 
   try {
+    // 只能下载自己的 xmap 任务结果（任务 ID 是时间戳，很容易被猜到）
     const [tasks] = await db.query(
-      `SELECT output_path FROM tasks WHERE id = ?`, 
-      [taskId]
+      `SELECT output_path FROM tasks WHERE id = ? AND user_id = ? AND task_type = 'xmap'`,
+      [taskId, req.user.id]
     );
     
     if (!tasks.length) {

@@ -63,6 +63,10 @@
         "lines": 90,
         "statements": 90
       },
+      "./services/aliasDetectService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/agentService.js": {
         "lines": 85,
         "statements": 85
