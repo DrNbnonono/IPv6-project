@@ -23,22 +23,22 @@ const ANTHROPIC_LIKE_PROVIDERS = {
 const OPENAI_LIKE_PROVIDERS = {
   deepseek: {
     name: 'DeepSeek',
-    baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
-    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    baseURL: process.env.DEEPSEEK_BASE_URL || process.env.AI_API_BASE_URL || 'https://api.deepseek.com/v1',
+    model: process.env.DEEPSEEK_MODEL || process.env.AI_MODEL || 'deepseek-chat',
     apiKey: process.env.DEEPSEEK_API_KEY || process.env.AI_API_KEY,
     endpoint: '/chat/completions'
   },
   openai: {
     name: 'OpenAI',
-    baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+    baseURL: process.env.OPENAI_BASE_URL || process.env.AI_API_BASE_URL || 'https://api.openai.com/v1',
+    model: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-3.5-turbo',
     apiKey: process.env.OPENAI_API_KEY || process.env.AI_API_KEY,
     endpoint: '/chat/completions'
   },
   siliconflow: {
     name: 'SiliconFlow',
-    baseURL: process.env.SILICONFLOW_BASE_URL || 'https://api.siliconflow.cn/v1',
-    model: process.env.SILICONFLOW_MODEL || 'deepseek-ai/DeepSeek-V2.5',
+    baseURL: process.env.SILICONFLOW_BASE_URL || process.env.AI_API_BASE_URL || 'https://api.siliconflow.cn/v1',
+    model: process.env.SILICONFLOW_MODEL || process.env.AI_MODEL || 'deepseek-ai/DeepSeek-V2.5',
     apiKey: process.env.SILICONFLOW_API_KEY || process.env.AI_API_KEY,
     endpoint: '/chat/completions'
   },
@@ -81,8 +81,18 @@ const AGENT_SYSTEM_PROMPT = `你是一位智能Agent助手，名为"ObserV6 Agen
 /**
  * 获取当前配置的LLM提供商
  */
+// 没有设置 AI_PROVIDER 时，选第一个配置了密钥的提供商（原来 /api/ai 默认 deepseek、Agent 默认 minimax，合并后统一）；都没有则 minimax
+const PROVIDER_PRIORITY = ['minimax', 'deepseek', 'openai', 'siliconflow', 'custom'];
+const defaultProviderName = () => {
+  const configured = PROVIDER_PRIORITY.find((name) => {
+    const config = ANTHROPIC_LIKE_PROVIDERS[name] || OPENAI_LIKE_PROVIDERS[name];
+    return config && config.apiKey;
+  });
+  return configured || 'minimax';
+};
+
 const getProviderConfig = () => {
-  const provider = (process.env.AI_PROVIDER || 'minimax').toLowerCase();
+  const provider = (process.env.AI_PROVIDER || defaultProviderName()).toLowerCase();
 
   // 先检查是否是Anthropic-like提供商
   if (ANTHROPIC_LIKE_PROVIDERS[provider]) {
@@ -111,6 +121,12 @@ const getProviderConfig = () => {
     };
   }
 
+  // 不认识的提供商名：如果配置了自定义端点（AI_API_BASE_URL），当作 OpenAI 兼容的自定义提供商（原 /api/ai 的行为）
+  if (process.env.AI_API_BASE_URL) {
+    const custom = OPENAI_LIKE_PROVIDERS.custom;
+    return { type: 'openai', name: custom.name, baseURL: custom.baseURL, model: custom.model, apiKey: custom.apiKey, endpoint: custom.endpoint };
+  }
+
   // 默认使用MiniMax
   const defaultConfig = ANTHROPIC_LIKE_PROVIDERS.minimax;
   return {
@@ -127,7 +143,7 @@ const getProviderConfig = () => {
 /**
  * 构建消息历史
  */
-const buildMessages = (userMessage, history = [], systemPrompt = AGENT_SYSTEM_PROMPT) => {
+const buildMessages = (userMessage, history = [], systemPrompt = AGENT_SYSTEM_PROMPT, { maxHistoryItemChars = 0 } = {}) => {
   const messages = [];
 
   // 添加系统提示词
@@ -143,7 +159,8 @@ const buildMessages = (userMessage, history = [], systemPrompt = AGENT_SYSTEM_PR
       if (!msg) return;
 
       const role = msg.role === 'assistant' ? 'assistant' : (msg.role === 'user' ? 'user' : null);
-      const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+      let content = typeof msg.content === 'string' ? msg.content.trim() : '';
+      if (maxHistoryItemChars > 0) content = content.slice(0, maxHistoryItemChars);
 
       if (!role || !content) return;
 
@@ -226,7 +243,7 @@ const callAnthropicAPI = async (messages, config, options = {}) => {
   const { baseURL, model, apiKey, endpoint, headers } = config;
 
   if (!apiKey) {
-    throw new Error('API密钥未配置，请检查环境变量');
+    throw new Error('AI API密钥未配置，请在 .env 里设置 AI_API_KEY，或所选提供商的密钥变量（如 MINIMAX_API_KEY、DEEPSEEK_API_KEY）');
   }
 
   try {
@@ -279,7 +296,7 @@ const callOpenAIAPI = async (messages, config, options = {}) => {
   const { baseURL, model, apiKey, endpoint } = config;
 
   if (!apiKey) {
-    throw new Error('API密钥未配置，请检查环境变量');
+    throw new Error('AI API密钥未配置，请在 .env 里设置 AI_API_KEY，或所选提供商的密钥变量（如 MINIMAX_API_KEY、DEEPSEEK_API_KEY）');
   }
 
   try {
@@ -314,7 +331,8 @@ const callOpenAIAPI = async (messages, config, options = {}) => {
  */
 const chat = async (userMessage, history = [], options = {}) => {
   const config = getProviderConfig();
-  const messages = buildMessages(userMessage, history);
+  // options.systemPrompt 换系统提示（如检测页的专家问答）；options.maxHistoryItemChars 限制每条历史消息的长度
+  const messages = buildMessages(userMessage, history, options.systemPrompt || AGENT_SYSTEM_PROMPT, { maxHistoryItemChars: options.maxHistoryItemChars || 0 });
 
   let response;
 
