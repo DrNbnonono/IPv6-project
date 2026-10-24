@@ -15,6 +15,10 @@ router.get('/search', addressController.searchIPv6);
 // 需要认证的路由
 router.get('/addresses/:addressId', authenticate, addressController.getAddressDetail);
 
+// 批次历史与差异（需登录；迁移 12 未应用时返回 503）
+router.get('/batches', authenticate, addressController.getBatches);
+router.get('/diff', authenticate, addressController.getBatchDiff);
+
 // 通用搜索
 router.get('/search', addressController.searchIPv6);
 

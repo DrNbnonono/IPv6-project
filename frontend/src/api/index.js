@@ -550,6 +550,16 @@ export default {
     }
   },
 
+  // 导入批次与批次差异（需登录；后端迁移 12 未应用时返回 503）
+  history: {
+    getBatches(params) {
+      return apiClient.get('/addresses/batches', { params });
+    },
+    getDiff(params) {
+      return apiClient.get('/addresses/diff', { params });
+    }
+  },
+
   // 文件管理API
   // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
   admin: {

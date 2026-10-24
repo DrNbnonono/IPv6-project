@@ -75,6 +75,10 @@
         "lines": 90,
         "statements": 90
       },
+      "./services/historyService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/enrichService.js": {
         "lines": 90,
         "statements": 90

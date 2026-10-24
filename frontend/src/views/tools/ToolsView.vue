@@ -158,6 +158,7 @@
     { path: '/tools/apd', name: '别名前缀检测', icon: 'icon-apd' },
     { path: '/tools/tga', name: '目标生成', icon: 'icon-tga' },
     { path: '/tools/enrich', name: '地址分类与富化', icon: 'icon-enrich' },
+    { path: '/tools/history', name: '导入批次与变化', icon: 'icon-history' },
     { path: '/tools/admin', name: '扫描策略与审计', icon: 'icon-admin', adminOnly: true }
   ])
 
@@ -732,6 +733,7 @@
 .icon-apd:before { content: "🧩"; }
 .icon-tga:before { content: "🎯"; }
 .icon-enrich:before { content: "🏷️"; }
+.icon-history:before { content: "🕓"; }
 .icon-zgrab2:before { content: "🛰️"; } // 添加zgrab2图标示例
 .icon-addr6:before { content: "🌐"; } // 添加addr6图标示例
 .icon-nmap:before { content: "🗺️"; } // 添加nmap图标示例

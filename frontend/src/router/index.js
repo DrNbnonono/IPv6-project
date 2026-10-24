@@ -114,6 +114,15 @@ const routes = [
         }
       },
       {
+        path: '/tools/history',
+        name: 'history',
+        component: () => import('@/views/tools/history/HistoryDashboardView.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '导入批次与变化'
+        }
+      },
+      {
         path: '/tools/tga',
         name: 'tga',
         component: () => import('@/views/tools/tga/TgaDashboardView.vue'),

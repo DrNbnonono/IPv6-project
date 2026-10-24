@@ -1,4 +1,5 @@
 const db = require('../database/db');
+const history = require('../services/historyService');
 const { performance } = require('perf_hooks');
 
 
@@ -1826,5 +1827,34 @@ exports.getCountryVulnerabilityDetail = async (req, res) => {
       success: false,
       message: `获取国家漏洞详情失败: ${error.message}`
     });
+  }
+};
+
+// ---------- 批次历史与差异（P3-4）----------
+
+const historyFail = (res, label, error) => {
+  if (error instanceof history.HistoryError) return res.status(error.status).json({ success: false, message: error.message });
+  logger.error(`${label}失败:`, error.message);
+  return res.status(500).json({ success: false, message: `${label}失败` });
+};
+
+/** GET /api/addresses/batches?prefixId=&page=&limit= —— 导入批次列表（新到旧） */
+exports.getBatches = async (req, res) => {
+  try {
+    const data = await history.listBatches({ prefixId: req.query.prefixId, page: req.query.page, limit: req.query.limit });
+    res.json({ success: true, data });
+  } catch (error) {
+    historyFail(res, '获取批次列表', error);
+  }
+};
+
+/** GET /api/addresses/diff?batchA=&batchB=&kind=new|gone|persisted&after=&pageSize= —— 两个批次的差异 */
+exports.getBatchDiff = async (req, res) => {
+  try {
+    const { batchA, batchB, kind, after, pageSize } = req.query;
+    const data = await history.diffBatches({ batchA, batchB, kind, after, pageSize });
+    res.json({ success: true, data });
+  } catch (error) {
+    historyFail(res, '获取批次差异', error);
   }
 };
