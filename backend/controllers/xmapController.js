@@ -6,6 +6,7 @@ const util = require('util');
 // 配置系统日志和目录
 const { DIRS, safeJoin } = require('../services/storageService');
 const { buildXmapInvocation, buildPrivileged } = require('../services/xmapCommandService');
+const taskService = require('../services/taskService');
 const logDir = DIRS.backendLogs;
 const XMAP_LOG_DIR = DIRS.xmapLog;
 const XMAP_RESULT_DIR = DIRS.xmapResult;
@@ -367,7 +368,7 @@ exports.scan = async (req, res) => {
   try {
     validateXmapParams(req.body);
     
-    const taskId = Date.now();
+    const taskId = taskService.nextTaskId();
     const logFile = path.join(XMAP_LOG_DIR, `${taskId}.csv`);
     const resultFile = path.join(XMAP_RESULT_DIR, `${taskId}.json`);
     const errorLogFile = path.join(XMAP_LOG_DIR, `${taskId}_error.log`);
@@ -405,10 +406,15 @@ exports.scan = async (req, res) => {
 
     const invocation = buildXmapInvocation(args);
 
-    await db.query(
-      'INSERT INTO tasks (id, user_id, command,description, status, log_path, output_path,  task_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [taskId, userId, invocation.display, description, 'running', logFile, resultFile, 'xmap']
-    );
+    await taskService.createTaskRecord({
+      taskId,
+      userId,
+      taskType: 'xmap',
+      command: invocation.display,
+      description,
+      logPath: logFile,
+      outputPath: resultFile
+    });
 
     logger.info(`用户 ${userId} 创建新任务 ${taskId}`, { 
       command: invocation.display,
@@ -427,6 +433,21 @@ exports.scan = async (req, res) => {
     activeProcesses.set(taskId, xmapProcess);
     const errorStream = fs.createWriteStream(errorLogFile);
     xmapProcess.stderr.pipe(errorStream);
+
+    // 找不到 sudo / xmap 等启动失败会触发 error 事件；没有监听器时 Node 会抛出未捕获异常，使整个后端退出。
+    // 监听器必须在任何 await 之前挂上：error 事件在 spawn 之后的下一个 tick 就会触发。
+    xmapProcess.on('error', async (spawnError) => {
+      activeProcesses.delete(taskId);
+      logger.error(`任务 ${taskId} 启动失败`, { error: spawnError.message });
+      try {
+        await taskService.markTaskFinished(taskId, {
+          status: 'failed',
+          errorMessage: `无法启动 ${invocation.command}: ${spawnError.message}`
+        });
+      } catch (dbError) {
+        logger.error(`更新任务 ${taskId} 状态失败`, { error: dbError.message });
+      }
+    });
 
     xmapProcess.on('close', async (code, signal) => {
       activeProcesses.delete(taskId);
@@ -453,22 +474,16 @@ exports.scan = async (req, res) => {
       }
 
       try {
-        await db.query(
-          `UPDATE tasks 
-           SET status = ?, 
-               error_message = ?,
-               exit_code = ?,
-               process_signal = ?,
-               completed_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
-          [status, errorMsg, code, signal, taskId]
-        );
+        // 已被用户取消的任务保持 canceled，不会被改写
+        await taskService.markTaskFinished(taskId, { status, errorMessage: errorMsg, exitCode: code, signal });
       } catch (dbError) {
         logger.error(`更新任务 ${taskId} 状态失败`, {
           error: dbError.message
         });
       }
     });
+
+    await taskService.markTaskRunning(taskId, xmapProcess.pid);
 
     res.status(202).json({
       success: true,
@@ -524,6 +539,9 @@ exports.cancelTask = async (req, res) => {
         message: `任务当前状态为 ${task.status}，无法终止`
       });
     }
+
+    // 先把状态置为 canceled 再发信号：进程被终止后触发的 close 事件不会再把它改写成 failed
+    await taskService.markTaskCanceled(taskId);
 
     if (activeProcesses.has(taskId)) {
       const process = activeProcesses.get(taskId);
@@ -632,17 +650,16 @@ exports.cancelTask = async (req, res) => {
         logger.info(`任务 ${taskId} 进程记录已清理`);
       }, 8000); // 增加到8秒，给进程更多时间终止
     } else {
-      logger.warn(`任务 ${taskId} 在活动进程列表中未找到`);
+      // 服务重启后没有子进程句柄（进程是 detached 的，仍可能在运行），改用按命令行匹配的系统级终止
+      logger.warn(`任务 ${taskId} 在活动进程列表中未找到，使用系统级终止`);
+      const killByName = spawnPrivileged('pkill', ['-f', `xmap.*${taskId}`]);
+      killByName.on('close', (code) => {
+        logger.info(`系统级终止任务 ${taskId} 的 xmap 进程，退出码: ${code}`);
+      });
+      killByName.on('error', (error) => {
+        logger.error(`系统级终止任务 ${taskId} 失败`, { error: error.message });
+      });
     }
-
-    await db.query(
-      `UPDATE tasks 
-       SET status = 'canceled', 
-           error_message = '用户手动终止',
-           completed_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [taskId]
-    );
 
     res.json({
       success: true,

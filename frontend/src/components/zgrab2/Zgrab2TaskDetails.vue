@@ -212,6 +212,7 @@ const getStatusText = (status) => {
     'running': '运行中',
     'completed': '已完成',
     'failed': '失败',
+    'canceled': '已取消',
     'cancelled': '已取消'
   }
   return statusMap[status] || status
@@ -572,6 +573,7 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.status-canceled,
 .status-cancelled {
   color: #9e9e9e;
   font-weight: 600;

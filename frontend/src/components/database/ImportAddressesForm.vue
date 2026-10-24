@@ -460,6 +460,7 @@ const getStatusText = (status) => {
     'processing': '处理中',
     'completed': '已完成',
     'failed': '失败',
+    'canceled': '已取消',
     'cancelled': '已取消'
   };
   return statusMap[status] || status;
@@ -858,7 +859,7 @@ onUnmounted(() => {
 .status-processing { background-color: #17a2b8; }
 .status-completed { background-color: #28a745; }
 .status-failed { background-color: #dc3545; }
-.status-cancelled { background-color: #ffc107; color: #212529; }
+.status-canceled, .status-cancelled { background-color: #ffc107; color: #212529; }
 
 // 进度条
 .progress-bar {

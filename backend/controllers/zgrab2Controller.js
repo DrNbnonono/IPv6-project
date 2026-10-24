@@ -10,6 +10,7 @@ const logger = createModuleLogger('zgrab2');
 const ITEMS_PER_PAGE = 20;
 // 数据目录统一由 storageService 提供（根目录见 PROJECT_ROOT），启动时由 ensureDirs() 创建
 const { PROJECT_ROOT, DIRS, resolveStoredPath } = require('../services/storageService');
+const taskService = require('../services/taskService');
 const {
   ZGRAB2_BIN,
   Zgrab2ArgsError,
@@ -146,7 +147,7 @@ exports.createTask = async (req, res) => {
 
     logger.debug('参数验证通过');
 
-    const taskId = Date.now();
+    const taskId = taskService.nextTaskId();
     // 使用绝对路径存储到数据库
     const outputFile = path.join(ZGRAB2_RESULTS_DIR, `${taskId}.jsonl`);
     const logFile = path.join(ZGRAB2_LOGS_DIR, `${taskId}.log`);
@@ -304,50 +305,42 @@ exports.createTask = async (req, res) => {
       });
     }
 
-    // 在数据库中创建任务记录
-    logger.debug('创建数据库任务记录...');
-    const taskData = [taskId, userId, command, description || `ZGrab2 ${module} scan`, 'zgrab2', 'running', logFile, outputFile];
-    logger.debug('任务数据:', taskData);
-
-    await db.query(`
-      INSERT INTO tasks
-      (id, user_id, command, description, task_type, status, log_path, output_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, taskData);
+    // 在数据库中创建任务记录（pending），进程启动后再置为 running
+    await taskService.createTaskRecord({
+      taskId,
+      userId,
+      taskType: 'zgrab2',
+      command,
+      description: description || `ZGrab2 ${module} scan`,
+      logPath: logFile,
+      outputPath: outputFile
+    });
 
     logger.info('数据库任务记录创建成功');
-
     logger.debug('开始执行zgrab2命令:', command);
 
     // 异步执行zgrab2命令
     const childProcess = execFile(ZGRAB2_BIN, commandArgs, (error, stdout, stderr) => {
-      let status = 'completed';
-      let errorMessage = null;
-
       logger.debug('zgrab2命令执行完成');
       logger.debug('stdout:', stdout);
       logger.debug('stderr:', stderr);
 
       if (error) {
-        status = 'failed';
-        errorMessage = error.message;
         logger.error('zgrab2执行错误:', error.message);
-        logger.error(`zgrab2执行错误: ${error.message}`);
       }
 
-      // 更新任务状态
-      logger.debug('更新任务状态:', { status, errorMessage, taskId });
-      db.query(`
-        UPDATE tasks
-        SET status = ?,
-            error_message = ?,
-            completed_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `, [status, errorMessage, taskId]).catch(err => {
-        logger.error('更新任务状态失败:', err);
+      // 已被用户取消的任务保持 canceled，不会被改写
+      taskService.markTaskFinished(taskId, {
+        status: error ? 'failed' : 'completed',
+        errorMessage: error ? error.message : null,
+        exitCode: error ? (typeof error.code === 'number' ? error.code : null) : 0,
+        signal: error ? error.signal || null : null
+      }).catch(err => {
         logger.error('更新任务状态失败:', err);
       });
     });
+
+    await taskService.markTaskRunning(taskId, childProcess.pid);
 
     // 存储进程引用以便后续取消
     if (!global.zgrab2Processes) {
@@ -393,7 +386,7 @@ exports.cancelTask = async (req, res) => {
 
     // 检查任务是否存在且属于当前用户
     const [tasks] = await db.query(`
-      SELECT status FROM tasks
+      SELECT status, pid FROM tasks
       WHERE id = ? AND user_id = ? AND task_type = 'zgrab2'
     `, [taskId, userId]);
 
@@ -410,15 +403,19 @@ exports.cancelTask = async (req, res) => {
     const task = tasks[0];
     logger.debug('任务状态:', task.status);
 
-    if (task.status !== 'running') {
-      logger.warn('任务不在运行状态，无法取消');
+    if (!['pending', 'running'].includes(task.status)) {
+      logger.warn('任务已结束，无法取消');
       return res.status(400).json({
         success: false,
         message: '任务不在运行状态，无法取消'
       });
     }
 
-    // 终止进程
+    // 先把状态置为 canceled 再发信号：进程被终止后执行的回调不会再把它改写成 failed
+    // （此前写成了 'cancelled'，不在 tasks.status 枚举里，数据库会拒绝或写成空串）
+    await taskService.markTaskCanceled(Number(taskId));
+
+    // 终止进程：优先用本进程持有的句柄；服务重启后没有句柄时，按数据库里的 pid 终止
     logger.debug('检查进程是否存在，taskId:', taskId);
     if (global.zgrab2Processes && global.zgrab2Processes.has(taskId)) {
       logger.debug('找到进程，正在终止...');
@@ -427,16 +424,13 @@ exports.cancelTask = async (req, res) => {
       global.zgrab2Processes.delete(taskId);
       logger.info('进程已终止');
     } else {
-      logger.debug('未找到运行中的进程');
+      // markTaskCanceled 会清空 pid，所以 pid 取自上面查询到的任务记录
+      if (task.pid && taskService.signalTaskProcess(task.pid, Number(taskId), 'SIGTERM')) {
+        logger.info(`已按 pid ${task.pid} 终止任务 ${taskId}`);
+      } else {
+        logger.debug('未找到运行中的进程');
+      }
     }
-
-    // 更新任务状态
-    logger.debug('更新任务状态为cancelled');
-    await db.query(`
-      UPDATE tasks
-      SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [taskId]);
 
     logger.info('任务取消成功');
     res.json({

@@ -867,7 +867,7 @@ CREATE TABLE `tasks` (
   `user_id` int NOT NULL COMMENT '发起任务的用户ID',
   `command` text COMMENT '执行的命令（如 xmap -6）',
   `description` varchar(255) DEFAULT NULL COMMENT '任务描述',
-  `task_type` varchar(20) DEFAULT NULL COMMENT '任务类型（如xmap、zgrab2等）',
+  `task_type` varchar(32) DEFAULT NULL COMMENT '任务类型（如xmap、zgrab2等）',
   `status` enum('pending','running','completed','failed','canceled') NOT NULL DEFAULT 'pending',
   `error_message` text COMMENT '错误信息',
   `log_path` varchar(255) DEFAULT NULL COMMENT '日志文件路径',
@@ -877,8 +877,14 @@ CREATE TABLE `tasks` (
   `completed_at` timestamp NULL DEFAULT NULL COMMENT '完成时间',
   `exit_code` int DEFAULT NULL COMMENT '进程退出码',
   `process_signal` varchar(20) DEFAULT NULL COMMENT '进程终止信号',
+  `pid` int DEFAULT NULL COMMENT '子进程PID（运行中才有意义）',
+  `priority` int NOT NULL DEFAULT '0' COMMENT '调度优先级，数值大的先执行',
+  `params` json DEFAULT NULL COMMENT '创建任务时的原始参数',
+  `queued_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '进入队列的时间',
+  `started_at` timestamp NULL DEFAULT NULL COMMENT '开始运行的时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_status` (`user_id`,`status`),
+  KEY `idx_status_type` (`status`,`task_type`),
   CONSTRAINT `tasks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1751989268046 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='任务记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;

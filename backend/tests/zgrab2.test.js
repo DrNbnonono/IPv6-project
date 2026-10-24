@@ -216,3 +216,100 @@ describe('createTask 可执行文件缺失', () => {
     expect(freshDb.query.mock.calls.filter(([sql]) => /INSERT INTO tasks/.test(sql))).toHaveLength(0);
   });
 });
+
+const sqlCalls = (pattern) => db.query.mock.calls.filter(([sql]) => pattern.test(sql));
+
+describe('任务生命周期（taskService）', () => {
+  test('先写 pending 记录，execFile 返回后记录 pid 并置为 running', async () => {
+    installDb({ byName: inputPath });
+    await controller.createTask(request({}), createRes());
+
+    expect(insertCalls()[0][1][4]).toBe('pending');
+    const running = sqlCalls(/SET status = 'running'/);
+    expect(running).toHaveLength(1);
+    expect(running[0][1][0]).toBe(4321); // mockExecFile 返回的 pid
+  });
+
+  test('进程结束回调：成功 → completed；失败 → failed 并带退出码', async () => {
+    installDb({ byName: inputPath });
+    await controller.createTask(request({}), createRes());
+    const callback = mockExecFile.mock.calls[0][2];
+
+    db.query.mockClear();
+    callback(null, '', '');
+    await new Promise(setImmediate);
+    expect(sqlCalls(/UPDATE tasks/)[0][1].slice(0, 4)).toEqual(['completed', null, 0, null]);
+
+    db.query.mockClear();
+    callback(Object.assign(new Error('Command failed'), { code: 1 }), '', '');
+    await new Promise(setImmediate);
+    expect(sqlCalls(/UPDATE tasks/)[0][1].slice(0, 4)).toEqual(['failed', 'Command failed', 1, null]);
+  });
+});
+
+describe('取消任务', () => {
+  const cancel = async (taskId = '777') => {
+    const res = createRes();
+    await controller.cancelTask({ user: { id: 5 }, params: { taskId } }, res);
+    return res;
+  };
+
+  test('状态写成 canceled（单个 l，匹配数据库枚举），并终止本进程持有的子进程', async () => {
+    const kill = jest.fn();
+    global.zgrab2Processes = new Map([['777', { kill }]]);
+    db.query.mockImplementation(async (sql) => (/SELECT status, pid/.test(sql) ? [[{ status: 'running', pid: 4321 }]] : [{ affectedRows: 1 }]));
+
+    const res = await cancel('777');
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    const update = sqlCalls(/UPDATE tasks/)[0];
+    expect(update[1].slice(0, 2)).toEqual(['canceled', '用户手动终止']);
+    expect(JSON.stringify(db.query.mock.calls)).not.toContain('cancelled');
+  });
+
+  test('pending 的任务也可以取消', async () => {
+    global.zgrab2Processes = new Map();
+    db.query.mockImplementation(async (sql) => (/SELECT status, pid/.test(sql) ? [[{ status: 'pending', pid: null }]] : [{ affectedRows: 1 }]));
+    const res = await cancel('778');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  test('服务重启后没有句柄：按数据库里的 pid 终止真实进程（命令行含任务 ID 才会发信号）', async () => {
+    // 模块被 mock 了 child_process，这里取真实的 spawn；GNU sleep 接受多个时长参数，这里只是让命令行带上任务 ID
+    const { spawn: realSpawn } = jest.requireActual('child_process');
+    const child = realSpawn('sleep', ['60', '779']);
+    const closed = new Promise((resolve) => child.on('close', (code, signal) => resolve(signal)));
+    global.zgrab2Processes = new Map();
+    db.query.mockImplementation(async (sql) => (/SELECT status, pid/.test(sql) ? [[{ status: 'running', pid: child.pid }]] : [{ affectedRows: 1 }]));
+
+    try {
+      await cancel('779');
+      expect(await closed).toBe('SIGTERM');
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+
+  test('pid 被复用（命令行不含任务 ID）时不会误杀其他进程', async () => {
+    const { spawn: realSpawn } = jest.requireActual('child_process');
+    const child = realSpawn('sleep', ['60']);
+    global.zgrab2Processes = new Map();
+    db.query.mockImplementation(async (sql) => (/SELECT status, pid/.test(sql) ? [[{ status: 'running', pid: child.pid }]] : [{ affectedRows: 1 }]));
+
+    try {
+      await cancel('781');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(child.exitCode).toBeNull();
+      expect(child.signalCode).toBeNull();
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+
+  test('已结束的任务不能取消', async () => {
+    db.query.mockImplementation(async () => [[{ status: 'completed', pid: null }]]);
+    const res = await cancel('780');
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+});

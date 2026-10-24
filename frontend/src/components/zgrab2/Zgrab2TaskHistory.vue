@@ -120,6 +120,7 @@ const getStatusText = (status) => {
     'running': '运行中',
     'completed': '已完成',
     'failed': '失败',
+    'canceled': '已取消',
     'cancelled': '已取消'
   }
   return statusMap[status] || status
