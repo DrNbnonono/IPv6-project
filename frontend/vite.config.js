@@ -8,7 +8,10 @@ export default defineConfig(({ command }) => {
     assetsInclude: ['**/*.tif', '**/*.tiff'], // 添加 .tif 和 .tiff
     resolve: {
       alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url))
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+        // vue-i18n 12 alpha 的默认入口声明了 sideEffects:false，生产构建会把"注册消息编译器"的语句摇掉，
+        // 导致所有 t()/$t() 直接返回 key。生产构建改用自带编译器的完整浏览器构建。
+        ...(command === 'build' ? { 'vue-i18n': 'vue-i18n/dist/vue-i18n.esm-browser.prod.js' } : {})
       }
     },
     server: {
