@@ -588,6 +588,16 @@ export default {
     }
   },
 
+  // 探针说明与退出渠道（公开，无需登录）
+  optOut: {
+    getInfo() {
+      return apiClient.get('/opt-out/info');
+    },
+    submit(data) {
+      return apiClient.post('/opt-out', data);
+    }
+  },
+
   // 文件管理API
   // 管理员接口：扫描策略、用户配额、审计日志（后端强制要求管理员）
   admin: {
@@ -605,6 +615,15 @@ export default {
     },
     removeBlacklistEntry(id) {
       return apiClient.delete(`/admin/scan-blacklist/${id}`);
+    },
+    getOptOutRequests(params) {
+      return apiClient.get('/admin/opt-out-requests', { params });
+    },
+    approveOptOutRequest(id, data) {
+      return apiClient.post(`/admin/opt-out-requests/${id}/approve`, data);
+    },
+    rejectOptOutRequest(id, data) {
+      return apiClient.post(`/admin/opt-out-requests/${id}/reject`, data);
     },
     getQuotas() {
       return apiClient.get('/admin/quotas');
