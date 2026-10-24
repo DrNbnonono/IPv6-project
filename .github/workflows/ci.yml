@@ -93,6 +93,13 @@ jobs:
           node scripts/demoSnapshot.js create ci-snap
           mysql -h 127.0.0.1 -u"$DB_USER" ipv6_project -e "DELETE FROM users"
           test "$(count)" = "0"
+          # MySQL 8 默认开二进制日志，普通账号建触发器需要 log_bin_trust_function_creators=1：
+          # 预检应当在动手前拒绝（退出码 1），并且不改动数据库
+          if node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project; then
+            echo "未设置 log_bin_trust_function_creators 时还原应当被预检拒绝"; exit 1
+          fi
+          test "$(count)" = "0"
+          MYSQL_PWD=root mysql -h 127.0.0.1 -uroot -e "SET GLOBAL log_bin_trust_function_creators=1"
           node scripts/demoSnapshot.js restore ci-snap --confirm-db ipv6_project
           test "$(count)" = "$before"
           node scripts/demoSnapshot.js list | grep -q ci-snap
