@@ -143,6 +143,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
 | `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL` | `minimax` | LLM 提供商与密钥，详见 `.env.example` |
 | `AGENT_NATIVE_TOOLS` | `true` | Agent 使用模型原生工具调用；`false` 退回关键词意图识别。有副作用的工具无论哪种方式都需用户确认 |
+| `AGENT_MAX_TOOL_CALLS` | `3` | 模型一次回复里最多处理几个工具调用（1–10），多出的不处理 |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |
 | `BCRYPT_ROUNDS` `ALLOW_LEGACY_PASSWORDS` | `10` `true` | 密码哈希强度；执行 `scripts/migratePasswords.js` 后请设为 `false` |
 
