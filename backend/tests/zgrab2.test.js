@@ -46,6 +46,7 @@ beforeAll(() => {
   tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'observ6-zgrab2-')));
   process.env.PROJECT_ROOT = tmpRoot;
   process.env.ZGRAB2_BIN = process.execPath; // 任意存在的可执行文件
+  process.env.SCAN_ALLOWED_TARGETS = '2001:db8::/32'; // 扫描策略默认拒绝，测试里放行文档网段
   jest.resetModules();
   db = require('../database/db');
   service = require('../services/zgrab2CommandService');
@@ -62,6 +63,7 @@ beforeAll(() => {
 afterAll(() => {
   delete process.env.PROJECT_ROOT;
   delete process.env.ZGRAB2_BIN;
+  delete process.env.SCAN_ALLOWED_TARGETS;
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -203,6 +205,73 @@ describe('createTask 输入文件路径', () => {
     installDb({ byName: '/home/ipv6/IPv6-project/zgrab2_inputs/zgrab2_input_5_1.txt' });
     await controller.createTask(request({}), createRes());
     expect(queuedArgs()).toEqual(expect.arrayContaining(['-f', inputPath]));
+  });
+});
+
+describe('createTask 扫描策略', () => {
+  const run = async (body = {}) => {
+    const res = createRes();
+    await controller.createTask(request(body), res);
+    return res;
+  };
+
+  test('输入文件里有越界地址：403，指出行号，不入队', async () => {
+    const badPath = path.join(path.dirname(inputPath), 'zgrab2_input_5_bad.txt');
+    fs.writeFileSync(badPath, '2001:db8::1\n2001:db9::1\n');
+    installDb({ byName: badPath });
+    const res = await run({ inputFile: 'zgrab2_input_5_bad.txt' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].message).toMatch(/第 2 行/);
+    expect(insertCalls()).toHaveLength(0);
+  });
+
+  test('输入文件含域名行：403', async () => {
+    const domainPath = path.join(path.dirname(inputPath), 'zgrab2_input_5_domain.txt');
+    fs.writeFileSync(domainPath, 'example.com\n');
+    installDb({ byName: domainPath });
+    const res = await run({ inputFile: 'zgrab2_input_5_domain.txt' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(insertCalls()).toHaveLength(0);
+  });
+
+  test('ip,domain 格式的行按第一列检查，通过时正常入队', async () => {
+    const mixedPath = path.join(path.dirname(inputPath), 'zgrab2_input_5_mixed.txt');
+    fs.writeFileSync(mixedPath, '2001:db8::1,example.com\n2001:db8:1::/48\n');
+    installDb({ byName: mixedPath });
+    await run({ inputFile: 'zgrab2_input_5_mixed.txt' });
+    expect(insertCalls()).toHaveLength(1);
+  });
+
+  test('没有配置白名单（默认拒绝）：403', async () => {
+    const saved = process.env.SCAN_ALLOWED_TARGETS;
+    delete process.env.SCAN_ALLOWED_TARGETS;
+    try {
+      installDb({ byName: inputPath });
+      const res = await run();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(insertCalls()).toHaveLength(0);
+    } finally {
+      process.env.SCAN_ALLOWED_TARGETS = saved;
+    }
+  });
+
+  test('每日配额用尽：403', async () => {
+    installDb({ byName: inputPath });
+    const base = db.query.getMockImplementation();
+    db.query.mockImplementation(async (sql, params) => (
+      /SELECT COUNT\(\*\)/.test(sql) ? [[{ count: 100 }]] : base(sql, params)
+    ));
+    const res = await run();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].message).toMatch(/每日上限/);
+    expect(insertCalls()).toHaveLength(0);
+  });
+
+  test('策略检查发生在写任务记录之前，且不会影响通过时的 200 响应', async () => {
+    installDb({ byName: inputPath });
+    const res = await run();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].success).toBe(true);
   });
 });
 

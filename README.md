@@ -71,6 +71,8 @@ ObserV6 把 IPv6 的**主动探测**（XMap 活跃性扫描、ZGrab2 服务探�
 | `terminalPolicyService.js` / `terminalService.js` | 终端命令白名单、参数规则、目录范围（`TERMINAL_JAIL_ROOT`）、会话 |
 | `agentService.js` / `llmService.js` / `toolService.js` / `memoryService.js` | Agent 编排、LLM 抽象、工具注册、记忆 |
 | `taskService.js` / `schedulerService.js` | 任务记录与状态流转、启动对账；按并发上限调度 pending 任务 |
+| `scanPolicyService.js` / `cidrService.js` | 扫描策略（白名单、黑名单、速率与每日配额、目标文件逐行检查）；IPv4/IPv6 CIDR 的解析、包含与相交 |
+| `auditService.js` | 审计日志的写入（绝不抛出、自动脱敏）与查询 |
 | `workflowEngine.js` | 工作流执行引擎 |
 | `loggerService.js` | 统一日志（winston），自动脱敏 token / 密码 / Authorization / API Key |
 
@@ -131,6 +133,8 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `PROJECT_ROOT` | 仓库根目录 | 数据目录根（`xmap_result`、`zgrab2_*`、`whitelists`、`backend_logs` 等都在其下） |
 | `TERMINAL_JAIL_ROOT` | 仓库根目录 | 终端可访问的目录范围 |
 | `MAX_CONCURRENT_XMAP` `MAX_CONCURRENT_ZGRAB2` `MAX_CONCURRENT_PER_USER` | `2` `4` `3` | 任务并发上限：创建任务只是入队，调度器按上限启动，超出的排队（`pending`） |
+| `SCAN_ALLOWED_TARGETS` | 空（默认拒绝） | 允许扫描的地址/CIDR，逗号分隔；与管理员在 `/api/admin/scan-allowlist` 维护的表取并集。**不配置则任何扫描都被拒绝** |
+| `SCAN_MAX_RATE` `SCAN_DEFAULT_RATE` `SCAN_DAILY_LIMIT` | `100M` `10M` `100` | xmap 单任务速率上限 / 未指定时的默认速率 / 每用户每天可创建的扫描任务数；可在 `/api/admin/quotas` 按用户覆盖 |
 | `XMAP_BIN` `XMAP_USE_SUDO` `ZGRAB2_BIN` | `xmap` `true` — | 扫描工具位置；容器内用 file capabilities 时 `XMAP_USE_SUDO=false` |
 | `AI_PROVIDER` 及各厂商 `*_API_KEY` `*_MODEL` `*_BASE_URL` | `minimax` | LLM 提供商与密钥，详见 `.env.example` |
 | `LOG_LEVEL` | `info` | `error / warn / info / debug`；调试输出为 debug 级别 |
@@ -150,6 +154,7 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 | `/zgrab2` | 探测任务、模块、日志、结果 | 登录 |
 | `/workflows` | 工作流 CRUD、执行与控制 | 登录 |
 | `/agent` | 对话、工具、终端、记忆 | `status` / `welcome` 公开，其余登录；有副作用的工具需 `confirmed: true` |
+| `/admin` | 扫描白名单/黑名单、用户配额、审计日志查询、用户列表 | 管理员 |
 | `/database` | 统计、高级查询、国家 / ASN / 前缀 / 协议 / 漏洞管理、导入 | 查询登录；增删改与批量更新需管理员 |
 | `/files` `/jsonanalysis` | 文件、JSON 解析 | 登录 |
 | `/docs` | 帮助文档 | 读取公开，编辑需管理员 |
@@ -159,6 +164,8 @@ cd ../frontend && npm ci && npm run dev    # 前端，默认 5173，/api 代理�
 - **鉴权**：JWT + bcrypt；`authenticate` / `requireAdmin` 在路由层声明；`tests/routeGuards.test.js` 校验数据库管理与文档编辑的写接口都挂有 `requireAdmin`。
 - **输入**：SQL 经 `sqlGuardService` 与 `queryBuilderService`（参数化）；文件路径经 `safeJoin`，不接受穿越；扫描参数走白名单，子进程用 `execFile`，不经过 shell。
 - **Agent**：大模型发起的工具调用**永远**以未确认状态执行，只有用户在界面上点击确认（`/agent/tools/execute`，严格 `confirmed === true`）才会真正运行扫描或终端命令。
+- **扫描策略**：创建 xmap / zgrab2 任务前检查（`scanPolicyService`）——目标必须完整落在白名单内（默认拒绝），回环/组播/链路本地（含 `169.254.0.0/16` 云元数据）等地址永远拒绝，黑名单与目标有交集即拒绝，域名不被接受；xmap 速率有上限，每用户有每日任务数上限；白名单文件只能使用自己上传的，且文件内每行都要过策略。策略只在创建任务时检查，排队期间名单变化不会重新检查。
+- **审计**：登录、任务创建/取消/删除、白名单文件、Agent 工具执行、终端命令、工作流执行、数据库写操作和管理员对策略/配额的修改都会写入 `audit_logs`（敏感字段脱敏），管理员可在 `/api/admin/audit-logs` 查询。
 - **终端**：命令白名单 + 每个命令的参数规则 + 目录范围（`TERMINAL_JAIL_ROOT`）；不含 `rm`、`mv`、`sed`、`awk`、`find`、`wget` 等；超时上限 5 分钟，输出有缓冲上限。
 - **传输与限流**：helmet、`CORS_ORIGINS`、请求体限制、登录 / 全局 / AI 三级限流。
 - **日志**：统一经 `loggerService`，自动遮蔽 token、密码、Authorization、Cookie、API Key；数据库连接失败只记录 `user@host:port/db`，不记录密码。

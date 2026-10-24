@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const zgrab2Controller = require('../controllers/zgrab2Controller');
 const { authenticate } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 
 // 获取支持的模块列表 (需要放在动态路由之前)
 router.get('/modules', authenticate, zgrab2Controller.getSupportedModules);
@@ -13,10 +14,18 @@ router.get('/modules', authenticate, zgrab2Controller.getSupportedModules);
 // 获取文件内容: GET /files/:id/content
 
 // 创建zgrab2任务
-router.post('/', authenticate, zgrab2Controller.createTask);
+router.post('/', authenticate, audit('task.create', {
+  resourceType: 'zgrab2_task',
+  resourceId: (req, res, body) => body && body.taskId,
+  detail: (req, res, body) => ({
+    module: req.body && req.body.module,
+    inputFile: req.body && req.body.inputFile,
+    reason: body && body.success === false ? body.message : undefined
+  })
+}), zgrab2Controller.createTask);
 
 // 取消任务
-router.post('/cancel/:taskId', authenticate, zgrab2Controller.cancelTask);
+router.post('/cancel/:taskId', authenticate, audit('task.cancel', { resourceType: 'zgrab2_task', resourceId: (req) => req.params.taskId }), zgrab2Controller.cancelTask);
 
 // 获取zgrab2任务列表
 router.get('/tasks', authenticate, zgrab2Controller.getTasks);
@@ -37,6 +46,6 @@ router.get('/result/:taskId', authenticate, zgrab2Controller.downloadResult);
 router.get('/log/:taskId', authenticate, zgrab2Controller.downloadLog);
 
 // 删除任务
-router.delete('/:taskId', authenticate, zgrab2Controller.deleteTask);
+router.delete('/:taskId', authenticate, audit('task.delete', { resourceType: 'zgrab2_task', resourceId: (req) => req.params.taskId }), zgrab2Controller.deleteTask);
 
 module.exports = router;

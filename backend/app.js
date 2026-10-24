@@ -22,6 +22,7 @@ const jsonanalysisRouter = require('./routes/jsonanalysis'); // JSON分析路由
 const workflowRouter = require('./routes/workflows'); // 工作流路由
 const aichatRouter = require('./routes/aichat'); // AI聊天路由
 const agentRouter = require('./routes/agent'); // Agent路由
+const adminRouter = require('./routes/admin'); // 管理员路由（扫描策略/配额/审计）
 const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
@@ -84,6 +85,7 @@ app.use('/api/jsonanalysis', jsonanalysisRouter);
 app.use('/api/workflows', workflowRouter);
 app.use('/api/ai', aichatRouter); // AI聊天路由
 app.use('/api/agent', agentRouter); // Agent路由
+app.use('/api/admin', adminRouter);
 app.use('/api/docs', docRouter)
 // 测试接口
 app.get('/api/test', (req, res) => {

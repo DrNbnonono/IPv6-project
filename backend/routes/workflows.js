@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const workflowController = require('../controllers/workflowController');
 const { authenticate } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 
 // 公开访问的路由（不需要认证）
 router.get('/node-types', workflowController.getNodeTypes);         // 获取支持的节点类型
@@ -18,7 +19,7 @@ router.put('/:id', workflowController.updateWorkflow);              // 更新工
 router.delete('/:id', workflowController.deleteWorkflow);           // 删除工作流
 
 // 工作流执行
-router.post('/:id/execute', workflowController.executeWorkflow);    // 执行工作流
+router.post('/:id/execute', audit('workflow.execute', { resourceType: 'workflow', resourceId: (req) => req.params.id }), workflowController.executeWorkflow);    // 执行工作流
 router.get('/:id/executions', workflowController.getExecutions);    // 获取执行历史
 router.get('/executions/:executionId', workflowController.getExecutionDetails); // 获取执行详情
 router.post('/executions/:executionId/cancel', workflowController.cancelExecution); // 取消执行

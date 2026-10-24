@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
+  runMysql,
   listMigrations,
   planMigrations,
   parseArgs,
@@ -173,6 +174,18 @@ exit 0
     fs.writeFileSync(stateFile, '08-a\tdeadbeef\n');
     expect(await main([], env(), dir)).toBe(1);
     expect(errSpy.mock.calls.flat().join('\n')).toContain('08-a.sql');
+  });
+
+  test('客户端读取 stdin 之前就退出（EPIPE）：返回退出码和错误输出，而不是崩溃', async () => {
+    // 4MB 的 SQL 远大于管道缓冲，客户端立即退出时写入必然得到 EPIPE（此前这是一个偶发失败）
+    process.env.FAIL_CONNECT = '1';
+    try {
+      const result = await runMysql({ sql: 'SELECT 1;\n'.repeat(400000), env: env() });
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('cannot connect');
+    } finally {
+      delete process.env.FAIL_CONNECT;
+    }
   });
 
   test('无法连接数据库时返回 2', async () => {

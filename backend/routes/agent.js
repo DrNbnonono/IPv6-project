@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const agentController = require('../controllers/agentController');
 const { authenticate } = require('../middleware/auth');
+const { audit } = require('../middleware/audit');
 
 // 公开路由（获取状态和欢迎消息）
 router.get('/status', agentController.getStatus);
@@ -14,7 +15,15 @@ router.get('/welcome', agentController.getWelcome);
 // 需要认证的路由
 router.post('/chat', authenticate, agentController.chat);
 router.get('/tools', authenticate, agentController.getTools);
-router.post('/tools/execute', authenticate, agentController.executeTool);
+router.post('/tools/execute', authenticate, audit('agent.tool', {
+  resourceType: 'agent_tool',
+  resourceId: (req) => req.body && req.body.toolName,
+  detail: (req, res, body) => ({
+    toolName: req.body && req.body.toolName,
+    confirmed: Boolean(req.body && req.body.confirmed === true),
+    needsConfirmation: Boolean(body && body.needsConfirmation)
+  })
+}), agentController.executeTool);
 router.post('/workflow/generate', authenticate, agentController.generateWorkflow);
 
 // 记忆管理路由
@@ -26,10 +35,14 @@ router.delete('/memory', authenticate, agentController.clearMemory);
 // 终端管理路由
 router.get('/terminals', authenticate, agentController.getAllTerminals);
 router.get('/terminal/allowed-commands', authenticate, agentController.getAllowedCommands);
-router.post('/terminal', authenticate, agentController.createTerminal);
+router.post('/terminal', authenticate, audit('terminal.create', { resourceType: 'terminal' }), agentController.createTerminal);
 router.get('/terminal/:id', authenticate, agentController.getTerminal);
 router.delete('/terminal/:id', authenticate, agentController.closeTerminal);
 router.get('/terminal/:id/history', authenticate, agentController.getTerminalHistory);
-router.post('/terminal/execute', authenticate, agentController.executeCommand);
+router.post('/terminal/execute', authenticate, audit('terminal.execute', {
+  resourceType: 'terminal',
+  resourceId: (req) => req.body && req.body.terminalId,
+  detail: (req) => ({ command: req.body && req.body.command })
+}), agentController.executeCommand);
 
 module.exports = router;

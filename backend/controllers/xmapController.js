@@ -8,6 +8,7 @@ const { DIRS, safeJoin } = require('../services/storageService');
 const { buildXmapInvocation, buildPrivileged } = require('../services/xmapCommandService');
 const taskService = require('../services/taskService');
 const scheduler = require('../services/schedulerService');
+const scanPolicy = require('../services/scanPolicyService');
 const logDir = DIRS.backendLogs;
 const XMAP_LOG_DIR = DIRS.xmapLog;
 const XMAP_RESULT_DIR = DIRS.xmapResult;
@@ -418,17 +419,61 @@ const buildXmapArgs = (body, { logFile, resultFile }) => {
  * 创建扫描任务：只做校验并入队（pending），由调度器按并发上限启动
  * POST /api/xmap
  */
+/**
+ * 按扫描策略审查请求，返回要实际使用的 body；不通过时抛出带 status 的错误。
+ * - help（-h）只打印帮助，不发包：忽略目标与白名单，不占用每日配额；
+ * - 否则必须给出目标（targetaddress 或自己的白名单文件），目标需落在策略白名单内，速率不得超过上限；
+ * - 白名单文件必须是当前用户自己上传、未删除的文件（N7：此前任何登录用户都可以按文件名使用他人的文件），
+ *   并且文件内每一行都要通过策略检查。
+ */
+const applyScanPolicy = async (user, body) => {
+  if (body.help) {
+    return { help: true, description: body.description };
+  }
+
+  const denied = (reason) => Object.assign(new Error(reason), { status: 403 });
+  const hasWhitelist = Boolean(body.whitelistFile);
+  const hasTarget = Boolean(body.targetaddress);
+
+  const verdict = await scanPolicy.validateScanRequest({
+    user,
+    taskType: 'xmap',
+    targets: hasTarget ? body.targetaddress : [],
+    rate: body.rate,
+    requireTargets: !hasWhitelist
+  });
+  if (!verdict.allowed) throw denied(verdict.reason);
+
+  if (hasWhitelist) {
+    const [owned] = await db.query(
+      'SELECT id FROM whitelists WHERE file_name = ? AND user_id = ? AND is_deleted = 0 LIMIT 1',
+      [String(body.whitelistFile), user.id]
+    );
+    if (!owned || owned.length === 0) throw denied('白名单文件不存在或不属于你');
+
+    const whitelistPath = safeJoin(WHITELIST_DIR, String(body.whitelistFile));
+    if (!fs.existsSync(whitelistPath)) throw new Error('白名单文件不存在');
+    const fileVerdict = await scanPolicy.validateTargetFile({ user, filePath: whitelistPath });
+    if (!fileVerdict.allowed) throw denied(`白名单${fileVerdict.reason}`);
+  }
+
+  const next = { ...body, rate: verdict.normalized.rate };
+  if (verdict.normalized.targets.length > 0) next.targetaddress = verdict.normalized.targets.join(',');
+  return next;
+};
+
 exports.scan = async (req, res) => {
   const userId = req.user.id;
   const { description } = req.body;
 
   try {
     validateXmapParams(req.body);
+    const body = await applyScanPolicy(req.user, req.body);
 
     const taskId = taskService.nextTaskId();
     const logFile = path.join(XMAP_LOG_DIR, `${taskId}.csv`);
     const resultFile = path.join(XMAP_RESULT_DIR, `${taskId}.json`);
-    const args = buildXmapArgs(req.body, { logFile, resultFile });
+    const args = buildXmapArgs(body, { logFile, resultFile });
 
     // 这里的 display 只用于任务记录里展示命令；真正启动时由 runXmapTask 按当时的 XMAP_BIN / XMAP_USE_SUDO 重新生成
     const invocation = buildXmapInvocation(args);
@@ -466,7 +511,7 @@ exports.scan = async (req, res) => {
       params: req.body
     });
 
-    res.status(400).json({
+    res.status(error.status || 400).json({
       success: false,
       message: '任务创建失败: ' + error.message
     });

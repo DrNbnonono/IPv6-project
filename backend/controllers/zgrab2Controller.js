@@ -12,6 +12,7 @@ const ITEMS_PER_PAGE = 20;
 const { PROJECT_ROOT, DIRS, resolveStoredPath } = require('../services/storageService');
 const taskService = require('../services/taskService');
 const scheduler = require('../services/schedulerService');
+const scanPolicy = require('../services/scanPolicyService');
 const {
   ZGRAB2_BIN,
   Zgrab2ArgsError,
@@ -237,6 +238,19 @@ exports.createTask = async (req, res) => {
     }
 
     logger.debug('输入文件验证通过');
+
+    // 扫描策略：输入文件里的每个目标都必须在白名单内，并计入每日配额（zgrab2 不检查速率）
+    const quotaVerdict = await scanPolicy.validateScanRequest({
+      user: req.user, taskType: 'zgrab2', targets: [], requireTargets: false
+    });
+    if (!quotaVerdict.allowed) {
+      return res.status(403).json({ success: false, message: quotaVerdict.reason });
+    }
+    const fileVerdict = await scanPolicy.validateTargetFile({ user: req.user, filePath: inputFilePathResolved });
+    if (!fileVerdict.allowed) {
+      logger.warn(`用户 ${userId} 的 zgrab2 输入文件未通过扫描策略: ${fileVerdict.reason}`);
+      return res.status(403).json({ success: false, message: `输入${fileVerdict.reason}` });
+    }
 
     let command;
     let commandArgs;
