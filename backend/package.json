@@ -67,6 +67,14 @@
         "lines": 90,
         "statements": 90
       },
+      "./services/tgaAlgorithms.js": {
+        "lines": 90,
+        "statements": 90
+      },
+      "./services/targetGenService.js": {
+        "lines": 90,
+        "statements": 90
+      },
       "./services/agentService.js": {
         "lines": 85,
         "statements": 85

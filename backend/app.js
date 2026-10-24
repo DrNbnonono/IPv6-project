@@ -24,6 +24,7 @@ const aichatRouter = require('./routes/aichat'); // AI聊天路由
 const agentRouter = require('./routes/agent'); // Agent路由
 const adminRouter = require('./routes/admin'); // 管理员路由（扫描策略/配额/审计）
 const apdRouter = require('./routes/apd'); // 别名前缀检测
+const tgaRouter = require('./routes/tga'); // 目标生成
 const { apiLimiter } = require('./middleware/rateLimit');
 const { ensureDirs, PROJECT_ROOT } = require('./services/storageService');
 const { createModuleLogger } = require('./services/loggerService');
@@ -88,6 +89,7 @@ app.use('/api/ai', aichatRouter); // AI聊天路由
 app.use('/api/agent', agentRouter); // Agent路由
 app.use('/api/admin', adminRouter);
 app.use('/api/apd', apdRouter);
+app.use('/api/tga', tgaRouter);
 app.use('/api/docs', docRouter)
 // 测试接口
 app.get('/api/test', (req, res) => {
