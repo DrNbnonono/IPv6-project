@@ -169,7 +169,6 @@
   
   <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import axios from 'axios';
 import api from '@/api';
 import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
   const props = defineProps({
@@ -257,16 +256,14 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
   const loadCountries = async () => {
     try {
       console.log('开始加载国家数据...');
-      const response = await axios.get('/api/addresses/countries/ranking', {
-        params: { limit: 250 }
-      });
+      const response = await api.detection.getCountryRanking({ limit: 250 });
       
-      if (!response.data || !response.data.data) {
+      if (!response || !response.data) {
         console.error('国家数据响应格式错误:', response);
         throw new Error('国家数据响应格式错误');
       }
       
-      countries.value = response.data.data;
+      countries.value = response.data;
       console.log(`成功加载${countries.value.length}个国家`);
     } catch (error) {
       console.error('加载国家数据失败:', error);
@@ -278,16 +275,14 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
   const loadAsns = async () => {
     try {
       console.log('开始加载ASN数据...');
-      const response = await axios.get('/api/addresses/asns/ranking', {
-        params: { limit: 250 }
-      });
+      const response = await api.detection.getAsnRanking({ limit: 250 });
       
-      if (!response.data || !response.data.data) {
+      if (!response || !response.data) {
         console.error('ASN数据响应格式错误:', response);
         throw new Error('ASN数据响应格式错误');
       }
       
-      asns.value = response.data.data;
+      asns.value = response.data;
       filteredAsns.value = asns.value;
       console.log(`成功加载${asns.value.length}个ASN`);
     } catch (error) {
@@ -300,14 +295,14 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
   const loadIIDTypes = async () => {
     try {
       console.log('开始加载IID类型...');
-      const response = await axios.get('/api/database/address-types');
+      const response = await api.database.getIIDTypes();
       
-      if (!response.data || !response.data.data) {
+      if (!response || !response.data) {
         console.error('IID类型响应格式错误:', response);
         throw new Error('IID类型响应格式错误');
       }
       
-      iidTypes.value = response.data.data;
+      iidTypes.value = response.data;
       console.log(`成功加载${iidTypes.value.length}个IID类型`);
     } catch (error) {
       console.error('加载IID类型失败:', error);
@@ -327,15 +322,15 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
     try {
       console.log(`加载ASN ${formData.value.asn} 的前缀...`);
       // 修改API路径为正确的路径
-      const response = await axios.get(`/api/database/asns/${formData.value.asn}/prefixes`);
+      const response = await api.database.getPrefixesByAsn(formData.value.asn);
       
-      if (!response.data || !response.data.data) {
+      if (!response || !response.data) {
         console.error('前缀数据响应格式错误:', response);
         prefixes.value = [];
         return;
       }
       
-      prefixes.value = response.data.data;
+      prefixes.value = response.data;
       console.log(`成功加载${prefixes.value.length}个前缀`);
     } catch (error) {
       console.error('加载前缀数据失败:', error);
@@ -347,14 +342,14 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
   const loadAsnsByCountry = async (countryId) => {
     try {
       console.log(`加载国家ID ${countryId} 的ASN...`);
-      const response = await axios.get(`/api/database/countries/${countryId}/asns`);
+      const response = await api.database.getAsnsByCountry(countryId);
       
-      if (!response.data || !response.data.data) {
+      if (!response || !response.data) {
         console.error('国家ASN响应格式错误:', response);
         return;
       }
       
-      filteredAsns.value = response.data.data;
+      filteredAsns.value = response.data;
       console.log(`成功加载${filteredAsns.value.length}个国家ASN`);
     } catch (error) {
       console.error(`加载国家ID ${countryId} 的ASN失败:`, error);
@@ -434,14 +429,12 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
     }
   
     try {
-      const response = await axios.get('/api/database/asns/search', {
-        params: {
-          query: asnSearch.value,
-          limit: 5,
-          country_id: formData.value.countryId || undefined
-        }
+      const response = await api.database.searchAsnList({
+        query: asnSearch.value,
+        limit: 5,
+        country_id: formData.value.countryId || undefined
       });
-      matchedAsns.value = response.data.data || [];
+      matchedAsns.value = response.data || [];
     } catch (error) {
       console.error('搜索ASN失败:', error);
       matchedAsns.value = [];
@@ -535,10 +528,10 @@ import { useDatabaseStore } from '@/stores/database';  // 添加这行导入
       if (formData.value.countryId) params.country_id = formData.value.countryId;
       if (formData.value.asn) params.asn = formData.value.asn;
       
-      const response = await axios.get('/api/addresses/prefixes/search', { params });
+      const response = await api.detection.searchPrefixes(params);
       
-      if (response.data && response.data.data) {
-        matchedPrefixes.value = response.data.data;
+      if (response && response.data) {
+        matchedPrefixes.value = response.data;
         console.log(`找到 ${matchedPrefixes.value.length} 个匹配前缀`);
       } else {
         matchedPrefixes.value = [];

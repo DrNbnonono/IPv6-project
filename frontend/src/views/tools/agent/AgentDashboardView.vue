@@ -244,6 +244,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useAgentStore } from '@/stores/agent'
+import api from '@/api'
 import AgentChatPanel from '@/components/agent/AgentChatPanel.vue'
 
 const agentStore = useAgentStore()
@@ -326,12 +327,7 @@ const executeSelectedTool = async () => {
 
 const refreshTerminals = async () => {
   try {
-    const response = await fetch('/api/agent/terminals', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    const data = await response.json()
+    const data = await api.agent.getTerminals()
     if (data.success) {
       terminals.value = data.terminals.terminals || []
       terminalCount.value = terminals.value.length
@@ -343,14 +339,7 @@ const refreshTerminals = async () => {
 
 const createNewTerminal = async () => {
   try {
-    const response = await fetch('/api/agent/terminal', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      }
-    })
-    const data = await response.json()
+    const data = await api.agent.createTerminal()
     if (data.success) {
       await refreshTerminals()
       selectTerminal(data.terminal.id)
@@ -366,12 +355,7 @@ const selectTerminal = (id) => {
 
 const closeTerminalById = async (id) => {
   try {
-    await fetch(`/api/agent/terminal/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
+    await api.agent.closeTerminal(id)
     await refreshTerminals()
     if (activeTerminalId.value === id) {
       activeTerminalId.value = null
@@ -385,23 +369,22 @@ const executeTerminalCommand = async () => {
   if (!terminalCommand.value.trim() || !activeTerminalId.value) return
 
   try {
-    const response = await fetch('/api/agent/terminal/execute', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    let data
+    try {
+      data = await api.agent.executeCommand({
         terminalId: activeTerminalId.value,
         command: terminalCommand.value
       })
-    })
-    const data = await response.json()
+    } catch (err) {
+      // 命令被策略拒绝等情况后端会返回非 2xx，但响应体里仍有可展示的信息
+      if (!err.response?.data) throw err
+      data = err.response.data
+    }
 
     terminalOutput.value += `\n$ ${terminalCommand.value}\n`
     if (data.stdout) terminalOutput.value += data.stdout
     if (data.stderr) terminalOutput.value += data.stderr
-    if (data.exitCode !== 0) terminalOutput.value += `\n[退出码: ${data.exitCode}]`
+    if (data.exitCode !== undefined && data.exitCode !== 0) terminalOutput.value += `\n[退出码: ${data.exitCode}]`
 
     terminalCommand.value = ''
 
@@ -420,12 +403,7 @@ const clearTerminalOutput = () => {
 
 const refreshMemorySummary = async () => {
   try {
-    const response = await fetch('/api/agent/memory/summary', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    const data = await response.json()
+    const data = await api.agent.getMemorySummary()
     if (data.success) {
       Object.assign(memorySummary, data.data)
     }
@@ -438,12 +416,7 @@ const clearAllMemory = async () => {
   if (!confirm('确定要清空所有记忆吗？此操作不可恢复。')) return
 
   try {
-    await fetch('/api/agent/memory', {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
+    await api.agent.clearMemory()
     await refreshMemorySummary()
   } catch (error) {
     console.error('清空记忆失败:', error)

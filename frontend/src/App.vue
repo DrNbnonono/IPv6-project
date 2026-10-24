@@ -11,7 +11,6 @@
 import { onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 // 路由
 const router = useRouter()
 
@@ -26,12 +25,6 @@ onMounted(() => {
 watch(router.currentRoute, (to) => {
   console.log('全局路由跳转:', to.path)
 }, { immediate: true })
-
-// 监听所有axios请求
-axios.interceptors.request.use(config => {
-  console.log('全局请求监控:', config.url, config.headers)
-  return config
-})
 </script>
 
 <style scoped>

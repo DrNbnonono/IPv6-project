@@ -1,59 +1,54 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
-const authStore = useAuthStore()
+
+// 后端 API 基址：开发环境走 Vite 代理（/api），生产环境由反向代理（nginx）转发（/api）。
+// 需要直连其他后端时，在 .env.local 中设置 VITE_API_BASE_URL。
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+
+const isDev = import.meta.env.DEV
+const debug = (...args) => {
+  if (isDev) console.debug('[api]', ...args)
+}
+
 // 创建 axios 实例
 const apiClient = axios.create({
-  baseURL: 'http://202.112.47.141:3000/api',
+  baseURL: API_BASE_URL,
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
-// 请求拦截器 - 添加 token 到请求头
+// 登录接口返回 401 表示凭证错误，不应触发"登录过期"的登出流程
+const isLoginRequest = config => config?.url === '/auth/login'
+
+// 请求拦截器 - 添加 token 到请求头（不记录 token 或请求头）
 apiClient.interceptors.request.use(config => {
   const authStore = useAuthStore()
-
-  console.group(`[Axios] 请求拦截器 ${config.url}`)
-  console.log('完整配置:', config)
-  console.log('请求头:', config.headers)
-  console.groupEnd()
   // 确保store已初始化
   if (!authStore.token && localStorage.getItem('token')) {
     authStore.init()
   }
-  console.log('[Axios] 正在处理请求:', config.url)
-  console.log('[Axios] 当前token:', authStore.token)
   if (authStore.token) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${authStore.token}`
-    console.log('已设置请求头:', config.headers)
   }
+  debug(config.method, config.url)
   return config
-}, error => {
-    console.log('[Axios] 请求错误:', error)
-  return Promise.reject(error)
-})
+}, error => Promise.reject(error))
 
 // 响应拦截器 - 处理未授权错误和统一响应格式
 apiClient.interceptors.response.use(response => {
-  console.log('[Axios] 响应成功:', response.config.url)
-  console.log('[Axios] 响应类型:', response.config.responseType)
-
   // 对于blob响应，返回完整的response对象
   if (response.config.responseType === 'blob') {
-    console.log('[Axios] Blob响应，返回完整response')
     return response
   }
-
-  console.log('[Axios] 响应数据:', response.data)
   return response.data
-}, async error => {
-  console.log('[Axios] 响应错误:', error.response?.status, error.response?.data)
+}, error => {
+  debug('请求失败', error.config?.url, error.response?.status)
 
-  // 处理401未授权错误
-  if (error.response?.status === 401) {
-    console.log('[Axios] 检测到401错误，执行登出操作')
+  // 处理401未授权错误（登录请求本身除外）
+  if (error.response?.status === 401 && !isLoginRequest(error.config)) {
     const authStore = useAuthStore()
 
     // 清除认证状态并跳转到登录页
@@ -80,8 +75,8 @@ export default {
   
   // XMap相关 API
   xmap: {
-    getTasks() {
-      return apiClient.get('/xmap/tasks')
+    getTasks(params) {
+      return apiClient.get('/xmap/tasks', { params })
     },
     startScan(params) {
       return apiClient.post('/xmap', params)
@@ -112,10 +107,9 @@ export default {
         }
       })
     },
-    getWhitelists() {
-      return apiClient.get('/xmap/whitelists')
-    },
-    
+    getWhitelists(params) {
+      return apiClient.get('/xmap/whitelists', { params })
+    }
   },
 
   // Zgrab2相关API
@@ -203,6 +197,10 @@ export default {
     },
 
     // 获取全球统计
+    // 搜索前缀（query、limit、country_id、asn）
+    searchPrefixes(params) {
+      return apiClient.get('/addresses/prefixes/search', { params })
+    },
     getGlobalStats(params = {}) {
       return apiClient.get('/addresses/global-stats', { params });
     },
@@ -273,6 +271,9 @@ export default {
     getList(lang) {
       return apiClient.get(`/docs/${lang}`)
     },
+    getToc(lang) {
+      return apiClient.get(`/docs/${lang}/toc`)
+    },
     getContent(lang, docId) {
       return apiClient.get(`/docs/${lang}/${docId}`)
     },
@@ -320,9 +321,6 @@ export default {
     },
     getVulnerabilityStats() {
       return apiClient.get('/database/vulnerability-stats');
-    },
-    advancedQuery(data) {
-      return apiClient.post('/database/advanced-query', data);
     },
     deleteAddresses(addressIds) {
       return apiClient.post('/database/delete-addresses', { addressIds });
@@ -459,11 +457,14 @@ export default {
       if (search) {
         urlParams.append('search', search);
       }
-      console.log(`API: 获取国家列表，参数: page=${page}, limit=${limit}, search=${search}`);
       return apiClient.get(`/database/countries?${urlParams.toString()}`);
     },
     searchPrefixes(query) {
       return apiClient.get(`/database/prefixes/search?query=${query}`);
+    },
+    // 按参数搜索 ASN（query、limit、country_id）
+    searchAsnList(params) {
+      return apiClient.get('/database/asns/search', { params });
     },
     getPrefixesByAsn(asn) {
       return apiClient.get(`/database/prefixes/by-asn/${asn}`);
