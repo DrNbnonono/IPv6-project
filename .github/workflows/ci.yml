@@ -1,8 +1,9 @@
 name: CI
 
+# 只在 master 的推送与 PR 上运行：分支推送和对应的 PR 各跑一次会让每次失败产生两封通知邮件
 on:
   push:
-    branches: [master, 'upgrade/**']
+    branches: [master]
   pull_request:
 
 concurrency:
@@ -20,8 +21,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -53,8 +54,8 @@ jobs:
       DB_NAME: ipv6_project
       JWT_SECRET: ci-only-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -120,8 +121,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -144,7 +145,7 @@ jobs:
     name: 容器构建与启动
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: 补齐缺失的 JsonAnalysisDashboardView（见升级计划 N1）
         run: |
           f=frontend/src/views/tools/jsonanalysis/JsonAnalysisDashboardView.vue
