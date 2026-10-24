@@ -782,12 +782,12 @@
    "id": "query-03",
    "category": "query",
    "role": "user",
-   "utterance": "在线率不低于 80% 的地址，列 50 个",
+   "utterance": "2026-09-01 之后首次发现的地址，列 50 个",
    "expect": {
     "tool": "query_database",
     "outcome": "tool_execution",
     "params": {
-     "minUptime": 80,
+     "firstSeenAfter": "2026-09-01",
      "limit": 50
     },
     "executedTools": [
@@ -799,7 +799,7 @@
      {
       "name": "query_database",
       "arguments": {
-       "minUptime": 80,
+       "firstSeenAfter": "2026-09-01",
        "limit": 50
       }
      }

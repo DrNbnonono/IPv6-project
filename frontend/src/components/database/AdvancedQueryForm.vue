@@ -81,20 +81,6 @@
             </div>
           </div>
           
-          <div class="form-group">
-            <label for="minUptime">最低在线率</label>
-            <div class="input-with-unit">
-              <input 
-                id="minUptime" 
-                v-model="queryParams.minUptime" 
-                type="number" 
-                min="0" 
-                max="100" 
-                placeholder="例如: 90" 
-              />
-              <span class="unit">%</span>
-            </div>
-          </div>
         </div>
       </div>
       
@@ -225,7 +211,6 @@
               <option value="address">IPv6地址</option>
               <option value="first_seen">首次发现时间</option>
               <option value="last_seen">最后活跃时间</option>
-              <option value="uptime_percentage">在线率</option>
             </select>
           </div>
           
@@ -322,7 +307,6 @@ const availableFields = [
   { key: 'asn', label: 'ASN' },
   { key: 'first_seen', label: '首次发现时间' },
   { key: 'last_seen', label: '最后活跃时间' },
-  { key: 'uptime_percentage', label: '在线率' },
   { key: 'vulnerabilities', label: '漏洞信息' },
   { key: 'protocols', label: '支持的协议' },
   { key: 'iid_type', label: 'IID类型' },
@@ -333,7 +317,6 @@ const queryParams = ref({
   country: '',
   asn: '',
   prefix: '',
-  minUptime: '',
   hasVulnerability: '',
   vulnerabilityFixed: '',
   vulnerabilityType: '',
@@ -572,7 +555,6 @@ const resetForm = () => {
     country: '',
     asn: '',
     prefix: '',
-    minUptime: '',
     hasVulnerability: '',
     vulnerabilityFixed: '',
     vulnerabilityType: '',

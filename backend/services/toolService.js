@@ -242,14 +242,13 @@ const TOOL_REGISTRY = {
 
   query_database: {
     name: '数据库查询',
-    description: '只读查询平台已收集的活跃 IPv6 地址（按国家、AS、前缀、协议、在线率、首次/最近发现日期筛选）。只返回地址、所属前缀、AS 与 IID 类型，最多 1000 条',
+    description: '只读查询平台已收集的活跃 IPv6 地址（按国家、AS、前缀、协议、漏洞、首次/最近发现日期筛选）。只返回地址、所属前缀、AS 与 IID 类型，最多 1000 条',
     category: 'analysis',
     parameters: {
       country: { type: 'number', description: '国家 ID（countries 表的 country_id）' },
       asn: { type: 'number', description: 'AS 号，如 4134' },
       prefix: { type: 'string', description: '前缀（与库里的前缀完全一致），如 2001:db8::/32' },
       protocolType: { type: 'number', description: '协议 ID（protocols 表的 protocol_id），只返回支持该协议的地址' },
-      minUptime: { type: 'number', description: '最低在线率（0–100）' },
       hasVulnerability: { type: 'string', description: "是否有漏洞记录：'true' 或 'false'" },
       firstSeenAfter: { type: 'string', description: '首次发现不早于该日期（YYYY-MM-DD）' },
       lastSeenAfter: { type: 'string', description: '最近发现不早于该日期（YYYY-MM-DD）' },
@@ -257,14 +256,14 @@ const TOOL_REGISTRY = {
     },
     validate: (params) => {
       const filters = {};
-      for (const key of ['country', 'asn', 'prefix', 'protocolType', 'minUptime', 'hasVulnerability', 'firstSeenAfter', 'lastSeenAfter']) {
+      for (const key of ['country', 'asn', 'prefix', 'protocolType', 'hasVulnerability', 'firstSeenAfter', 'lastSeenAfter']) {
         if (params[key] !== undefined && params[key] !== null && params[key] !== '') filters[key] = params[key];
       }
       if (filters.protocolType !== undefined) filters.protocolSupport = 'true';
       const limit = toBoundedInt(params.limit ?? QUERY_TOOL_DEFAULT_LIMIT, 'limit', 1, QUERY_TOOL_MAX_LIMIT);
       // 先用构建器校验一遍，字段错误就在确认/执行之前报出
       try {
-        queryBuilder.buildAdvancedQuery({ ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit });
+        queryBuilder.buildAdvancedQuery({ ...filters, fields: QUERY_TOOL_FIELDS, limit });
       } catch (error) {
         if (error instanceof queryBuilder.QueryValidationError) throw new ToolValidationError(error.message);
         throw error;
@@ -275,7 +274,7 @@ const TOOL_REGISTRY = {
       try {
         const { limit, ...filters } = params;
         const { sql, params: sqlParams } = queryBuilder.buildAdvancedQuery({
-          ...filters, fields: QUERY_TOOL_FIELDS, orderBy: 'last_seen', orderDirection: 'desc', limit
+          ...filters, fields: QUERY_TOOL_FIELDS, limit
         });
         const [found] = await db.query(sql, sqlParams);
         const list = Array.isArray(found) ? found : [];
