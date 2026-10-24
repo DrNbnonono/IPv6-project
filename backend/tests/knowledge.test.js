@@ -61,12 +61,13 @@ describe('chunkMarkdown', () => {
 });
 
 describe('listDocuments', () => {
-  test('只取 .md / .txt，跳过隐藏文件、符号链接、过大文件，递归子目录', () => {
+  test('只取 .md / .txt，跳过隐藏文件、README.md、符号链接、过大文件，递归子目录', () => {
     fs.mkdirSync(path.join(dir, 'sub'));
     fs.mkdirSync(path.join(dir, '.git'));
     fs.writeFileSync(path.join(dir, 'a.md'), '# a');
     fs.writeFileSync(path.join(dir, 'b.TXT'), 'b');
     fs.writeFileSync(path.join(dir, 'c.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'README.md'), '# 给维护者看的说明');
     fs.writeFileSync(path.join(dir, '.hidden.md'), 'h');
     fs.writeFileSync(path.join(dir, '.git', 'x.md'), 'g');
     fs.writeFileSync(path.join(dir, 'sub', 'd.md'), 'd');

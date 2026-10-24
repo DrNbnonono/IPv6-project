@@ -142,7 +142,8 @@ const listDocuments = (dir, depth = 0) => {
     return files;
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
+    // README.md 是给维护者看的说明（模板、约定），不进知识库
+    if (entry.name.startsWith('.') || entry.isSymbolicLink() || entry.name.toLowerCase() === 'readme.md') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (depth < MAX_DEPTH) files.push(...listDocuments(full, depth + 1));
