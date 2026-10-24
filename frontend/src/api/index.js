@@ -620,6 +620,16 @@ export default {
     },
     getUsers() {
       return apiClient.get('/admin/users');
+    },
+    // 开放 API 密钥：创建响应里的 data.key 是明文，只此一次
+    getApiKeys() {
+      return apiClient.get('/admin/api-keys');
+    },
+    createApiKey(data) {
+      return apiClient.post('/admin/api-keys', data);
+    },
+    revokeApiKey(id) {
+      return apiClient.delete(`/admin/api-keys/${id}`);
     }
   },
 

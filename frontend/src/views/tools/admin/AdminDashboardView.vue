@@ -124,6 +124,57 @@
         </el-table>
       </el-tab-pane>
 
+      <!-- 开放 API 密钥 -->
+      <el-tab-pane label="API 密钥" name="apikeys">
+        <el-card shadow="never" class="block">
+          <template #header>创建密钥</template>
+          <el-form inline @submit.prevent="createKey">
+            <el-form-item label="用途">
+              <el-input v-model="keyForm.name" placeholder="给谁、做什么" maxlength="100" style="width: 220px" />
+            </el-form-item>
+            <el-form-item label="权限">
+              <el-checkbox-group v-model="keyForm.scopes">
+                <el-checkbox value="stats">统计 (stats)</el-checkbox>
+                <el-checkbox value="addresses">完整地址 (addresses)</el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            <el-form-item label="每分钟上限">
+              <el-input-number v-model="keyForm.rateLimitPerMin" :min="1" :max="100000" :controls="false" placeholder="默认" style="width: 110px" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" native-type="submit" :loading="admin.isLoading" :disabled="!canCreateKey">创建</el-button>
+            </el-form-item>
+          </el-form>
+          <div class="hint">明文密钥只在创建后显示一次，服务器只保存它的哈希。完整地址权限请只发给确实需要的使用者。接口说明见 backend/knowledge/platform/open-api.md。</div>
+        </el-card>
+
+        <el-table :data="admin.apiKeys.items" size="small" empty-text="还没有创建过密钥（需要先执行迁移 16）">
+          <el-table-column prop="name" label="用途" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="prefix" label="前缀" width="130" />
+          <el-table-column label="权限" width="170">
+            <template #default="{ row }">{{ row.scopes.join('、') }}</template>
+          </el-table-column>
+          <el-table-column label="每分钟上限" width="110">
+            <template #default="{ row }">{{ row.rateLimitPerMin ?? '默认' }}</template>
+          </el-table-column>
+          <el-table-column label="最近使用" width="170">
+            <template #default="{ row }">{{ formatTime(row.lastUsedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <el-tag v-if="row.revokedAt" type="info" size="small">已吊销</el-tag>
+              <el-tag v-else-if="row.expiresAt && new Date(row.expiresAt) <= new Date()" type="warning" size="small">已过期</el-tag>
+              <el-tag v-else type="success" size="small">有效</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-button v-if="!row.revokedAt" link type="danger" @click="revokeKey(row)">吊销</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
       <!-- 审计日志 -->
       <el-tab-pane label="审计日志" name="audit">
         <el-form inline class="block" @submit.prevent="searchAudit(1)">
@@ -283,6 +334,44 @@ const resetQuota = async (row) => {
   }
 }
 
+// ----- 开放 API 密钥 -----
+const keyForm = reactive({ name: '', scopes: ['stats'], rateLimitPerMin: undefined })
+const canCreateKey = computed(() => keyForm.name.trim() !== '' && keyForm.scopes.length > 0)
+
+const createKey = async () => {
+  const payload = { name: keyForm.name.trim(), scopes: keyForm.scopes }
+  if (keyForm.rateLimitPerMin !== undefined && keyForm.rateLimitPerMin !== null) payload.rateLimitPerMin = keyForm.rateLimitPerMin
+  try {
+    const res = await admin.createApiKey(payload)
+    keyForm.name = ''
+    keyForm.scopes = ['stats']
+    keyForm.rateLimitPerMin = undefined
+    // 明文只显示这一次；对话框关闭后页面上不再保留
+    await ElMessageBox.alert(res.data.key, '请立即保存密钥（关闭后无法再次查看）', {
+      confirmButtonText: '我已保存',
+      customClass: 'api-key-dialog'
+    })
+  } catch {
+    // 原因已显示在页面顶部
+  }
+}
+
+const revokeKey = async (row) => {
+  try {
+    await ElMessageBox.confirm(`吊销后「${row.name}」立即失效，且不可恢复。`, '确认吊销', {
+      type: 'warning', confirmButtonText: '吊销', cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    await admin.revokeApiKey(row.id)
+    ElMessage.success('已吊销')
+  } catch {
+    // 原因已显示
+  }
+}
+
 // ----- 审计日志 -----
 const actionOptions = [
   { value: 'auth', label: '登录' },
@@ -321,6 +410,7 @@ const onTabChange = (name) => {
   loaded.add(name)
   if (name === 'quotas') admin.fetchQuotas().catch(() => {})
   if (name === 'audit') searchAudit(1)
+  if (name === 'apikeys') admin.fetchApiKeys().catch(() => {})
 }
 
 onMounted(() => {

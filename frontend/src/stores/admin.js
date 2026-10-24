@@ -9,6 +9,7 @@ export const useAdminStore = defineStore('admin', () => {
   const quotas = ref({ defaults: null, items: [] })
   const users = ref([])
   const audit = ref({ total: 0, page: 1, pageSize: 50, items: [] })
+  const apiKeys = ref({ scopes: [], items: [] })
   const isLoading = ref(false)
   const error = ref('')
 
@@ -87,10 +88,33 @@ export const useAdminStore = defineStore('admin', () => {
       return res
     }, '获取审计日志失败')
 
+  const fetchApiKeys = () =>
+    run(async () => {
+      const res = await api.admin.getApiKeys()
+      apiKeys.value = res.data
+      return res
+    }, '获取 API 密钥失败')
+
+  // 返回响应体；res.data.key 是明文密钥，只此一次，调用方负责展示后丢弃
+  const createApiKey = (payload) =>
+    run(async () => {
+      const res = await api.admin.createApiKey(payload)
+      await fetchApiKeys()
+      return res
+    }, '创建 API 密钥失败')
+
+  const revokeApiKey = (id) =>
+    run(async () => {
+      const res = await api.admin.revokeApiKey(id)
+      await fetchApiKeys()
+      return res
+    }, '吊销 API 密钥失败')
+
   return {
-    policy, quotas, users, audit, isLoading, error,
+    policy, quotas, users, audit, apiKeys, isLoading, error,
     fetchPolicy, addEntry, removeEntry,
     fetchQuotas, saveQuota, resetQuota,
-    fetchAuditLogs
+    fetchAuditLogs,
+    fetchApiKeys, createApiKey, revokeApiKey
   }
 })
