@@ -112,6 +112,30 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// 未匹配的 /api 路径：统一返回 JSON
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, message: '接口不存在' });
+});
+
+// 统一错误出口：只返回 JSON，不回传堆栈与内部信息。
+// Express 默认的错误处理器在非 production 环境下会把堆栈（含服务器文件路径）原样返回，
+// 请求体不是合法 JSON 时就会触发（安全回归 SR-10 发现）。
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, message: '请求体不是合法的 JSON' });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, message: '请求体过大' });
+  }
+  const status = err.status || err.statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    return res.status(status).json({ success: false, message: '请求无效' });
+  }
+  logger.error(`未处理的请求错误: ${req.method} ${req.path}`, err.message);
+  return res.status(500).json({ success: false, message: '服务器内部错误' });
+});
+
 /**
  * 监听 host（默认 ::，同时覆盖 IPv4/IPv6）。内核或容器网络不支持 IPv6 时
  * （EAFNOSUPPORT/EADDRNOTAVAIL）退回 0.0.0.0，而不是直接启动失败。
